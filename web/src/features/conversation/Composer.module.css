@@ -1,0 +1,116 @@
+.wrap {
+  flex: 0 0 auto;
+  padding: 8px 24px 8px;
+}
+
+/* Mirrors dsh's InputBar card: 22px corners, a 12px gap between the input and
+ * its toolbar, and horizontal padding carried by the children rather than the
+ * card so the text starts at the same offset as the toolbar icons. */
+.composer {
+  position: relative;
+  max-width: 780px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+  border-radius: 22px;
+  border: 0;
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-elevation-soft);
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.input {
+  width: 100%;
+  min-height: 36px;
+  max-height: 220px;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  padding: 4px 14px 0;
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 8px 6px;
+}
+
+.modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mode,
+.modeActive {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mode:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.modeActive {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-elevation-panel);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.send,
+.stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  corner-shape: round;
+  flex: 0 0 auto;
+  /* dsh lifts the send button by 2px so it optically centres against the
+   * 22px corner of the card. */
+  transform: translateY(-2px);
+}
+
+.send {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.send:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.send:disabled {
+  background: var(--dsw-alias-button-primary-dimmed);
+  cursor: default;
+}
+
+.stop {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.stop:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}

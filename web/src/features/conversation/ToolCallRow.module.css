@@ -1,0 +1,154 @@
+/*
+ * Ported from dsh's ToolRow.module.css plus the shared I/O card styles that the
+ * generic tool row and the terminal row both use.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * The running indicator is a 300px highlight crossing the row, not a spinner.
+ * dsh animates the same gradient on tool rows, reasoning rows, and bash rows,
+ * so a busy session reads consistently no matter what is working.
+ */
+.root[data-state="running"] .row::after {
+  content: "";
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+  width: 300px;
+  animation: dsh-tool-row-sweep 2.6s ease-out infinite;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+
+@keyframes dsh-tool-row-sweep {
+  0% {
+    left: -300px;
+  }
+  90%,
+  100% {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root[data-state="running"] .row::after {
+    animation: none;
+  }
+}
+
+.title {
+  font-weight: 400;
+}
+
+.sep {
+  background: var(--dsw-alias-label-caption);
+  border-radius: 1px;
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+}
+
+.summary {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+  flex: auto;
+  overflow: hidden;
+}
+
+.summary[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.chevron {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.visuallyHidden {
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+}
+
+/* --- expanded body --- */
+
+.bodyScroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ioCard {
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-markdown-code-block);
+  font: var(--dsw-font-markdown-code-block-small);
+  border-radius: 12px;
+  flex-direction: column;
+  display: flex;
+  margin: 4px 0 4px 4px;
+}
+
+/*
+ * Label and value are two grid columns rather than a flex pair, so the value
+ * column starts at the same x on every row and the sticky label stays put while
+ * a long output scrolls underneath it.
+ */
+.ioSection {
+  grid-template-columns: max-content 1fr;
+  align-items: baseline;
+  column-gap: 14px;
+  max-height: 150px;
+  padding: 12px 16px;
+  display: grid;
+  overflow-y: auto;
+}
+
+.ioSection::-webkit-scrollbar-thumb {
+  background-clip: padding-box;
+  border: 2px solid #0000;
+  border-radius: 6px;
+}
+
+.ioSection::-webkit-scrollbar-track {
+  margin: 6px 0;
+}
+
+.ioLabel {
+  color: var(--dsw-alias-label-caption);
+  align-self: start;
+  position: sticky;
+  top: 0;
+}
+
+.ioDivider {
+  background: var(--dsw-alias-border-l2);
+  flex: none;
+  height: 0.5px;
+}
+
+.ioText {
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.ioText[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}

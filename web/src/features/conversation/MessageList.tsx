@@ -1,0 +1,547 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type {
+  AgentMessage,
+  AssistantMessage,
+  ContentBlock,
+  ForkPoint,
+  MessageUsage,
+  TextBlock,
+  ThinkingBlock as ThinkingBlockType,
+  ToolCallBlock,
+  ToolResultMessage,
+  UserMessage,
+} from "../../lib/types.ts";
+import { Markdown } from "./Markdown.tsx";
+import { MessageActions } from "./MessageActions.tsx";
+import { ThinkingBlock } from "./ThinkingBlock.tsx";
+import { TodoRow } from "./TodoRow.tsx";
+import { ToolCallRow } from "./ToolCallRow.tsx";
+import { TurnProcessGroup } from "./TurnProcessGroup.tsx";
+import { RetryNotice } from "./RetryNotice.tsx";
+import { TurnStatus } from "./TurnStatus.tsx";
+import { TurnNavigator } from "./TurnNavigator.tsx";
+import { splitForCompact } from "./row-model.ts";
+import { displayUserText, parseSkillBlock, skillCommandLabel } from "./skill-block.ts";
+import { groupTurns } from "./turn-rail.ts";
+import { textFromContent, type ConversationView, type ToolExecution } from "./useConversation.ts";
+import { useDelayedFlag } from "../../lib/use-delayed-flag.ts";
+import styles from "./MessageList.module.css";
+
+/** Workspace root and home dir, threaded down so paths can be shortened for display. */
+interface PathContext {
+  cwd?: string | undefined;
+  home?: string | undefined;
+}
+
+/** How far below the scrollport top the "currently reading" probe sits. */
+const ACTIVE_LINE_MAX_PX = 96;
+const ACTIVE_LINE_RATIO = 0.2;
+/** Breathing room left above a row when the rail jumps to it. */
+const JUMP_TOP_OFFSET_PX = 24;
+/** Within this distance of the bottom, new output keeps scrolling into view. */
+const STICK_THRESHOLD_PX = 80;
+/** Same band dsh uses to decide whether a jump landed at the bottom. */
+const AT_BOTTOM_THRESHOLD_PX = 25;
+
+function BlockView({
+  block,
+  executions,
+  results,
+  streaming,
+  cwd,
+  home,
+}: {
+  block: ContentBlock;
+  executions: Record<string, ToolExecution>;
+  results: Record<string, ToolResultMessage>;
+  streaming: boolean;
+} & PathContext) {
+  if (block.type === "text") {
+    const text = (block as TextBlock).text;
+    return text.length > 0 ? <Markdown text={text} /> : null;
+  }
+  if (block.type === "thinking") {
+    return <ThinkingBlock text={(block as ThinkingBlockType).thinking} streaming={streaming} />;
+  }
+  if (block.type === "toolCall") {
+    const call = block as ToolCallBlock;
+    const result = results[call.id];
+    const execution =
+      executions[call.id] ??
+      (result
+        ? {
+            toolName: call.name,
+            args: call.arguments,
+            output: "",
+            result: result.content,
+            details: result.details,
+            isError: false,
+            running: false,
+          }
+        : undefined);
+    // `todo` answers with a whole-list snapshot rather than a body of text, so it
+    // gets a list instead of the generic parameters-and-output card.
+    if (call.name === "todo") return <TodoRow call={call} execution={execution} />;
+    return <ToolCallRow call={call} execution={execution} cwd={cwd} home={home} />;
+  }
+  return null;
+}
+
+/**
+ * One content block plus its position inside the turn, so React keys stay stable
+ * when compact mode moves the step into a group.
+ */
+interface TurnStep {
+  block: ContentBlock;
+  messageIndex: number;
+  blockIndex: number;
+}
+
+/**
+ * Render one turn's content. In compact mode the turn's process steps collapse
+ * into a single group; answers keep their order.
+ *
+ * The partition happens here, per turn, rather than inside a per-message
+ * component: a turn routinely spans a dozen assistant messages (one per tool
+ * round-trip), and grouping each of those separately produced a dozen identical
+ * "执行过程" rows for a single request.
+ */
+function TurnBody({
+  steps,
+  executions,
+  results,
+  streaming,
+  compact,
+  cwd,
+  home,
+}: {
+  steps: TurnStep[];
+  executions: Record<string, ToolExecution>;
+  results: Record<string, ToolResultMessage>;
+  streaming: boolean;
+  /**
+   * Collapse this turn's process steps into one group. Only ever true for a turn
+   * that already finished: folding rows while they are still arriving would hide
+   * the thing the user is waiting on.
+   */
+  compact: boolean;
+} & PathContext) {
+  const renderStep = (step: TurnStep, isLast: boolean) => (
+    <BlockView
+      key={`${String(step.messageIndex)}-${String(step.blockIndex)}`}
+      block={step.block}
+      executions={executions}
+      results={results}
+      streaming={streaming && isLast}
+      cwd={cwd}
+      home={home}
+    />
+  );
+
+  if (!compact) {
+    return (
+      <div className={styles.assistantTurn}>
+        {steps.map((step, index) => renderStep(step, index === steps.length - 1))}
+      </div>
+    );
+  }
+
+  const { process, answers } = splitForCompact(steps);
+  return (
+    <div className={styles.assistantTurn}>
+      {process.length > 0 ? (
+        <TurnProcessGroup count={process.length}>
+          {process.map((step) => renderStep(step, false))}
+        </TurnProcessGroup>
+      ) : null}
+      {answers.map((step, index) => (
+        // The wrapper exists only to carry dsh's `data-turn-process-answer`
+        // flag: it is what tells the flow gap to tighten to 8px for the answer
+        // that ends the group above it.
+        <div
+          key={`${String(step.messageIndex)}-${String(step.blockIndex)}`}
+          data-turn-process-answer={index === 0 || undefined}
+        >
+          {renderStep(step, streaming && index === answers.length - 1)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The copyable text of a turn's answer: every answer block, joined.
+ *
+ * Thinking and tool calls are left out — they are process, not the reply, and
+ * pasting them alongside the answer is never what "copy this response" means.
+ */
+function assistantTextOf(messages: AgentMessage[]): string {
+  return messages
+    .filter((message) => message.role === "assistant")
+    .flatMap((message) => (message as AssistantMessage).content ?? [])
+    .filter((block): block is TextBlock => block.type === "text")
+    .map((block) => block.text)
+    .join("\n\n");
+}
+
+function UserTurn({ text }: { text: string }) {
+  const skill = parseSkillBlock(text);
+  return (
+    <div className={styles.userTurn}>
+      <div className={styles.userBubble}>
+        {skill === null ? (
+          text
+        ) : (
+          // The chip is inline so a command with arguments still reads as one
+          // line, the way dsh draws it. `title` carries where the body came
+          // from, which is the only thing the folded text no longer shows.
+          <>
+            <span className={styles.skillChip} title={skill.location}>
+              {skillCommandLabel(skill.name)}
+            </span>
+            {skill.userMessage === undefined ? null : ` ${skill.userMessage}`}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** What one turn shows under its content: cost, elapsed time, fork target. */
+interface TurnMeta {
+  forkEntryId: string | null;
+  usage: MessageUsage | null;
+  durationMs: number | null;
+  /** Start of the turn, used for the timestamp label. */
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+function timestampOf(message: AgentMessage): number | null {
+  const value = (message as { timestamp?: unknown }).timestamp;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function usageOf(message: AgentMessage): MessageUsage | null {
+  const value = (message as { usage?: unknown }).usage;
+  if (typeof value !== "object" || value === null) return null;
+  const total = (value as { totalTokens?: unknown }).totalTokens;
+  return typeof total === "number" ? (value as MessageUsage) : null;
+}
+
+/**
+ * Per-turn metadata, keyed by turn number.
+ *
+ * The fork targets are matched by position across the user messages of the
+ * transcript, with the text compared as a guard: server and client walk the
+ * same entries, so a mismatch means the two views have diverged and the safer
+ * answer is to offer no fork at all rather than fork at the wrong message.
+ */
+function turnMetadata(
+  groups: ReturnType<typeof groupTurns>,
+  forkPoints: ForkPoint[],
+): Map<number, TurnMeta> {
+  const out = new Map<number, TurnMeta>();
+  let userIndex = 0;
+
+  for (const group of groups) {
+    const user = group.messages.find((message) => message.role === "user");
+    const assistants = group.messages.filter((message) => message.role === "assistant");
+
+    let forkEntryId: string | null = null;
+    if (user !== undefined) {
+      const point = forkPoints[userIndex];
+      userIndex += 1;
+      if (point !== undefined && point.text === textFromContent((user as UserMessage).content)) {
+        forkEntryId = point.entryId;
+      }
+    }
+
+    let total = 0;
+    let sawUsage = false;
+    for (const message of assistants) {
+      const usage = usageOf(message);
+      if (usage === null) continue;
+      sawUsage = true;
+      total += usage.totalTokens;
+    }
+
+    // Wall-clock span of the turn. The last message's stamp is when it was
+    // written for tool results, and when its generation began for a final
+    // assistant message; either way this is elapsed time, not model time.
+    const stamps = group.messages.map(timestampOf).filter((x): x is number => x !== null);
+    const startedAt = stamps.length > 0 ? Math.min(...stamps) : null;
+    const endedAt = stamps.length > 0 ? Math.max(...stamps) : null;
+
+    out.set(group.turn, {
+      forkEntryId,
+      usage: sawUsage ? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: total } : null,
+      durationMs:
+        startedAt !== null && endedAt !== null && endedAt > startedAt ? endedAt - startedAt : null,
+      startedAt,
+      endedAt,
+    });
+  }
+
+  return out;
+}
+
+/**
+ * The turn owning the row at a probe line measured from the scrollport top.
+ *
+ * Walks the anchors in document order and keeps the last one that starts above
+ * the line — the same fallback dsh uses. It does not need `elementsFromPoint`:
+ * turn rows are direct siblings in one column, so "last row starting above the
+ * line" is exactly the row being read.
+ */
+function turnAtLine(list: HTMLElement, line: number): number | null {
+  let found: number | null = null;
+  for (const row of list.querySelectorAll<HTMLElement>("[data-turn]")) {
+    if (row.getBoundingClientRect().top > line) break;
+    const turn = Number(row.dataset.turn);
+    if (Number.isSafeInteger(turn)) found = turn;
+  }
+  return found;
+}
+
+export function MessageList({
+  view,
+  cwd,
+  home,
+  compactTranscript = false,
+  onFork,
+}: {
+  view: ConversationView;
+  /** Collapse finished turns' process rows into one group (see settings). */
+  compactTranscript?: boolean;
+  /** Fork the session at a user message. Absent means the action is not shown. */
+  onFork?: (entryId: string) => void;
+} & PathContext) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Follow new output only while the user is already at the bottom.
+  const stickRef = useRef(true);
+  // A disk-backed switch finishes in ~100ms, so the hint only appears if the
+  // load is genuinely slow.
+  const showLoading = useDelayedFlag(view.loading);
+
+  const [activeTurn, setActiveTurn] = useState<number | null>(null);
+  const [bandHeight, setBandHeight] = useState<number | null>(null);
+  const frameRef = useRef<number | null>(null);
+
+  const railItems = useMemo(() => groupTurns(view.messages), [view.messages]);
+  const turnMeta = useMemo(
+    () => turnMetadata(railItems, view.forkPoints),
+    [railItems, view.forkPoints],
+  );
+
+  const syncActiveTurn = useCallback((): void => {
+    const scroller = scrollRef.current;
+    if (scroller === null) return;
+    const line = Math.min(ACTIVE_LINE_MAX_PX, scroller.clientHeight * ACTIVE_LINE_RATIO);
+    const reading = turnAtLine(scroller, scroller.getBoundingClientRect().top + line);
+    setActiveTurn((current) => (current === reading ? current : reading));
+  }, []);
+
+  // Scrolling fires far faster than the rail needs to update.
+  const scheduleActiveTurn = useCallback((): void => {
+    if (frameRef.current !== null) return;
+    if (typeof requestAnimationFrame === "undefined") {
+      syncActiveTurn();
+      return;
+    }
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      syncActiveTurn();
+    });
+  }, [syncActiveTurn]);
+
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
+        cancelAnimationFrame(frameRef.current);
+      }
+      // Reset unconditionally. Leaving the stale id here blocks every later
+      // schedule, because `pending !== null` reads as "a frame is already
+      // queued" — and that frame was just cancelled. StrictMode's double mount
+      // hits this on the very first render, which leaves the rail permanently
+      // un-synced.
+      frameRef.current = null;
+    },
+    [],
+  );
+
+  // The rail centres itself in the visible transcript area, so it needs the real
+  // height rather than a viewport guess.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setBandHeight(scroller.clientHeight));
+    observer.observe(scroller);
+    setBandHeight(scroller.clientHeight);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    scheduleActiveTurn();
+  }, [scheduleActiveTurn, railItems.length]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !stickRef.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [view.messages, view.partial]);
+
+  const onScroll = (): void => {
+    const element = scrollRef.current;
+    if (!element) return;
+    stickRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX;
+    scheduleActiveTurn();
+  };
+
+  /**
+   * Scroll a turn's row to just below the top of the scrollport.
+   *
+   * `scrollTop +=` rather than `scrollIntoView`, because `scrollIntoView` cannot
+   * leave a fixed offset above the row and would put the anchor flush against
+   * the pane edge.
+   */
+  const navigateToTurn = useCallback((turn: number): void => {
+    const scroller = scrollRef.current;
+    if (scroller === null) return;
+    const row = scroller.querySelector<HTMLElement>(`[data-turn="${String(turn)}"]`);
+    if (row === null) return;
+    const rowTop = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTop += rowTop - JUMP_TOP_OFFSET_PX;
+    // Landing at the end should resume following; landing mid-transcript must
+    // not, or the next streaming delta would yank the reader back down.
+    stickRef.current =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= AT_BOTTOM_THRESHOLD_PX;
+    setActiveTurn(turn);
+  }, []);
+
+  const results = useMemo(() => {
+    // The whole tool result, not just its content: the todo row reads `details`
+    // (its snapshot) and the generic row reads `content`.
+    const map: Record<string, ToolResultMessage> = {};
+    for (const message of view.messages) {
+      if (message.role === "toolResult") {
+        const toolResult = message as ToolResultMessage;
+        map[toolResult.toolCallId] = toolResult;
+      }
+    }
+    return map;
+  }, [view.messages]);
+
+  const partial = view.partial;
+  const hasPartial = partial !== null && partial.length > 0;
+  const lastTurn = railItems.at(-1)?.turn ?? null;
+  // The turn still being produced is the one whose mark should pulse.
+  const busyTurn = view.isStreaming ? lastTurn : null;
+
+  return (
+    <div className={styles.scroll} ref={scrollRef} onScroll={onScroll}>
+      <TurnNavigator
+        items={railItems}
+        activeTurn={activeTurn}
+        busyTurn={busyTurn}
+        bandHeight={bandHeight}
+        onNavigate={navigateToTurn}
+      />
+
+      <div className={styles.column}>
+        {showLoading ? <p className={styles.hint}>正在载入会话…</p> : null}
+
+        {!view.loading && railItems.length === 0 && !hasPartial ? (
+          <p className={styles.hint}>还没有消息。在下面输入开始对话。</p>
+        ) : null}
+
+        {railItems.map((group) => {
+          // Flatten the turn's assistant content so compact mode can group the
+          // *turn's* process steps. A turn spans one assistant message per tool
+          // round-trip, so grouping per message produced a group per round-trip.
+          const steps: TurnStep[] = [];
+          group.messages.forEach((message, messageIndex) => {
+            if (message.role === "user") return;
+            const content = (message as AssistantMessage).content ?? [];
+            content.forEach((block, blockIndex) => {
+              steps.push({ block, messageIndex, blockIndex });
+            });
+          });
+
+          return (
+            <div key={group.turn} className={styles.turn} data-turn={group.turn}>
+              {group.messages.map((message, index) => {
+                // Timestamps are not unique across messages and can be identical
+                // in a fast exchange, so the position inside the turn is the key.
+                const key = `${String(group.turn)}-${String(index)}`;
+                if (message.role !== "user") return null;
+                const text = textFromContent((message as UserMessage).content);
+                const meta = turnMeta.get(group.turn);
+                return (
+                  <div key={key}>
+                    <UserTurn text={text} />
+                    <MessageActions
+                      align="end"
+                      text={displayUserText(text)}
+                      timestamp={timestampOf(message)}
+                      forkEntryId={meta?.forkEntryId ?? null}
+                      {...(onFork === undefined ? {} : { onFork })}
+                    />
+                  </div>
+                );
+              })}
+              {steps.length > 0 ? (
+                <TurnBody
+                  steps={steps}
+                  executions={view.toolExecutions}
+                  results={results}
+                  streaming={false}
+                  compact={compactTranscript}
+                  cwd={cwd}
+                  home={home}
+                />
+              ) : null}
+              {group.messages.some((message) => message.role === "assistant") ? (
+                <MessageActions
+                  text={assistantTextOf(group.messages)}
+                  usage={turnMeta.get(group.turn)?.usage ?? null}
+                  durationMs={turnMeta.get(group.turn)?.durationMs ?? null}
+                  timestamp={turnMeta.get(group.turn)?.endedAt ?? null}
+                  forkEntryId={turnMeta.get(group.turn)?.forkEntryId ?? null}
+                  {...(onFork === undefined ? {} : { onFork })}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+
+        {hasPartial ? (
+          <TurnBody
+            steps={partial.map((block, blockIndex) => ({ block, messageIndex: -1, blockIndex }))}
+            executions={view.toolExecutions}
+            results={results}
+            streaming={view.isStreaming}
+            // The live turn keeps its rows open regardless of the setting:
+            // folding them would hide exactly what the user is waiting on.
+            compact={compactTranscript && !view.isStreaming}
+            cwd={cwd}
+            home={home}
+          />
+        ) : null}
+
+        {/*
+         * dsh keeps this label up for the whole turn — before the first token,
+         * during tool calls, and while text streams — so `isStreaming` (which pi
+         * drives from `agent_start` to `agent_settled`) is exactly the right
+         * window. Hiding it as soon as the first token lands would leave the
+         * long tool-running stretches with no sign of life.
+         */}
+        {view.isStreaming ? <TurnStatus /> : null}
+
+        {/* A retry is a deliberate pause, so it replaces the status line rather
+            than stacking under it. */}
+        {view.retry ? <RetryNotice retry={view.retry} /> : null}
+      </div>
+    </div>
+  );
+}

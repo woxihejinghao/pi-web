@@ -1,0 +1,109 @@
+/* Ported from dsh's MessageItem.module.css (.Sixlwa_retry*). */
+
+.retryRow {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.retrySummary {
+  width: fit-content;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  list-style: none;
+  display: inline-flex;
+}
+
+.retrySummary::-webkit-details-marker {
+  display: none;
+}
+
+/* The disclosure caret is drawn, not glyph, so it lines up with the text. */
+.retrySummary::after {
+  content: "";
+  opacity: 0.8;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+  width: 6px;
+  height: 6px;
+  transition: transform 0.12s;
+  transform: rotate(-45deg);
+}
+
+.retrySummary:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.retrySummary:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-button-info-fill);
+  outline-offset: 2px;
+}
+
+.retryText {
+  color: inherit;
+}
+
+/*
+ * Same moving-gradient trick as the turn status, but monochrome: the light band
+ * is just the next label colour up, so "retrying right now" reads as activity
+ * without shouting.
+ */
+.retryRow[data-active] .retryText {
+  background: linear-gradient(
+    90deg,
+    var(--dsw-alias-label-tertiary) 0%,
+    var(--dsw-alias-label-tertiary) 40%,
+    var(--dsw-alias-label-secondary) 50%,
+    var(--dsw-alias-label-tertiary) 60%,
+    var(--dsw-alias-label-tertiary) 100%
+  );
+  color: #0000;
+  -webkit-text-fill-color: transparent;
+  background-position: 100%;
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: dsh-retry-shimmer 1.6s ease-in-out infinite;
+}
+
+.retryRow[open] .retrySummary::after {
+  transform: rotate(45deg);
+}
+
+.retryDetails {
+  overflow-wrap: anywhere;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  gap: 2px;
+  margin-top: 3px;
+  padding-left: 14px;
+  display: grid;
+}
+
+.retryDetailLabel {
+  color: var(--dsw-alias-label-secondary);
+}
+
+@keyframes dsh-retry-shimmer {
+  0% {
+    background-position: 100%;
+  }
+  to {
+    background-position: 0;
+  }
+}
+
+/* Without the sweep the text would be invisible, so hand back a flat fill. */
+@media (prefers-reduced-motion: reduce) {
+  .retryRow[data-active] .retryText {
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+    background: 0 0;
+    animation: none;
+  }
+}

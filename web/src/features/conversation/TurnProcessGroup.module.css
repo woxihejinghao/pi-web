@@ -1,0 +1,44 @@
+/*
+ * The group row itself reuses DisclosureRow's chrome, so everything here is
+ * either the summary decoration or the expanded body.
+ */
+.root {
+  flex: none;
+}
+
+/* Same 2x2 dot every other collapsed row uses before its summary. */
+.sep {
+  background: var(--dsw-alias-label-caption);
+  border-radius: 1px;
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+}
+
+.count {
+  flex: auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/*
+ * Indented to the reasoning body's own indent, so expanding the group reads as
+ * "here are the rows that were summarised" rather than as a separate list.
+ *
+ * The 16px between rows is dsh's chat flow gap (`--dsh-chat-flow-gap`): the
+ * rows inside the window keep the spacing they have outside it, which is what
+ * makes expanding feel like unfolding the transcript rather than switching to a
+ * denser list.
+ */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 6px 0 6px calc(22px + var(--dsh-content-font-delta, 0px));
+}

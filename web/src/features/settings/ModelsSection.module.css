@@ -1,0 +1,244 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * dsh's header action is 打开配置文件, because a desktop app can hand the path
+ * to the OS. A browser cannot, so this button copies the path instead and says
+ * so — a control that promises a reveal and does nothing would be worse than
+ * one with a narrower label.
+ */
+.configPath {
+  flex: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.configPath:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.lead {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.loading {
+  margin-top: 24px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* dsh metrics: 44px tall, 12px radius, content inset 16px. */
+.row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.rowName {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 2px;
+}
+
+.dotOn {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.dotOff {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.pillButton {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.pillButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dangerButton {
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.dangerButton:hover {
+  opacity: 0.8;
+}
+
+.addRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+/*
+ * Dashed outline: dsh draws the two add affordances as empty slots rather than
+ * filled buttons, which keeps them from competing with the provider rows.
+ */
+.addButton {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: none;
+  cursor: pointer;
+}
+
+.addButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dialogCopy {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dialogError {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ghostButton {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+}
+
+.ghostButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.ghostButton:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.dangerButtonSolid {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-state-error-primary);
+  cursor: pointer;
+}
+
+.dangerButtonSolid:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

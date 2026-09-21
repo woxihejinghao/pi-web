@@ -1,0 +1,164 @@
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.description {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.stats {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The tree scrolls, so the title and close button stay put on a long session. */
+.list {
+  margin-top: 12px;
+  max-height: 50vh;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  padding: 6px;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding-right: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The leaf is where the session actually is; it gets the strongest treatment. */
+.rowLeaf {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.rowLeaf:hover {
+  background: var(--dsw-alias-bg-base);
+}
+
+.caret {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  background: none;
+  cursor: pointer;
+}
+
+.caretClosed {
+  transform: rotate(-90deg);
+}
+
+.caretOpen {
+  transform: none;
+}
+
+.caretSpacer {
+  flex: none;
+  width: 16px;
+}
+
+.rowIcon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tag,
+.tagLeaf,
+.tagFork {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 16px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagLeaf {
+  color: var(--dsw-alias-label-primary-bluish);
+}
+
+.tagFork {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.empty {
+  margin: 16px 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.error {
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ghostButton {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+}
+
+.ghostButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}

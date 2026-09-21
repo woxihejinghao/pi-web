@@ -1,0 +1,391 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 10px;
+  flex: 0 0 auto;
+}
+
+.brandMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.brandName {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--dsw-alias-label-primary);
+}
+
+.brandBadge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+  flex: 0 0 auto;
+}
+
+/* Top-level primary action, mirroring dsh's full-width "新会话" pill. */
+.primaryAction {
+  padding: 4px 12px 10px;
+  flex: 0 0 auto;
+}
+
+.newSession {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+.newSession:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.newSession:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px 4px 16px;
+  min-height: 28px;
+  flex: 0 0 auto;
+}
+
+.sectionLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: var(--dsw-alias-label-tertiary);
+  flex: 0 0 auto;
+}
+
+.iconButton:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButtonActive {
+  background: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.searchRow {
+  padding: 2px 12px 8px;
+  flex: 0 0 auto;
+}
+
+.searchInput {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12.5px;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* --- footer ------------------------------------------------------------- */
+
+/*
+ * The settings entry, pinned below the scroll region rather than inside it, so
+ * a long project list cannot push it out of reach. Metrics are dsh's sidebar
+ * foot trigger (42px tall, 12px radius).
+ */
+.footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 12px;
+}
+
+.settingsTrigger {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  min-width: 0;
+  padding: 0 10px 0 8px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: none;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.settingsTrigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* --- project row --- */
+
+.projectRow {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  min-height: 32px;
+  position: relative;
+  cursor: pointer;
+}
+
+.projectRow:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+}
+
+.projectMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+  color: inherit;
+}
+
+.projectChevron {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+  flex: 0 0 auto;
+  transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.projectChevronOpen {
+  transform: rotate(90deg);
+}
+
+.projectGlyph {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+  flex: 0 0 auto;
+}
+
+.projectTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* --- session row --- */
+
+.sessionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  position: relative;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.sessionRow:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+}
+
+.sessionRowActive {
+  background: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.sessionTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+/*
+ * The whole row is the click target, not just the text.
+ *
+ * A stretched pseudo-element buys that without adding a second control: the
+ * real button stays the only interactive element, so keyboard focus and screen
+ * readers see one thing, while the row's padding, the timestamp and the empty
+ * space beside a short title all switch sessions. `inset: 0` resolves against
+ * `.sessionRow`, which is already positioned — so the target fills the row no
+ * matter how narrow the title is.
+ *
+ * `.rowActions` comes later in the DOM and is absolutely positioned too, so it
+ * paints above this and still receives its own clicks.
+ */
+.sessionTitle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* dsh bolds the open conversation instead of only tinting the row. */
+.sessionRowActive .sessionTitle {
+  font-weight: 600;
+}
+
+.sessionTime {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sessionRowActive .sessionTime {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Row actions stay hidden until hover, so the list reads as plain text. */
+.rowActions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  position: absolute;
+  right: 4px;
+  padding-left: 20px;
+  border-radius: 0 8px 8px 0;
+  /*
+   * The gradient fades in from transparent, and that faded part is painted on
+   * top of the row. Hit testing uses the padding box, so without this the whole
+   * strip would silently swallow clicks meant for the row underneath — about
+   * the right third of a short session, and the timestamp with it. Only the
+   * buttons take the pointer; the transparent rest falls through to the
+   * stretched title target.
+   */
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--dsw-specific-sidebar-nav-item-hover) 20px
+  );
+}
+
+.rowActions .iconButton {
+  pointer-events: auto;
+}
+
+.projectRow:hover .rowActions,
+.sessionRow:hover .rowActions {
+  display: flex;
+}
+
+.sessionRowActive .rowActions {
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--dsw-specific-sidebar-nav-item-active) 20px
+  );
+}
+
+.revealMore {
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.revealMore:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.missing {
+  font-size: 10px;
+  color: var(--dsw-alias-label-dimmed);
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  padding: 0 5px;
+  flex: 0 0 auto;
+}
+
+.externalDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-brand-primary);
+  flex: 0 0 auto;
+}
+
+.emptyList {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary);
+  line-height: 1.5;
+}

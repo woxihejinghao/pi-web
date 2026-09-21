@@ -1,0 +1,129 @@
+/* Ported from dsh's ReasoningRow.module.css. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * A collapsed reasoning row is a fixed 24px regardless of how long the thinking
+ * text is. `contain: size layout` keeps a 50KB reasoning block from taking part
+ * in layout at all while it is closed, which matters because these rows sit in
+ * a list that re-renders on every streaming token.
+ */
+.root:not([data-expanded]) {
+  contain: size layout;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.row {
+  position: relative;
+  overflow: hidden;
+}
+
+.root[data-state="running"] .row::after {
+  content: "";
+  inset-block: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+  width: 300px;
+  animation: dsh-reasoning-row-sweep 2.6s ease-out infinite;
+  position: absolute;
+  left: 0;
+}
+
+@keyframes dsh-reasoning-row-sweep {
+  0% {
+    left: -300px;
+  }
+  90%,
+  100% {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root[data-state="running"] .row::after {
+    animation: none;
+  }
+}
+
+.leading {
+  flex-shrink: 0;
+}
+
+.chevron {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.title {
+  font-weight: 400;
+}
+
+.separator {
+  background: var(--dsw-alias-label-caption);
+  border-radius: 1px;
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+}
+
+.summary {
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: nowrap;
+  flex: auto;
+  overflow: hidden;
+}
+
+.summaryText {
+  text-overflow: ellipsis;
+  display: block;
+  overflow: hidden;
+}
+
+/* While streaming, show the tail of the text and let it spill off the left. */
+.summary[data-follow-end] {
+  justify-content: flex-end;
+  display: flex;
+}
+
+.summary[data-follow-end] .summaryText {
+  text-align: start;
+  text-overflow: clip;
+  flex: none;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+}
+
+/*
+ * The body is indented to the text column (leading box + its 6px gap + the 8px
+ * dot margins would put the title at ~22px), so expanded reasoning lines up
+ * under the "思考" label rather than under the icon.
+ */
+.thinkBody {
+  padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.visuallyHidden {
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+}

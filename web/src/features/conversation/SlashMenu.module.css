@@ -1,0 +1,83 @@
+.menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 320px;
+  padding: 4px;
+  border-radius: 20px;
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-elevation-float);
+  /* The menu itself never scrolls — the viewport does. That keeps the rounded
+   * corners clean and stops the rows from being squeezed by max-height. */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewport {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Section heading, e.g. 技能. */
+.sectionTitle {
+  flex: none;
+  min-height: 26px;
+  padding: 6px 10px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sectionTitle:not(:first-child) {
+  margin-top: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex: none;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.itemActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Name keeps its intrinsic width up to 40%; the description takes the rest
+ * and truncates, so a long description never pushes the name out of view. */
+.name {
+  flex: none;
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.description {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}

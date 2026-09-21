@@ -1,0 +1,239 @@
+/*
+ * Ported from dsh's TurnNavigator.module.css.
+ *
+ * Layout arithmetic is unchanged (spacing 10, inset 6, cap 420, band-centred),
+ * but the band comes from the measured height of our own scroll container
+ * rather than dsh's `100dvh - composer-height` guess. `--turn-rail-band` is set
+ * by MessageList from a ResizeObserver, and the calc below is only its fallback.
+ */
+
+.slot {
+  z-index: 7;
+  pointer-events: none;
+  height: 0;
+  position: sticky;
+  top: 0;
+}
+
+.frame {
+  --turn-rail-band: calc(100dvh - var(--turn-rail-bottom-inset, 152px));
+  --turn-preview-height: 100px;
+  top: calc(var(--turn-rail-band) / 2);
+  right: var(--turn-rail-right, 2px);
+  width: 28px;
+  /* A short session gets a short rail; a long one caps out and scrolls. */
+  height: min(
+    var(--turn-natural-height),
+    max(0px, calc(var(--turn-rail-band) - 64px)),
+    420px
+  );
+  cursor: pointer;
+  pointer-events: auto;
+  transition: height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  position: absolute;
+  transform: translateY(-50%);
+}
+
+.scroller {
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* The mask is what tells a clipped rail apart from one that simply ends. */
+.fadeTop {
+  mask-image: linear-gradient(#0000 0, #000 24px 100%);
+}
+
+.fadeBottom {
+  mask-image: linear-gradient(#000 0 calc(100% - 24px), #0000 100%);
+}
+
+.fadeTop.fadeBottom {
+  mask-image: linear-gradient(#0000 0, #000 24px calc(100% - 24px), #0000 100%);
+}
+
+.marks {
+  height: var(--turn-natural-height);
+  position: relative;
+}
+
+.markPosition {
+  top: calc(var(--turn-natural-position) + var(--turn-rail-inset));
+  height: 10px;
+  transition: top 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: 0.15s ease-out dsh-turn-mark-enter;
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+/*
+ * The hit area is 20px wide but the visible mark is a 12x2 hairline, so the
+ * button stays easy to click without the rail reading as a column of buttons.
+ */
+.mark {
+  cursor: pointer;
+  pointer-events: none;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  width: 20px;
+  padding: 0;
+  position: absolute;
+  inset: 0 0 0 auto;
+}
+
+.mark::before {
+  background: var(--dsw-alias-border-l4);
+  content: "";
+  border-radius: 2px;
+  width: 12px;
+  height: 2px;
+  transition:
+    width 0.14s,
+    background-color 0.14s;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.mark:hover::before {
+  background: var(--dsw-alias-label-tertiary);
+  width: 18px;
+}
+
+/* The turn the reader is looking at: longest and darkest. */
+.markActive::before {
+  background: var(--dsw-alias-label-primary);
+  width: 20px;
+}
+
+/* Hovering some other mark: a middle weight, so the active one still wins. */
+.markPreview::before {
+  background: var(--dsw-alias-label-tertiary);
+  width: 18px;
+}
+
+.markBusy::before {
+  animation: 1s ease-in-out infinite dsh-turn-mark-busy;
+}
+
+.mark:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.mark:focus-visible::before {
+  background: var(--dsw-alias-state-business-primary);
+  width: 20px;
+}
+
+/*
+ * The card is pinned in *scroller* space, not rail space: `--turn-scroll-top`
+ * subtracts the rail's own scroll so the card keeps pointing at its mark after
+ * the frame scrolls, and the clamp keeps it inside the band at both ends.
+ */
+.preview {
+  top: clamp(
+    0px,
+    calc(
+      var(--turn-natural-position) + var(--turn-rail-inset) - var(--turn-scroll-top, 0px) -
+        var(--turn-preview-height) / 2
+    ),
+    calc(100% - var(--turn-preview-height))
+  );
+  box-sizing: border-box;
+  width: min(300px, 100cqw - 120px);
+  max-height: var(--turn-preview-height);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-panel);
+  pointer-events: none;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: top 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: 0.12s ease-out dsh-turn-preview-enter;
+  position: absolute;
+  right: calc(100% + 10px);
+  overflow: hidden;
+}
+
+.previewPrompt,
+.previewResponse {
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  overflow: hidden;
+}
+
+.previewPrompt {
+  font: var(--dsw-font-xs-strong-13);
+  -webkit-line-clamp: 1;
+}
+
+.previewResponse {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-xxs-12);
+  -webkit-line-clamp: 3;
+  margin-top: 4px;
+}
+
+@keyframes dsh-turn-mark-enter {
+  0% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Slides in from the rail, so the card reads as attached to the mark. */
+@keyframes dsh-turn-preview-enter {
+  0% {
+    opacity: 0;
+    transform: translate(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0);
+  }
+}
+
+@keyframes dsh-turn-mark-busy {
+  0%,
+  to {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/*
+ * Below this width the transcript column reaches the rail's gutter, so the rail
+ * would sit on top of the text it is meant to index.
+ */
+@container (width <= 900px) {
+  .slot {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markPosition,
+  .mark::before,
+  .markBusy::before,
+  .preview {
+    transition: none;
+    animation: none;
+  }
+}

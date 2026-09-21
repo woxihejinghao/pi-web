@@ -1,0 +1,107 @@
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /*
+   * No block padding here on purpose. The rail's slot is a zero-height sticky
+   * child, so any padding on the scrollport shifts that slot down by the same
+   * amount and the rail stops being centred in the visible area. The padding
+   * lives on `.column` instead.
+   */
+  /* The rail's preview card sizes itself against the scrollport, and the rail
+     hides itself below 900px where it would overlap the transcript. */
+  container-type: inline-size;
+}
+
+.column {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 20px 24px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/*
+ * One turn = one anchor. The rail jumps to `[data-turn]` elements, and
+ * `turnAtLine` reads them to decide which mark is active, so the row must wrap
+ * the whole exchange rather than each message.
+ */
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.userTurn {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/*
+ * dsh's user bubble, rule for rule (`MessageItem.module.css`): the brand-tinted
+ * `--dsw-specific-bubble` pill, 22px corners, 10/16 padding, and a 22px line
+ * box. It has no border — the tint is what separates it from the transcript.
+ */
+.userBubble {
+  max-width: 86%;
+  padding: 10px 16px;
+  border-radius: 22px;
+  background: var(--dsw-specific-bubble);
+  /* The bubble is transcript content too, so it follows the size setting. */
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * A `/command` chip — what a skill call folds down to. Ported from dsh's
+ * `refChip` + `slashChip` pair: inline, 2px of side margin, brand blue, medium
+ * weight, code font. It carries no background of its own; the pill behind it is
+ * the bubble.
+ */
+.skillChip {
+  display: inline;
+  margin: 0 2px;
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  font-family: var(--dsw-font-markdown-code-font-family);
+}
+
+.assistantTurn {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/*
+ * Row spacing is dsh's chat flow gap. dsh never sets a `gap` on the column:
+ * every flow item after the first is pushed down by `--dsh-chat-flow-gap`
+ * (16px), which is the same distance between a thinking row, a tool row, and
+ * the answer below them. A flat 2px here left 26px between two 24px rows, so a
+ * turn's thinking and tool calls read as one solid block instead of a list.
+ */
+.assistantTurn > * + * {
+  margin-top: var(--dsh-chat-flow-gap, 16px);
+}
+
+/*
+ * The answer that closes a compacted process window is the end of that window
+ * rather than a new step, so dsh tightens the gap above it to 8px. The flag is
+ * only rendered in compact mode (see TurnBody), so an ordinary answer keeps the
+ * full 16px.
+ */
+.assistantTurn > [data-turn-process-answer] {
+  --dsh-chat-flow-gap: 8px;
+}

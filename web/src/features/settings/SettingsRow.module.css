@@ -1,0 +1,223 @@
+/**
+ * Settings row chrome, ported from dsh.
+ *
+ * Every row is the same shape — title, an optional one-line description, and a
+ * control pinned to the right — so the three controls this page needs (a select,
+ * the appearance cubes, a stepper) all share this file's `row`/`rowText`/`title`
+ * and only the control differs.
+ *
+ * The `0.5px` hairline under each row is dsh's separator; the last row in a
+ * section drops it (see SettingsPage.module.css).
+ */
+.row {
+  box-sizing: border-box;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+  padding-right: 48px;
+}
+
+.title {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.description {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.control {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * A row whose control sits *below* the title rather than beside it — the
+ * appearance cubes need the full column width to wrap into.
+ */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+/* --- select ------------------------------------------------------------- */
+
+/*
+ * A native <select> behind dsh's pill. The popup itself stays the platform's,
+ * which is a deliberate trade: the shell is custom for looks, but keyboard
+ * support, screen-reader announcements, and type-ahead come from the platform
+ * for free, and a hand-rolled menu would have to re-earn all three.
+ */
+.selectWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select {
+  appearance: none;
+  background: var(--dsw-alias-bg-module-platform);
+  height: 36px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  border: none;
+  border-radius: 18px;
+  /* Right padding clears the chevron, which is drawn on top. */
+  padding: 0 32px 0 14px;
+}
+
+.select:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.select:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.selectChevron {
+  position: absolute;
+  right: 12px;
+  pointer-events: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* --- appearance cubes --------------------------------------------------- */
+
+.cubeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The cubes are one-per-row targets only when the panel is narrow; 180px is the
+   flex basis dsh uses, so three fit across a comfortable desktop panel. */
+
+.themeCube {
+  box-sizing: border-box;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  background: none;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 180px;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 32px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.themeCube:hover:not(.selected) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Selected follows the stored preference, never the resolved colour: picking
+   "follow the system" must keep that cube lit even while the OS says light. */
+.selected {
+  background: var(--dsw-alias-bg-module-platform);
+  border-color: var(--dsw-static-neutral-bluish-400);
+}
+
+/* --- stepper ------------------------------------------------------------ */
+
+.stepper {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 72px;
+  height: 36px;
+  background: var(--dsw-alias-bg-module-platform);
+  border-radius: 18px;
+}
+
+.stepperValue {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  min-width: 18px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.stepperUnit {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/*
+ * The arrows are hidden until the control is hovered or focused. They stay in
+ * the layout (opacity, not `display`), so revealing them cannot reflow the row.
+ */
+.stepperArrows {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0;
+}
+
+.stepper:hover .stepperArrows,
+.stepper:focus-within .stepperArrows {
+  opacity: 1;
+}
+
+.stepperArrow {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 17px;
+  height: 12px;
+  padding: 0;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 75%, transparent);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  border: none;
+  border-radius: 3px;
+}
+
+.stepperArrow:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* The icon set has one chevron (down); the up button flips it. */
+.stepperArrowUp {
+  transform: rotate(180deg);
+}
+
+.stepperArrow:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pi-web-simple</title>
+    <!--
+      Inline so there is no second file to keep in sync with the sidebar's brand
+      mark, which is the same π on the same near-black square. Without any icon
+      link the browser still asks for /favicon.ico and logs a 404 on every load.
+      Dark ink is deliberate: the mark inverts in dark mode, but a favicon cannot
+      react to the page, and a dark tile reads correctly on both light and dark
+      browser chrome.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%230f1115'/%3E%3Ctext x='16' y='17' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' font-size='19' font-weight='600' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'%3E%CF%80%3C/text%3E%3C/svg%3E"
+    />
+    <script>
+      //
+      // Resolve the appearance preference before the first paint. The value is
+      // mirrored into localStorage whenever it changes, because the authoritative
+      // copy lives in the server's store file and reading it over HTTP would
+      // arrive a frame too late — long enough to flash a light shell on a dark
+      // display. `/api/settings` reconciles this snapshot once it lands.
+      //
+      (function () {
+        try {
+          var preference = localStorage.getItem("pi-web-simple:appearance") || "system";
+          var dark =
+            preference === "dark" ||
+            (preference === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.appearance = dark ? "dark" : "light";
+        } catch (error) {
+          // Private mode, disabled storage: fall through to the light default
+          // and let the reconciler in the app set it properly.
+          document.documentElement.dataset.appearance = "light";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

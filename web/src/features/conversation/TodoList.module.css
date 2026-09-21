@@ -1,0 +1,107 @@
+/*
+ * The task rows, shared by the transcript's todo row and the plan panel above
+ * the composer — dsh renders the same list in both places, and one implementation
+ * is what keeps them from drifting apart.
+ *
+ * The glyph colours and the 16px cell are dsh's `TodoPanel.module.css`, kept at
+ * dsh's own sizes rather than the content font tokens: the panel is chrome that
+ * frames the conversation, not part of it.
+ */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* 180px is dsh's panel height; the transcript's card raises it to match the
+     other tool cards, which get 260px for their output. */
+  max-height: var(--todo-list-max-height, 180px);
+  overflow-y: auto;
+  /* The list scrolls inside its own card, so the thumb takes the elevated
+     scrollbar rungs — dsh rebinds them on the surface, and the custom
+     properties inherit down to here. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.glyphCompleted {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.glyphPending {
+  color: var(--dsw-alias-label-caption);
+}
+
+.glyphProgress {
+  color: var(--dsw-alias-state-business-primary);
+  animation: todo-progress-spin 1s linear infinite;
+}
+
+@keyframes todo-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyphProgress {
+    animation: none;
+  }
+}
+
+/* Figma strip is single-line; long items ellipsize with no inline expand. */
+.content {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* pi's extra fields — dsh's items are a content string and nothing else. Both
+   are secondary: the subject is what the row is about. */
+.activeForm,
+.blocked {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-caption);
+}
+
+.blocked {
+  flex: none;
+}
+
+/*
+ * The `+N 项已完成` line stands in for rows this surface chose not to draw. It is
+ * indented to the text column, under the subjects it is about rather than under
+ * their glyphs.
+ */
+.more {
+  margin-left: 26px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-caption);
+}

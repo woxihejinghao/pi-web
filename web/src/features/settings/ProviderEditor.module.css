@@ -1,0 +1,242 @@
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.fieldHint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  border: none;
+  border-radius: 10px;
+}
+
+.input:read-only {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+select.input {
+  cursor: pointer;
+}
+
+.disclosure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.disclosure:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.caret {
+  transform: rotate(-90deg);
+}
+
+.caretOpen {
+  transform: none;
+}
+
+.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.modelsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modelsLabel {
+  /* Pushes the two buttons to the right edge of the row. */
+  flex: 1;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * Discovery failures read inline, next to the button that caused them: they are
+ * about the address and key in this form, not about the provider as a whole.
+ */
+.fetchError {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.modelsEmpty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.modelRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 36px;
+  gap: 8px;
+  align-items: center;
+}
+
+/*
+ * The advanced panel is tinted, so a field keeping the platform background
+ * would be the same colour as the panel and stop reading as an input. Every
+ * field inside it switches to the page background.
+ */
+.advanced .input {
+  background: var(--dsw-alias-bg-base);
+}
+
+.smallButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.smallButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.iconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.error {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ghostButton {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+}
+
+.ghostButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.ghostButton:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.primaryButton {
+  box-sizing: border-box;
+  min-width: 120px;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.primaryButton:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.primaryButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

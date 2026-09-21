@@ -1,0 +1,196 @@
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.description {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.searchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  pointer-events: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  /* Left padding clears the icon drawn on top. */
+  padding: 0 12px 0 32px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  border: none;
+  border-radius: 10px;
+}
+
+.search::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.count {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.linkButton {
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.linkButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.linkButton:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+/*
+ * The list scrolls rather than the dialog, so the title and the confirm button
+ * stay put while a provider with hundreds of models is browsed.
+ */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.itemPresent {
+  color: var(--dsw-alias-label-secondary);
+  cursor: default;
+}
+
+.itemPresent:hover {
+  background: none;
+}
+
+.itemId {
+  font-variant-numeric: tabular-nums;
+}
+
+.itemName {
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.itemTag {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.empty {
+  margin: 16px 0;
+  text-align: center;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ghostButton {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+}
+
+.ghostButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.primaryButton {
+  box-sizing: border-box;
+  min-width: 120px;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.primaryButton:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.primaryButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

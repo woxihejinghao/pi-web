@@ -1,0 +1,59 @@
+/*
+ * The action row sits under the message it belongs to and stays out of the way:
+ * secondary label colour, no background until hovered. dsh's own row is the
+ * same shape, which is what keeps a long transcript from looking striped.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  min-height: 24px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* User messages are right-aligned, so their actions are too. */
+.rowEnd {
+  justify-content: flex-end;
+}
+
+.action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  background: none;
+  cursor: pointer;
+}
+
+.action:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.statIcon {
+  flex: none;
+}
+
+/* The timestamp is the quietest thing in the row. */
+.time {
+  color: var(--dsw-alias-label-caption);
+}
+
+.copied {
+  color: var(--dsw-alias-state-success-primary);
+}

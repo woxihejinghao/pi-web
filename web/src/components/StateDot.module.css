@@ -1,0 +1,40 @@
+/* Ported from dsh's StateDot. */
+
+.dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+}
+
+.dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.1;
+}
+
+.dot::after {
+  content: "";
+  position: absolute;
+  inset: 20%;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dot[data-state="done"] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.dot[data-state="warning"] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.dot[data-state="error"] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dot[data-state="idle"] {
+  color: var(--dsw-alias-label-tertiary);
+}

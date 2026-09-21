@@ -1,0 +1,86 @@
+/*
+ * The plan strip above the composer, ported from dsh's `TodoPanel.module.css`.
+ *
+ * Geometry, in dsh's terms: the card is the composer's card width minus four
+ * dock insets (8px each), which lands 16px in from the input card on both sides,
+ * and it sits directly on the composer's own top padding. Nothing here reads the
+ * content font tokens — the panel is chrome framing the conversation, and dsh
+ * pins it at 13px for the same reason.
+ */
+
+.dock {
+  flex: 0 0 auto;
+  padding: 0 24px;
+}
+
+.root {
+  box-sizing: border-box;
+  overflow: hidden;
+  margin: 0 auto;
+  /* 780px composer card − 2 × 16px inset. */
+  max-width: 748px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-specific-tip);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.title {
+  flex: none;
+  font-size: 13px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/*
+ * dsh ships a second chevron glyph pointing up. This project has one, so the
+ * collapsed state rotates it — the same trick the font-size stepper uses.
+ */
+.chevronCollapsed {
+  transform: rotate(180deg);
+}

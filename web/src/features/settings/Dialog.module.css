@@ -1,0 +1,29 @@
+.mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.32);
+}
+
+/*
+ * Shadow, not border: dsh's `--dsw-elevation-float` carries a 0.5px ring that
+ * reads as a hairline outline on a dark backdrop. The ring is dropped there
+ * (see theme/index.css) and the surface is separated by the shadow alone.
+ */
+.dialog {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 520px;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-elevation-float);
+}

@@ -1,0 +1,79 @@
+/* Theme entry point — token sheets ported verbatim from deepseek-harness
+ * (packages/client/ui-theme/src/styles/). Import order mirrors dsh's cascade:
+ * base variables, static scale + semantic aliases, superellipse corners,
+ * elevation shadows + typography, scrollbars, code highlighting.
+ *
+ * Keep the `--dsw-*` prefix unchanged so this project stays diffable against
+ * the upstream design system. Feature components must consume semantic
+ * aliases (`--dsw-alias-*`) and never literal colors.
+ */
+@import "./base.css";
+@import "./design-platform.css";
+@import "./corner-shape.css";
+@import "./gradient-shadow-text.css";
+@import "./scrollbar.css";
+@import "./shiki.css";
+
+:root {
+  /* In dsh this is written by the theme bootstrap at runtime; the markdown
+   * typography tokens read it with a 14px fallback. Pin it so layout does not
+   * depend on a missing runtime value. The settings page writes it as an inline
+   * property on `documentElement`, which outranks this declaration.
+   *
+   * The derived sizes (--dsh-content-font-delta, -secondary, -delta-secondary)
+   * are declared in gradient-shadow-text.css on `body`, where dsh puts them.
+   * They are not repeated here. */
+  --dsh-content-font-size: 14px;
+
+  /* Every dsh elevation token starts with `0 0 0 0.5px`, a hairline stroke
+   * that reads as a border. Floating surfaces (menus, dialogs, toasts) should
+   * separate from the page with shadow alone, so define one without the
+   * stroke here instead of letting each component hard-code a shadow. */
+  --dsw-elevation-float:
+    0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 6px 20px 0 rgba(0, 0, 0, 0.06);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Presentation must not carry selection affordances the design system owns. */
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Keyboard focus ring for interactive controls. Text fields are excluded: the
+ * caret already shows focus, and a ring drawn just inside a composer card
+ * reads as a spurious inner border rather than a focus affordance. */
+:focus-visible {
+  outline: 2px solid var(--dsw-alias-link);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}

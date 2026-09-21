@@ -1,0 +1,61 @@
+/*
+ * Ported from dsh's ChatView.module.css (.EvIC1a_turnStatus).
+ *
+ * The effect is a gradient moving behind clipped text: the fill is transparent,
+ * the background is the two-tone blue, and `background-clip: text` punches the
+ * glyphs out of it. Sliding the background-position sweeps the light band across
+ * the word without touching layout.
+ */
+
+.turnStatus {
+  height: calc(26px + var(--dsh-content-font-delta, 0px));
+  font: var(--dsw-font-s-strong-14);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  white-space: nowrap;
+  background: linear-gradient(
+    90deg,
+    var(--dsw-static-deepseek-500) 0%,
+    var(--dsw-static-deepseek-500) 40%,
+    var(--dsw-static-deepseek-200) 50%,
+    var(--dsw-static-deepseek-500) 60%,
+    var(--dsw-static-deepseek-500) 100%
+  );
+  color: #0000;
+  -webkit-text-fill-color: transparent;
+  background-position: 100% 0;
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  flex: none;
+  align-self: flex-start;
+  align-items: center;
+  animation: dsh-turn-status-shimmer 1.8s linear infinite;
+  display: inline-flex;
+}
+
+@keyframes dsh-turn-status-shimmer {
+  to {
+    background-position: 0 0;
+  }
+}
+
+.turnStatusClock {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-caption);
+  -webkit-text-fill-color: var(--dsw-alias-label-caption);
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+/* Without the sweep the text would be invisible, so hand back a flat fill. */
+@media (prefers-reduced-motion: reduce) {
+  .turnStatus {
+    background-position: 0 0;
+    background-size: 100% 100%;
+    animation: none;
+  }
+}

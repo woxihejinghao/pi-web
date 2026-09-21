@@ -1,0 +1,121 @@
+/*
+ * The todo row's chrome mirrors ToolCallRow's collapsed line (same 24px row,
+ * same sweep while running, same summary treatment), but its expanded body is a
+ * task list rather than the parameters-and-output card: a todo call's payload is
+ * the list it produced, and dumping the call's JSON would show an id and a
+ * status where the reader wants the plan.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+}
+
+.root[data-state="running"] .row::after {
+  content: "";
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+  width: 300px;
+  animation: dsh-todo-row-sweep 2.6s ease-out infinite;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+
+@keyframes dsh-todo-row-sweep {
+  0% {
+    left: -300px;
+  }
+  90%,
+  100% {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root[data-state="running"] .row::after {
+    animation: none;
+  }
+}
+
+.title {
+  font-weight: 400;
+}
+
+.sep {
+  background: var(--dsw-alias-label-caption);
+  border-radius: 1px;
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+}
+
+.summary {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+  flex: auto;
+  overflow: hidden;
+}
+
+.summary[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/*
+ * The parallel-active count, in its own non-shrinking span. Appending it to the
+ * summary would make it the first thing a narrow row clips — exactly when it is
+ * the part that says several tasks are running.
+ */
+.extra {
+  flex: none;
+  margin-left: 6px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.chevron {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.visuallyHidden {
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+}
+
+/* --- expanded body --- */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 4px 4px;
+  padding: 12px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-markdown-code-block);
+  /* The expanded card shows the call's whole snapshot, so it gets the same
+     output budget as every other tool card rather than the panel's tighter strip. */
+  --todo-list-max-height: 260px;
+}
+
+.empty {
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 20px;
+  color: var(--dsw-alias-label-caption);
+}
