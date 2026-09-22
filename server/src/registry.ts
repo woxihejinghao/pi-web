@@ -4,6 +4,7 @@ import {
   type JsonAgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import { join, resolve } from "node:path";
+import type { Writable } from "node:stream";
 import { IDLE_TIMEOUT_MS, MAX_ACTIVE_SESSIONS, SESSION_DIR_OVERRIDE } from "./config.ts";
 
 /**
@@ -408,19 +409,27 @@ class SessionRegistry {
 export const registry = new SessionRegistry();
 
 /**
- * Send an arbitrary command to the pi process.
+ * Write one raw frame to the pi process's stdin.
  *
- * `RpcClient` implements the extension UI sub-protocol on the read side (every
- * non-response line is forwarded to `onEvent`), but exposes no public method
- * for writing an `extension_ui_response` back. This reaches into its private
- * `send()` until upstream provides an API.
+ * This exists for `extension_ui_response`, and it deliberately bypasses
+ * `RpcClient.send()`. That method is a request/response channel: it stamps its
+ * own request id over the caller's (so pi could never match the answer to the
+ * dialog that asked) and then waits for a reply line. `extension_ui_response`
+ * has no reply — it is fire-and-forget on pi's side — so going through `send()`
+ * leaves the caller waiting until a 30s timeout rejects it, with the dialog
+ * unanswered the whole time.
+ *
+ * `RpcClient` implements the UI sub-protocol on the read side (every
+ * non-response line reaches `onEvent`) but exposes no public write path, so this
+ * reaches into its private child process. The frame format is the same JSONL
+ * rule the client writes for its own commands.
  */
-export function sendRawCommand(client: RpcClient, command: unknown): Promise<void> {
-  const sender = (client as unknown as { send?: (data: unknown) => Promise<void> }).send;
-  if (typeof sender !== "function") {
-    throw new Error("RpcClient does not expose send(); cannot reply to extension UI");
+export function sendRawCommand(client: RpcClient, command: unknown): void {
+  const stdin = (client as unknown as { process?: { stdin?: Writable } }).process?.stdin;
+  if (!stdin || stdin.destroyed || !stdin.writable) {
+    throw new Error("pi process stdin is not writable; cannot answer the dialog");
   }
-  return sender.call(client, command);
+  stdin.write(`${JSON.stringify(command)}\n`);
 }
 
 export { SessionRegistry, DEFAULT_CLI_PATH };

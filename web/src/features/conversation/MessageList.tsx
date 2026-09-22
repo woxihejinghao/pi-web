@@ -25,6 +25,7 @@ import { displayUserText, parseSkillBlock, skillCommandLabel } from "./skill-blo
 import { groupTurns } from "./turn-rail.ts";
 import { textFromContent, type ConversationView, type ToolExecution } from "./useConversation.ts";
 import { useDelayedFlag } from "../../lib/use-delayed-flag.ts";
+import { Glyph } from "../../components/dsh-icons.tsx";
 import styles from "./MessageList.module.css";
 
 /** Workspace root and home dir, threaded down so paths can be shortened for display. */
@@ -42,6 +43,16 @@ const JUMP_TOP_OFFSET_PX = 24;
 const STICK_THRESHOLD_PX = 80;
 /** Same band dsh uses to decide whether a jump landed at the bottom. */
 const AT_BOTTOM_THRESHOLD_PX = 25;
+
+/** Distance from the bottom edge — the one number every decision here uses. */
+function distanceFromBottom(element: HTMLElement): number {
+  return element.scrollHeight - element.scrollTop - element.clientHeight;
+}
+
+/** dsh honours the OS setting for its jumps, and so does this one. */
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 function BlockView({
   block,
@@ -320,9 +331,25 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   // Follow new output only while the user is already at the bottom.
   const stickRef = useRef(true);
+  /**
+   * The same answer as `stickRef`, in the one form that can put a button on
+   * screen. `applyPinned` is the only writer, so the two cannot disagree.
+   */
+  const [pinned, setPinned] = useState(true);
+  /** A smooth jump is in flight; see `onScroll` for what that suppresses. */
+  const jumpingRef = useRef(false);
+  /** Previous offset, for telling a jump apart from a reader going back up. */
+  const lastTopRef = useRef(0);
   // A disk-backed switch finishes in ~100ms, so the hint only appears if the
   // load is genuinely slow.
   const showLoading = useDelayedFlag(view.loading);
+
+  const applyPinned = useCallback((value: boolean): void => {
+    stickRef.current = value;
+    // React bails out when a state update would not change the value, so the
+    // scroll handler can call this on every event for free.
+    setPinned(value);
+  }, []);
 
   const [activeTurn, setActiveTurn] = useState<number | null>(null);
   const [bandHeight, setBandHeight] = useState<number | null>(null);
@@ -387,15 +414,83 @@ export function MessageList({
 
   useEffect(() => {
     const element = scrollRef.current;
-    if (!element || !stickRef.current) return;
-    element.scrollTop = element.scrollHeight;
-  }, [view.messages, view.partial]);
+    if (!element) return;
+    if (stickRef.current) {
+      element.scrollTop = element.scrollHeight;
+      return;
+    }
+    // Not following — but the content can still move the reader. Switching to a
+    // session shorter than the scrollport leaves the viewport parked at the
+    // bottom, and the button that was on screen a moment ago now points at
+    // nothing. Measuring here reaches the same answer the scroll handler would,
+    // so the ask and the button cannot drift apart.
+    applyPinned(distanceFromBottom(element) < STICK_THRESHOLD_PX);
+  }, [view.messages, view.partial, applyPinned]);
+
+  /**
+   * What actually ends a jump.
+   *
+   * `scrollend` is the browser saying the scroll is over: it fires for a smooth
+   * scroll that a wheel interrupted, and for one that gave up because the bottom
+   * moved while it was on its way (a streaming turn grows the transcript faster
+   * than the animation closes the gap). No sequence of offsets says either of
+   * those things — they just stop.
+   */
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element === null) return;
+    const end = (): void => {
+      jumpingRef.current = false;
+    };
+    element.addEventListener("scrollend", end);
+    return () => element.removeEventListener("scrollend", end);
+  }, []);
 
   const onScroll = (): void => {
     const element = scrollRef.current;
     if (!element) return;
-    stickRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX;
+    const distance = distanceFromBottom(element);
+
+    if (jumpingRef.current) {
+      // A jump passes through every offset on the way down. Judging "pinned"
+      // from those would put the button back on screen mid-flight and unpin the
+      // follow — the reader asked to end up at the bottom, not to be abandoned
+      // halfway there. Both checks below are the fallback for a browser without
+      // `scrollend`: landing, or moving backwards because a wheel or the
+      // scrollbar took over.
+      if (distance <= AT_BOTTOM_THRESHOLD_PX || element.scrollTop < lastTopRef.current) {
+        jumpingRef.current = false;
+      }
+    }
+    // Still in flight: the pin is whatever the jump decided. Ended — here, or
+    // by `scrollend` before this event — means this offset is a real one, and
+    // the very event that ended it is the one that has to judge it: a reader
+    // who wheels away mid-jump ends the jump and leaves the button needed in
+    // the same gesture.
+    if (!jumpingRef.current) applyPinned(distance < STICK_THRESHOLD_PX);
+
+    lastTopRef.current = element.scrollTop;
     scheduleActiveTurn();
+  };
+
+  /**
+   * The jump button's action: go to the end, and keep going.
+   *
+   * Pinned before the scroll rather than after it, because arriving is not the
+   * point. A turn that streams its next delta mid-animation would otherwise find
+   * the reader unpinned and leave them wherever the animation happened to be —
+   * the one thing they just asked not to happen.
+   */
+  const jumpToBottom = (): void => {
+    const element = scrollRef.current;
+    if (element === null) return;
+    applyPinned(true);
+    jumpingRef.current = true;
+    lastTopRef.current = element.scrollTop;
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
   };
 
   /**
@@ -414,10 +509,9 @@ export function MessageList({
     scroller.scrollTop += rowTop - JUMP_TOP_OFFSET_PX;
     // Landing at the end should resume following; landing mid-transcript must
     // not, or the next streaming delta would yank the reader back down.
-    stickRef.current =
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= AT_BOTTOM_THRESHOLD_PX;
+    applyPinned(distanceFromBottom(scroller) <= AT_BOTTOM_THRESHOLD_PX);
     setActiveTurn(turn);
-  }, []);
+  }, [applyPinned]);
 
   const results = useMemo(() => {
     // The whole tool result, not just its content: the todo row reads `details`
@@ -541,6 +635,27 @@ export function MessageList({
         {/* A retry is a deliberate pause, so it replaces the status line rather
             than stacking under it. */}
         {view.retry ? <RetryNotice retry={view.retry} /> : null}
+      </div>
+
+      {/*
+        The jump-to-bottom button, in the slot form the rail above already uses:
+        zero-height and sticky to the scrollport's bottom edge, with the disc
+        absolutely placed inside it. Wrapping the scrollport in a `position:
+        relative` box would say the same thing, but it would also re-parent the
+        rail — and the rail's arithmetic is written against this element.
+      */}
+      <div className={styles.jumpSlot}>
+        {pinned ? null : (
+          <button
+            type="button"
+            className={styles.jump}
+            aria-label="滚动到底部"
+            title="滚动到底部"
+            onClick={jumpToBottom}
+          >
+            <Glyph name="chevronDown" size={20} />
+          </button>
+        )}
       </div>
     </div>
   );

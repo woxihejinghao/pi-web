@@ -1,0 +1,221 @@
+{
+  "at": "2026-09-22T07:16:28.571Z",
+  "sessions": 8,
+  "turns": 40,
+  "eventsPerSession": 2000,
+  "currentSession": "/Users/milan/Desktop/pi-web-simple/bench/.bench-tmp/frontend-20625/sessions/--Users-milan-Desktop-pi-web-simple-bench-.bench-tmp-frontend-20625-project--/bench-07.jsonl",
+  "records": [
+    {
+      "label": "0: 基线（无 streaming）",
+      "sessionsStreaming": 0,
+      "currentSessionStreaming": false,
+      "messageUpdates": 0,
+      "agentSettled": 0,
+      "reactCommits": 0,
+      "commitsPerEvent": 0,
+      "spanMs": 0,
+      "gapP50": 0,
+      "gapP95": 0,
+      "gapMax": 0,
+      "longTaskCount": 0,
+      "longTaskTotalMs": 0,
+      "longTaskMaxMs": 0,
+      "frames": 152,
+      "jankyFrames": 0,
+      "jankyPercent": 0,
+      "busyMs": 40,
+      "idleMs": 2491,
+      "taskMs": 43,
+      "scriptMs": 1,
+      "layoutMs": 0,
+      "styleMs": 0,
+      "busyMsPerEvent": 0,
+      "benchCpuMs": 7.363,
+      "appStoreUpdates": null,
+      "renderedStreamingText": false,
+      "topFunctions": [
+        {
+          "key": "(program) @ (vm):0",
+          "ms": 38
+        },
+        {
+          "key": "tick @ (vm):101",
+          "ms": 1
+        },
+        {
+          "key": "(anonymous) @ (vm):0",
+          "ms": 0
+        },
+        {
+          "key": "requestAnimationFrame @ (vm):0",
+          "ms": 0
+        }
+      ]
+    },
+    {
+      "label": "A: 仅当前会话 streaming",
+      "sessionsStreaming": 1,
+      "currentSessionStreaming": true,
+      "messageUpdates": 2000,
+      "agentSettled": 1,
+      "reactCommits": 186,
+      "commitsPerEvent": 0.093,
+      "spanMs": 2316,
+      "gapP50": 0,
+      "gapP95": 12,
+      "gapMax": 23,
+      "longTaskCount": 0,
+      "longTaskTotalMs": 0,
+      "longTaskMaxMs": 0,
+      "frames": 233,
+      "jankyFrames": 0,
+      "jankyPercent": 0,
+      "busyMs": 2386,
+      "idleMs": 1506,
+      "taskMs": 2393,
+      "scriptMs": 1612,
+      "layoutMs": 310,
+      "styleMs": 96,
+      "busyMsPerEvent": 1.193,
+      "benchCpuMs": 173.851,
+      "appStoreUpdates": null,
+      "renderedStreamingText": true,
+      "topFunctions": [
+        {
+          "key": "(program) @ (vm):0",
+          "ms": 399
+        },
+        {
+          "key": "pm @ index-DRoSx8LS.js:235",
+          "ms": 314
+        },
+        {
+          "key": "i9 @ index-DRoSx8LS.js:51",
+          "ms": 163
+        },
+        {
+          "key": "(anonymous) @ index-DRoSx8LS.js:237",
+          "ms": 92
+        },
+        {
+          "key": "$ @ index-DRoSx8LS.js:51",
+          "ms": 78
+        },
+        {
+          "key": "T @ index-DRoSx8LS.js:51",
+          "ms": 69
+        }
+      ]
+    },
+    {
+      "label": "B: 8 会话并发（含当前会话）",
+      "sessionsStreaming": 8,
+      "currentSessionStreaming": true,
+      "messageUpdates": 16000,
+      "agentSettled": 8,
+      "reactCommits": 113,
+      "commitsPerEvent": 0.0070625,
+      "spanMs": 2368,
+      "gapP50": 0,
+      "gapP95": 0,
+      "gapMax": 29,
+      "longTaskCount": 0,
+      "longTaskTotalMs": 0,
+      "longTaskMaxMs": 0,
+      "frames": 213,
+      "jankyFrames": 0,
+      "jankyPercent": 0,
+      "busyMs": 2379,
+      "idleMs": 1607,
+      "taskMs": 2386,
+      "scriptMs": 1572,
+      "layoutMs": 392,
+      "styleMs": 62,
+      "busyMsPerEvent": 0.1486875,
+      "benchCpuMs": 369.777,
+      "appStoreUpdates": null,
+      "renderedStreamingText": true,
+      "topFunctions": [
+        {
+          "key": "pm @ index-DRoSx8LS.js:235",
+          "ms": 412
+        },
+        {
+          "key": "(program) @ (vm):0",
+          "ms": 411
+        },
+        {
+          "key": "$ @ index-DRoSx8LS.js:51",
+          "ms": 139
+        },
+        {
+          "key": "n @ index-DRoSx8LS.js:51",
+          "ms": 127
+        },
+        {
+          "key": "i9 @ index-DRoSx8LS.js:51",
+          "ms": 97
+        },
+        {
+          "key": "N @ index-DRoSx8LS.js:51",
+          "ms": 90
+        }
+      ]
+    },
+    {
+      "label": "C: 7 个非当前会话并发（当前空闲）",
+      "sessionsStreaming": 7,
+      "currentSessionStreaming": false,
+      "messageUpdates": 14000,
+      "agentSettled": 7,
+      "reactCommits": 0,
+      "commitsPerEvent": 0,
+      "spanMs": 2255,
+      "gapP50": 0,
+      "gapP95": 1,
+      "gapMax": 5,
+      "longTaskCount": 0,
+      "longTaskTotalMs": 0,
+      "longTaskMaxMs": 0,
+      "frames": 228,
+      "jankyFrames": 0,
+      "jankyPercent": 0,
+      "busyMs": 131,
+      "idleMs": 3676,
+      "taskMs": 153,
+      "scriptMs": 43,
+      "layoutMs": 0,
+      "styleMs": 0,
+      "busyMsPerEvent": 0.009357142857142857,
+      "benchCpuMs": 238.694,
+      "appStoreUpdates": null,
+      "renderedStreamingText": true,
+      "topFunctions": [
+        {
+          "key": "(program) @ (vm):0",
+          "ms": 100
+        },
+        {
+          "key": "(anonymous) @ (vm):62",
+          "ms": 17
+        },
+        {
+          "key": "Zl @ index-DRoSx8LS.js:241",
+          "ms": 6
+        },
+        {
+          "key": "(anonymous) @ (vm):0",
+          "ms": 3
+        },
+        {
+          "key": "emit @ index-DRoSx8LS.js:50",
+          "ms": 2
+        },
+        {
+          "key": "requestAnimationFrame @ (vm):0",
+          "ms": 2
+        }
+      ]
+    }
+  ]
+}

@@ -224,6 +224,55 @@ export async function readProviders(): Promise<ModelProviderView[]> {
   return out;
 }
 
+/**
+ * One model definition, as far as the composer needs it.
+ *
+ * The settings page renders only `id` and `name`, but the input bar also wants
+ * the model's display name and its `contextWindow` — so this keeps the two
+ * fields the editor deliberately drops. Everything else in the entry
+ * (`cost`, `maxTokens`, `compat`, …) is still ignored here.
+ */
+export interface CatalogModel {
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+}
+
+/** `models.json`'s model list, keyed by provider id then model id. */
+export type ModelCatalog = Map<string, Map<string, CatalogModel>>;
+
+/**
+ * The provider/model definitions on disk, keyed for lookup.
+ *
+ * This is the same file and the same entries pi resolves at startup, which is
+ * what makes it usable for the model the composer shows before any process
+ * exists: the session's JSONL records a `model_change` entry, and this turns
+ * that pair back into a name and a context window. Reading it is not inventing a
+ * catalog — a model missing from here is one pi would not know either.
+ */
+export async function readModelCatalog(): Promise<ModelCatalog> {
+  const models = await readJsonFile(modelsPath());
+  const providers = isRecord(models.providers) ? models.providers : {};
+  const catalog: ModelCatalog = new Map();
+  for (const [providerId, value] of Object.entries(providers)) {
+    if (!isRecord(value)) continue;
+    const list = Array.isArray(value.models) ? value.models : [];
+    const entries = new Map<string, CatalogModel>();
+    for (const raw of list) {
+      if (!isRecord(raw) || typeof raw.id !== "string") continue;
+      entries.set(raw.id, {
+        id: raw.id,
+        ...(typeof raw.name === "string" ? { name: raw.name } : {}),
+        ...(typeof raw.contextWindow === "number" ? { contextWindow: raw.contextWindow } : {}),
+        ...(typeof raw.reasoning === "boolean" ? { reasoning: raw.reasoning } : {}),
+      });
+    }
+    catalog.set(providerId, entries);
+  }
+  return catalog;
+}
+
 export interface ProviderInput {
   id: string;
   name?: string;

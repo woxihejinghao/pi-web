@@ -1,4 +1,7 @@
-/* Scrollbar skin: the sole consumer of the four --dsw-alias-scrollbar-*
+/* Ported from deepseek-harness (MIT — Copyright (c) 2026 DeepSeek); see
+ * THIRD_PARTY_NOTICES.md.
+ *
+ * Scrollbar skin: the sole consumer of the four --dsw-alias-scrollbar-*
  * tokens. Without it every scrolling region renders the UA scrollbar, which
  * ignores the theme — a light native bar over the dark palette.
  *

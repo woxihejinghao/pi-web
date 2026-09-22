@@ -16,7 +16,7 @@
  * so both surfaces read the same source.
  */
 
-import type { AgentMessage, ToolResultMessage } from "../../lib/types.ts";
+import type { AgentMessage, TodoView, ToolResultMessage } from "../../lib/types.ts";
 
 export type TodoStatus = "pending" | "in_progress" | "completed" | "deleted";
 
@@ -128,6 +128,26 @@ export function projectTodos(messages: readonly AgentMessage[]): TodoItem[] {
  */
 export function visibleTodos(todos: readonly TodoItem[]): TodoItem[] {
   return todos.filter((task) => task.status !== "deleted");
+}
+
+/**
+ * Whether the panel should offer to install the task-list extension.
+ *
+ * There are four ways to answer "no", and they are not the same thing:
+ *
+ * - the app has not heard back yet (`view === null`), so the panel waits rather
+ *   than flashing a notice at every reload;
+ * - the read broke (`error`), and a broken read is not a missing package —
+ *   offering an install could re-install something already present;
+ * - the package is in pi's settings but disabled, which is the user's own
+ *   choice to undo in the plugins section, not a missing dependency;
+ * - the user closed the notice, which is why this preference exists at all.
+ *
+ * Only a clean "not installed" reaches the install offer.
+ */
+export function shouldOfferTodoInstall(view: TodoView | null, dismissed: boolean): boolean {
+  if (dismissed || view === null || view.error !== null) return false;
+  return !view.available && !view.installed;
 }
 
 /**

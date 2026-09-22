@@ -1,9 +1,27 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { SendIcon, StopIcon } from "../../components/icons.tsx";
-import type { BusySendBehavior, SlashCommand } from "../../lib/types.ts";
+import type { BusySendBehavior, ComposerContext, ComposerModel, SlashCommand } from "../../lib/types.ts";
+import { ContextMeter } from "./ContextMeter.tsx";
+import { ModelPicker } from "./ModelPicker.tsx";
 import { SlashMenu } from "./SlashMenu.tsx";
 import { useSlashCompletion } from "./useSlashCompletion.ts";
 import styles from "./Composer.module.css";
+
+/**
+ * The session's model, switchable list and context figures, supplied by
+ * `useComposerState`. One object rather than six props because every field
+ * describes the same thing, and the group is omitted only when there is no
+ * session to describe.
+ */
+export interface ComposerSession {
+  model: ComposerModel | null;
+  models: ComposerModel[] | null;
+  context: ComposerContext | null;
+  /** A live fetch is in flight (the cold start that learns the model list). */
+  loading: boolean;
+  onRequestLive(): void;
+  onSelectModel(provider: string, id: string): void;
+}
 
 export interface ComposerProps {
   isStreaming: boolean;
@@ -12,6 +30,8 @@ export interface ComposerProps {
   commands?: SlashCommand[];
   /** Default delivery while the agent runs; Cmd/Ctrl+Enter uses the other one. */
   busySendBehavior?: BusySendBehavior;
+  /** Model and context controls; omitted when no session can be asked. */
+  session?: ComposerSession;
   onSend(text: string, mode: "prompt" | "steer" | "followUp"): Promise<boolean>;
   onAbort(): void;
 }
@@ -33,12 +53,17 @@ function deliveryOf(behavior: BusySendBehavior): "steer" | "followUp" {
  *
  * Typing `/` opens a completion menu. Skill commands and prompt templates are
  * expanded by pi itself, so a completed command is sent as plain text.
+ *
+ * To the right of the input sit the session's model picker and context ring.
+ * Both describe the session the text is about to be sent into, so they belong
+ * to the input rather than to the transcript above it.
  */
 export function Composer({
   isStreaming,
   disabled,
   commands = [],
   busySendBehavior = "queue",
+  session,
   onSend,
   onAbort,
 }: ComposerProps) {
@@ -145,10 +170,30 @@ export function Composer({
                 追问
               </button>
             </div>
-          ) : (
-            <span className={styles.spacer} />
-          )}
+          ) : null}
 
+          <span className={styles.spacer} />
+
+          {session ? (
+            <ModelPicker
+              model={session.model}
+              models={session.models}
+              loading={session.loading}
+              onRequestModels={session.onRequestLive}
+              onSelect={session.onSelectModel}
+            />
+          ) : null}
+
+          {session ? (
+            <ContextMeter context={session.context} onRequestLive={session.onRequestLive} />
+          ) : null}
+
+          {/*
+           * One button, two jobs: while the agent runs it stops the turn, and
+           * the resting state sends. Rendering only one of the two keeps the
+           * input from carrying a second disc that is dead when the turn ends.
+           * A message typed mid-turn still goes out on Enter.
+           */}
           {isStreaming ? (
             <button
               type="button"
@@ -159,18 +204,18 @@ export function Composer({
             >
               <StopIcon />
             </button>
-          ) : null}
-
-          <button
-            type="button"
-            className={styles.send}
-            disabled={disabled || sending || text.trim().length === 0}
-            onClick={() => void submit()}
-            aria-label="发送"
-            title="发送"
-          >
-            <SendIcon />
-          </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.send}
+              disabled={disabled || sending || text.trim().length === 0}
+              onClick={() => void submit()}
+              aria-label="发送"
+              title="发送"
+            >
+              <SendIcon />
+            </button>
+          )}
         </div>
       </div>
     </div>

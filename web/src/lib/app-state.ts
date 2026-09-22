@@ -3,13 +3,19 @@ import { createEmitter, createStore, type Emitter, type Store } from "./store.ts
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
   AgentSettings,
-  ExtensionUiRequest,
+  ExtensionsView,
+  McpProbeResult,
+  McpServerDraft,
+  McpView,
   ModelsView,
+  PendingUiDialog,
   ProviderInput,
   SessionEvent,
   ProjectView,
   SessionView,
   SlashCommand,
+  TodoView,
+  UpdatesView,
   WebSettings,
 } from "./types.ts";
 
@@ -20,16 +26,14 @@ import type {
  */
 const DEFAULT_SETTINGS: WebSettings = {
   appearance: "system",
-  contentFontSize: 14,
+  contentFontSize: 15,
   transcriptDisplay: "normal",
   busySendBehavior: "queue",
+  todoNoticeDismissed: false,
 };
 
 /** A blocking extension dialog waiting on the user. */
-export interface PendingUiRequest {
-  sessionPath: string;
-  request: ExtensionUiRequest;
-}
+export type PendingUiRequest = PendingUiDialog;
 
 /**
  * Marks a session that only exists in the browser so far.
@@ -64,8 +68,13 @@ export interface AppState {
   activeSessions: string[];
   /** Sessions another process appended to while we held them. */
   externalChanged: Record<string, true>;
-  /** Extension dialog awaiting an answer; blocks that pi process until sent. */
-  pendingUiRequest: PendingUiRequest | null;
+  /**
+   * Extension dialogs awaiting an answer, oldest first; each blocks its own pi
+   * process until answered. A queue rather than a single slot because two open
+   * sessions can be blocked at once — a later request must not erase an earlier
+   * one the user has not seen yet.
+   */
+  pendingUiRequests: PendingUiRequest[];
   /** Text submitted before its session finished spawning. */
   pendingPrompt: PendingPrompt | null;
   /** Projects whose session list is expanded in the sidebar. */
@@ -91,6 +100,29 @@ export interface AppState {
    * state that reads as "you have no providers".
    */
   models: ModelsView | null;
+  /**
+   * Extension inventory for the workspace the page last asked about. `null`
+   * means not loaded yet, same reasoning as `models`.
+   */
+  extensions: ExtensionsView | null;
+  /**
+   * Whether the task-list extension is in place, for the workspace last asked
+   * about. `null` means not loaded yet — the panel shows neither tasks nor a
+   * notice until the answer arrives.
+   */
+  todo: TodoView | null;
+  /** MCP inventory for the workspace the page last asked about. */
+  mcp: McpView | null;
+  /**
+   * Update notices, keyed by workspace path (empty string = user scope).
+   *
+   * Keyed rather than singular because two different questions are asked at
+   * once: the settings and plugins pages resolve the *selected project* (a
+   * project-local package can be behind while the global ones are current),
+   * while the sidebar badge reads the user-scope answer loaded at bootstrap.
+   * A single slot would let one overwrite the other.
+   */
+  updates: Record<string, UpdatesView>;
 }
 
 const initialState: AppState = {
@@ -103,7 +135,7 @@ const initialState: AppState = {
   selectedSessionPath: null,
   activeSessions: [],
   externalChanged: {},
-  pendingUiRequest: null,
+  pendingUiRequests: [],
   pendingPrompt: null,
   expandedProjects: {},
   revealedSessions: {},
@@ -115,6 +147,10 @@ const initialState: AppState = {
   agentSettings: {},
   settingsOpen: false,
   models: null,
+  extensions: null,
+  todo: null,
+  mcp: null,
+  updates: {},
 };
 
 /** In-flight spawn for the draft the user is currently looking at. */
@@ -148,6 +184,13 @@ export const actions = {
     // Same reasoning: the shell already painted with defaults that match the
     // server's, so preferences reconcile in place instead of gating the view.
     void actions.loadSettings();
+    // Fire-and-forget too: this only decides whether the settings entry shows
+    // an update dot, and nothing on first paint should wait on the network.
+    void actions.loadUpdates(null);
+    // Dialogs opened before this page loaded are still pending server-side, and
+    // the SSE stream carries no history — without this they would never be
+    // rendered, and their pi processes would wait on nobody.
+    void actions.loadPendingUiRequests();
     try {
       const projects = await api.listProjects();
       appStore.update((state) => ({ ...state, projects, status: "ready" }));
@@ -277,6 +320,221 @@ export const actions = {
   async deleteProvider(id: string): Promise<void> {
     const models = await api.deleteProvider(id);
     appStore.update((state) => ({ ...state, models }));
+  },
+
+  // --- extensions -----------------------------------------------------------
+
+  /**
+   * Load the extension inventory for a workspace (null = user scope only).
+   *
+   * A resolution failure still resolves — the server reports it in `error` — so
+   * the page can render its own failure state instead of an empty list that
+   * would read as "nothing installed".
+   */
+  async loadExtensions(projectPath: string | null): Promise<void> {
+    try {
+      const extensions = await api.getExtensions(projectPath);
+      appStore.update((state) => ({ ...state, extensions }));
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  /**
+   * Toggle one extension. The server answers with the re-resolved list, which
+   * is the only honest source here: the pattern it wrote is what pi will read,
+   * and guessing the new state client-side could disagree with it.
+   */
+  async setExtensionEnabled(
+    projectPath: string | null,
+    item: { path: string; name: string },
+    enabled: boolean,
+  ): Promise<void> {
+    try {
+      const extensions = await api.setExtensionEnabled({
+        projectPath,
+        path: item.path,
+        enabled,
+      });
+      appStore.update((state) => ({ ...state, extensions }));
+      // Extensions are loaded when a pi process starts, and the server retires
+      // every resident one after this write — so the change lands on the next
+      // message, not on the next app launch.
+      actions.setNotice(`${enabled ? "已启用" : "已停用"} ${item.name}，下一条消息生效。`);
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  // --- the task-list extension ----------------------------------------------
+
+  /**
+   * Ask whether the extension behind pi's `todo` tool would load for this
+   * workspace. A failure still resolves (the server reports broken reads as
+   * `error`), so the panel can stay silent instead of offering an install for
+   * something that may already be installed.
+   */
+  async loadTodo(projectPath: string | null): Promise<void> {
+    try {
+      const todo = await api.getTodo(projectPath);
+      appStore.update((state) => ({ ...state, todo }));
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  /**
+   * Install that extension through pi's own package manager.
+   *
+   * Rethrows instead of routing through `setNotice`: this runs from the notice
+   * itself, which has to stay put and show the reason inline when npm fails —
+   * and it takes long enough that a banner behind it would be missed.
+   */
+  async installTodoExtension(projectPath: string | null): Promise<void> {
+    const todo = await api.installTodo(projectPath);
+    appStore.update((state) => ({ ...state, todo }));
+    actions.setNotice("已安装 @juicesharp/rpiv-todo，下一条消息生效。");
+  },
+
+  /**
+   * Close the panel's install notice. Persisted because it is a preference
+   * this UI owns; the same install is always available in the plugins section.
+   */
+  async dismissTodoNotice(): Promise<void> {
+    await actions.updateSettings({ todoNoticeDismissed: true });
+  },
+
+  // --- update notices ---------------------------------------------------------
+
+  /**
+   * Read both update notices for a workspace (null = user scope only).
+   *
+   * A failed check still resolves — the server reports it inside the payload —
+   * so the page can say "could not check" instead of looking up to date. The
+   * answer is stored per workspace so the sidebar badge (user scope) and the
+   * settings page (selected project) do not overwrite each other.
+   */
+  async loadUpdates(
+    projectPath: string | null,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
+    try {
+      const updates = await api.getUpdates(projectPath, { refresh: options.force });
+      appStore.update((state) => ({
+        ...state,
+        updates: { ...state.updates, [projectPath ?? ""]: updates },
+      }));
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  /**
+   * Update one installed package through pi's own package manager.
+   *
+   * Rethrows instead of routing through `setNotice`: this runs from the row
+   * that started it, which has to stay put and show progress and the reason for
+   * a failure — and npm can take long enough that a banner would be missed.
+   */
+  async updateExtension(projectPath: string | null, source: string): Promise<void> {
+    const updates = await api.updateExtension({ projectPath, source });
+    appStore.update((state) => ({
+      ...state,
+      updates: { ...state.updates, [projectPath ?? ""]: updates },
+    }));
+  },
+
+  // --- MCP -------------------------------------------------------------
+
+  /** Load the MCP inventory for a workspace (null = user scope only). */
+  async loadMcp(projectPath: string | null): Promise<void> {
+    try {
+      const mcp = await api.getMcp(projectPath);
+      appStore.update((state) => ({ ...state, mcp }));
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  /**
+   * The three writes below rethrow instead of routing through `setNotice`: they
+   * run from dialogs that must stay open and show the reason inline when the
+   * server rejects them.
+   */
+  async saveMcpServer(input: {
+    projectPath: string | null;
+    scope: "global" | "project";
+    originalName: string | null;
+    draft: McpServerDraft;
+  }): Promise<void> {
+    const mcp = await api.saveMcpServer(input);
+    appStore.update((state) => ({ ...state, mcp }));
+    actions.setNotice(`已保存 ${input.draft.name}，下一条消息生效。`);
+  },
+
+  async deleteMcpServer(projectPath: string | null, name: string): Promise<void> {
+    const mcp = await api.deleteMcpServer({ projectPath, name });
+    appStore.update((state) => ({ ...state, mcp }));
+    actions.setNotice(`已删除 ${name}，下一条消息生效。`);
+  },
+
+  async importMcpConfigs(projectPath: string | null, kinds: string[]): Promise<void> {
+    const mcp = await api.importMcpConfigs({ projectPath, kinds });
+    appStore.update((state) => ({ ...state, mcp }));
+    actions.setNotice(`已导入 ${kinds.join("、")} 的 MCP 配置，重启后生效。`);
+  },
+
+  /**
+   * Enable or disable one server. This writes the workspace override, so it
+   * reports the same thing the adapter's `/mcp disable` does.
+   */
+  async setMcpServerEnabled(
+    projectPath: string | null,
+    name: string,
+    enabled: boolean,
+  ): Promise<void> {
+    try {
+      const mcp = await api.setMcpServerEnabled({ projectPath, name, enabled });
+      appStore.update((state) => ({ ...state, mcp }));
+      actions.setNotice(`${enabled ? "已启用" : "已停用"} ${name}，下一条消息生效。`);
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  /**
+   * Connect to one server. The result is returned rather than stored: it
+   * belongs to the card that asked for it, and it goes stale the moment the
+   * definition is edited.
+   */
+  async checkMcpServer(projectPath: string | null, name: string): Promise<McpProbeResult> {
+    return await api.checkMcpServer({ projectPath, name });
+  },
+
+  async restartMcp(): Promise<void> {
+    try {
+      const result = await api.restartMcp();
+      actions.setNotice(
+        result.closed === 0
+          ? "没有正在运行的会话进程。"
+          : `已重启 ${result.closed} 个会话进程，下一条消息会重新加载 MCP。`,
+      );
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  /**
+   * Install `pi-mcp-adapter`.
+   *
+   * Rethrows instead of routing through `setNotice`: this is a long request
+   * with a real chance of failing, and the message belongs next to the button
+   * that started it rather than in a banner the user may have scrolled past.
+   */
+  async installMcpAdapter(projectPath: string | null): Promise<void> {
+    const mcp = await api.installMcpAdapter(projectPath);
+    appStore.update((state) => ({ ...state, mcp }));
+    actions.setNotice("已安装 pi-mcp-adapter。");
   },
 
   async refreshProjects(): Promise<void> {
@@ -434,6 +692,29 @@ export const actions = {
   },
 
   /**
+   * Delete a session file. pi's storage is the only copy, so this is the one
+   * session action that can lose work — the caller confirms first.
+   *
+   * The notice names which happened: `trash` means it is still recoverable
+   * from the system trash, `unlink` means it is gone for good.
+   */
+  async deleteSession(sessionPath: string): Promise<void> {
+    try {
+      const result = await api.deleteSession(sessionPath);
+      if (appStore.get().selectedSessionPath === sessionPath) actions.selectSession(null);
+      // The "changed by another process" dot is keyed by path too; a deleted
+      // session must not leave it behind for a future session at that path.
+      actions.clearExternalChanged(sessionPath);
+      await actions.refreshProjects();
+      actions.setNotice(
+        result.method === "trash" ? "已将会话移到废纸篓。" : "已永久删除会话。",
+      );
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
+  },
+
+  /**
    * Adopt a fresh session locally, then spawn its pi process in the background.
    * Returns as soon as the UI has something to render.
    */
@@ -557,8 +838,55 @@ export const actions = {
     appStore.update((state) => ({ ...state, activeSessions }));
   },
 
-  setPendingUiRequest(pendingUiRequest: PendingUiRequest | null): void {
-    appStore.update((state) => ({ ...state, pendingUiRequest }));
+  enqueueUiRequest(pending: PendingUiRequest): void {
+    appStore.update((state) => {
+      // The id is pi's own uuid, so it identifies the dialog by itself. The
+      // session path is metadata that moves underneath it: a fresh session has
+      // no path when its extension asks, and the real one arrives a moment
+      // later — matching on the pair would queue the same question twice and
+      // leave the card up after it was answered.
+      const index = state.pendingUiRequests.findIndex(
+        (item) => item.request.id === pending.request.id,
+      );
+      if (index < 0) {
+        return { ...state, pendingUiRequests: [...state.pendingUiRequests, pending] };
+      }
+      // Same dialog, now with an address: keep the path for the jump line.
+      const existing = state.pendingUiRequests[index];
+      if (existing === undefined || existing.sessionPath !== "" || pending.sessionPath === "") {
+        return state;
+      }
+      const next = [...state.pendingUiRequests];
+      next[index] = pending;
+      return { ...state, pendingUiRequests: next };
+    });
+  },
+
+  /**
+   * Adopt the dialogs the server is still holding. Runs once at bootstrap, so
+   * it merges rather than replaces: a request pushed over SSE while this fetch
+   * was in flight must not be dropped by the reply to an older question.
+   */
+  async loadPendingUiRequests(): Promise<void> {
+    try {
+      const { requests } = await api.listUiRequests();
+      for (const pending of requests) actions.enqueueUiRequest(pending);
+    } catch {
+      // The stream is still the primary path; a failure here just means a
+      // dialog that predates this page stays hidden until it is answered.
+    }
+  },
+
+  /**
+   * Drop a request without answering it. Only for requests pi settled on its
+   * own — a timeout resolves them agent-side, and this Web client never learns
+   * about it through an event, so the card would otherwise hang around forever.
+   */
+  dismissUiRequest(id: string): void {
+    appStore.update((state) => ({
+      ...state,
+      pendingUiRequests: state.pendingUiRequests.filter((item) => item.request.id !== id),
+    }));
   },
 
   emitSessionEvent(sessionPath: string, event: SessionEvent): void {

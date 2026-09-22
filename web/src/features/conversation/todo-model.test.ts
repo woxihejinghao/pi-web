@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { AgentMessage } from "../../lib/types.ts";
+import type { AgentMessage, TodoView } from "../../lib/types.ts";
 import {
   limitCompleted,
   parseTodoSnapshot,
   progressLabel,
   projectTodos,
   rowSummary,
+  shouldOfferTodoInstall,
   summarizeTodos,
   todoArgsSummary,
   todoCallAction,
@@ -239,5 +240,46 @@ describe("call arguments", () => {
     expect(todoArgsSummary({ action: "update", id: 3, status: "completed" })).toBe("update #3");
     expect(todoArgsSummary({ action: "clear" })).toBe("clear");
     expect(todoArgsSummary({})).toBe("");
+  });
+});
+
+/** A clean "not installed" answer, which each case bends one field of. */
+function todoView(overrides: Partial<TodoView> = {}): TodoView {
+  return {
+    available: false,
+    installed: false,
+    packageName: "@juicesharp/rpiv-todo",
+    source: "npm:@juicesharp/rpiv-todo",
+    projectPath: null,
+    error: null,
+    ...overrides,
+  };
+}
+
+describe("shouldOfferTodoInstall", () => {
+  it("offers the install when the package is cleanly absent", () => {
+    expect(shouldOfferTodoInstall(todoView(), false)).toBe(true);
+  });
+
+  it("stays quiet until the answer arrives", () => {
+    // The panel is mounted from the first paint, so `null` is the normal state
+    // during every reload — a notice here would flash on each one.
+    expect(shouldOfferTodoInstall(null, false)).toBe(false);
+  });
+
+  it("stays quiet when the read broke", () => {
+    // A broken read is not a missing package: installing could re-install one
+    // that is already there.
+    expect(shouldOfferTodoInstall(todoView({ error: "boom" }), false)).toBe(false);
+  });
+
+  it("does not re-offer a package that is installed", () => {
+    expect(shouldOfferTodoInstall(todoView({ installed: true }), false)).toBe(false);
+    // Disabled is the user's own choice, undoable in the plugins section.
+    expect(shouldOfferTodoInstall(todoView({ installed: true, available: true }), false)).toBe(false);
+  });
+
+  it("honours the dismissal", () => {
+    expect(shouldOfferTodoInstall(todoView(), true)).toBe(false);
   });
 });

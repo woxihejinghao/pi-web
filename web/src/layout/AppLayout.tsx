@@ -1,7 +1,7 @@
 import { useEffect } from "react";
+import clsx from "clsx";
 import { ConversationPane } from "../features/conversation/ConversationPane.tsx";
 import { SettingsPage } from "../features/settings/SettingsPage.tsx";
-import { ExtensionDialog } from "./ExtensionDialog.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { actions, appStore } from "../lib/app-state.ts";
 import { useStore } from "../lib/store.ts";
@@ -38,7 +38,15 @@ export function AppLayout() {
         )}
       </main>
       {state.notice ? (
-        <div className={styles.notice} role="status">
+        <div
+          className={clsx(
+            styles.notice,
+            // A notify that lands while a question is waiting would otherwise sit
+            // on top of the card and cover the controls the user has to reach.
+            state.pendingUiRequests.length > 0 && styles.noticeAboveCard,
+          )}
+          role="status"
+        >
           <span>{state.notice}</span>
           <button
             type="button"
@@ -50,7 +58,6 @@ export function AppLayout() {
           </button>
         </div>
       ) : null}
-      <ExtensionDialog />
     </div>
   );
 }

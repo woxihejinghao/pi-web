@@ -26,12 +26,15 @@ function SessionRow({
   active,
   external,
   indent,
+  canDelete = true,
 }: RowProps & {
   sessionPath: string;
   title: string;
   time: string;
   active: boolean;
   external: boolean;
+  /** False for a row that has no file on disk yet, so there is nothing to remove. */
+  canDelete?: boolean;
 }) {
   const rename = async (): Promise<void> => {
     const next = window.prompt("会话名称", title);
@@ -42,6 +45,15 @@ function SessionRow({
   const hide = async (): Promise<void> => {
     await actions.setSessionHidden(sessionPath, true);
     if (appStore.get().selectedSessionPath === sessionPath) actions.selectSession(null);
+  };
+
+  const remove = async (): Promise<void> => {
+    const confirmed = window.confirm(
+      `删除会话「${title}」？\n\n` +
+        "系统装有 trash 命令时会移入废纸篓，否则将永久删除。会话内容只有一份，不在 Web 端保留备份。",
+    );
+    if (!confirmed) return;
+    await actions.deleteSession(sessionPath);
   };
 
   return (
@@ -78,6 +90,17 @@ function SessionRow({
         >
           <EyeOffIcon />
         </button>
+        {canDelete ? (
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label={`删除 ${title}`}
+            title="删除会话"
+            onClick={() => void remove()}
+          >
+            <TrashIcon />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -183,6 +206,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               active
               external={false}
               indent={sessionIndent}
+              canDelete={false}
             />
           ) : null}
 

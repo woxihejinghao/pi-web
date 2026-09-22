@@ -1,6 +1,6 @@
 import { createServer, request as httpRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -310,6 +310,251 @@ describe("sessions api", () => {
     expect(stopped.status).toBe(200);
     expect((await api("/api/health")).body.activeSessions).toBe(0);
   });
+
+  it("deletes a session file, its override, and tells the UI to refetch", async () => {
+    const project = await createProject("deleting");
+    const sessionDir = sessionDirFor(project.path, sessionRoot);
+    const sessionFile = join(sessionDir, "doomed.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(
+      sessionFile,
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "bbbb1111-2222-3333-4444-555555555555",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: project.path,
+      })}\n`,
+      "utf8",
+    );
+    // A Web-side rename lives in our store; the delete has to take it along.
+    const renamed = await post(`/api/sessions/${encodeURIComponent(sessionFile)}/rename`, {
+      name: "Doomed",
+    });
+    expect(renamed.status).toBe(200);
+
+    const events: string[] = [];
+    bus.subscribe((event) => events.push(event.type));
+
+    const res = await api(`/api/sessions/${encodeURIComponent(sessionFile)}`, { method: "DELETE" });
+    expect(res.status).toBe(200);
+    // `trash` is optional on this host, so either path is a passing delete.
+    expect(["trash", "unlink"]).toContain(res.body.method);
+    expect(events).toContain("sessions_changed");
+    await expect(readFile(sessionFile, "utf8")).rejects.toThrow();
+
+    const listed = await api(`/api/projects/${project.id}/sessions?includeHidden=true`);
+    expect(listed.body).toHaveLength(0);
+  });
+
+  it("closes a resident process before deleting its session", async () => {
+    const project = await createProject("deleting-live");
+    const sessionDir = sessionDirFor(project.path, sessionRoot);
+    const sessionFile = join(sessionDir, "live.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(sessionFile, `${JSON.stringify({ type: "session", version: 3 })}\n`, "utf8");
+    process.env.STUB_SESSION_FILE = sessionFile;
+
+    await post("/api/sessions", { projectId: project.id });
+    await vi.waitFor(async () => {
+      expect((await api("/api/health")).body.activeSessions).toBe(1);
+    });
+
+    const res = await api(`/api/sessions/${encodeURIComponent(sessionFile)}`, { method: "DELETE" });
+    expect(res.status).toBe(200);
+    expect((await api("/api/health")).body.activeSessions).toBe(0);
+    await expect(readFile(sessionFile, "utf8")).rejects.toThrow();
+  });
+
+  it("404s deleting a session file that is already gone", async () => {
+    const res = await api(`/api/sessions/${encodeURIComponent(join(sessionRoot, "--gone--", "x.jsonl"))}`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects deleting outside pi's storage root", async () => {
+    const res = await api(`/api/sessions/${encodeURIComponent(join(home, "secrets.jsonl"))}`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("composer api", () => {
+  // The disk path resolves the session's `model_change` against
+  // `models.json`, so these tests point pi at a scratch agent directory for the
+  // same reason the provider tests do: the real file is the user's.
+  let agentDir: string;
+
+  const writeModels = async (providers: unknown): Promise<void> => {
+    await writeFile(join(agentDir, "models.json"), JSON.stringify({ providers }), "utf8");
+  };
+
+  const writeSession = async (name: string, entries: unknown[]): Promise<string> => {
+    const path = join(sessionRoot, `--${name}--`, `${name}.jsonl`);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""), "utf8");
+    return path;
+  };
+
+  const header = { type: "session", version: 3, id: "composer-session", timestamp: "2026-01-01T00:00:00.000Z", cwd: projectRoot };
+
+  beforeEach(async () => {
+    agentDir = await mkdtemp(join(tmpdir(), "piws-api-agent-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    delete process.env.STUB_MODEL;
+    delete process.env.STUB_MODELS;
+    delete process.env.STUB_CONTEXT_USAGE;
+  });
+
+  afterEach(async () => {
+    delete process.env.PI_CODING_AGENT_DIR;
+    delete process.env.STUB_MODEL;
+    delete process.env.STUB_MODELS;
+    delete process.env.STUB_CONTEXT_USAGE;
+    delete process.env.STUB_SESSION_FILE;
+    await rm(agentDir, { recursive: true, force: true });
+  });
+
+  it("answers from the session file without spawning pi", async () => {
+    await writeModels({
+      cz: { name: "cz", models: [{ id: "deepseek-flash", name: "DeepSeek Flash", contextWindow: 200000 }] },
+    });
+    const sessionPath = await writeSession("composer-disk", [
+      header,
+      { type: "model_change", id: "m1", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", provider: "cz", modelId: "deepseek-flash" },
+      { type: "message", id: "u1", parentId: "m1", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "user", content: "hello" } },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: "2026-01-01T00:00:03.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "hi" }],
+          stopReason: "stop",
+          usage: { input: 500, output: 500, cacheRead: 0, cacheWrite: 0, totalTokens: 20000 },
+        },
+      },
+    ]);
+
+    const resident = registry.list().length;
+    const res = await api(`/api/sessions/${encodeURIComponent(sessionPath)}/composer`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.live).toBe(false);
+    expect(res.body.model).toMatchObject({ provider: "cz", id: "deepseek-flash", name: "DeepSeek Flash", contextWindow: 200000 });
+    expect(res.body.context).toEqual({ tokens: 20000, contextWindow: 200000, percent: 10 });
+    // The switchable list only exists inside a process; empty would read as
+    // "you have no models", so it is null.
+    expect(res.body.models).toBeNull();
+    expect(registry.list().length).toBe(resident);
+  });
+
+  it("answers for a session pi has not written to disk yet", async () => {
+    // pi mints the session path before the first turn lands in the file, so the
+    // composer has to describe a file that does not exist yet — and "no model
+    // chosen" is the truthful description, not a 404 that the UI would show as
+    // an error over a perfectly healthy new session.
+    const pending = join(sessionRoot, "--pending--", "pending.jsonl");
+    const res = await api(`/api/sessions/${encodeURIComponent(pending)}/composer`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ live: false, model: null, models: null, context: null });
+  });
+
+  it("spawns on demand when asked for a live answer", async () => {
+    const sessionPath = await writeSession("composer-spawn", [header]);
+    process.env.STUB_SESSION_FILE = sessionPath;
+    process.env.STUB_MODELS = JSON.stringify([
+      { provider: "cz", id: "deepseek-flash", contextWindow: 128000, reasoning: true },
+    ]);
+
+    const res = await api(`/api/sessions/${encodeURIComponent(sessionPath)}/composer?spawn=true`);
+    expect(res.status).toBe(200);
+    expect(res.body.live).toBe(true);
+    expect(res.body.models).toHaveLength(1);
+    expect((await api("/api/health")).body.activeSessions).toBe(1);
+  });
+
+  it("reports the live model, model list, and context usage", async () => {
+    const project = await createProject("composer-live");
+    await writeModels({
+      cz: { name: "cz", models: [{ id: "deepseek-flash" }, { id: "glm", name: "GLM 5.3" }] },
+    });
+    const sessionPath = join(sessionRoot, "--api-live--", "live.jsonl");
+    process.env.STUB_SESSION_FILE = sessionPath;
+    process.env.STUB_MODEL = JSON.stringify({ provider: "cz", id: "deepseek-flash", name: "DeepSeek Flash", contextWindow: 128000, reasoning: true });
+    process.env.STUB_MODELS = JSON.stringify([
+      { provider: "cz", id: "deepseek-flash", contextWindow: 128000, reasoning: true },
+      { provider: "cz", id: "glm", contextWindow: 64000, reasoning: false },
+    ]);
+    process.env.STUB_CONTEXT_USAGE = JSON.stringify({ tokens: 64000, contextWindow: 128000, percent: 50 });
+
+    const created = await post("/api/sessions", { projectId: project.id });
+    expect(created.status).toBe(201);
+
+    const res = await api(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/composer`);
+    expect(res.status).toBe(200);
+    expect(res.body.live).toBe(true);
+    expect(res.body.model).toMatchObject({ provider: "cz", id: "deepseek-flash", name: "DeepSeek Flash" });
+    expect(res.body.models.map((model: { id: string }) => model.id)).toEqual(["deepseek-flash", "glm"]);
+    // The runtime knows the window; `models.json` supplies the display name.
+    expect(res.body.models[1]).toMatchObject({ id: "glm", name: "GLM 5.3" });
+    expect(res.body.context).toEqual({ tokens: 64000, contextWindow: 128000, percent: 50 });
+  });
+
+  it("switches the model over rpc and answers with the new one", async () => {
+    const project = await createProject("composer-switch");
+    const sessionPath = join(sessionRoot, "--api-switch--", "switch.jsonl");
+    process.env.STUB_SESSION_FILE = sessionPath;
+    process.env.STUB_MODEL = JSON.stringify({ provider: "cz", id: "deepseek-flash", name: "DeepSeek Flash", contextWindow: 128000, reasoning: true });
+    process.env.STUB_MODELS = JSON.stringify([
+      { provider: "cz", id: "deepseek-flash", contextWindow: 128000, reasoning: true },
+      { provider: "cz", id: "glm", contextWindow: 64000, reasoning: false },
+    ]);
+
+    const created = await post("/api/sessions", { projectId: project.id });
+    const switched = await post(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/model`, {
+      provider: "cz",
+      id: "glm",
+    });
+
+    expect(switched.status).toBe(200);
+    expect(switched.body.model).toMatchObject({ provider: "cz", id: "glm" });
+    // A later read agrees, because the process remembered the switch.
+    const reread = await api(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/composer`);
+    expect(reread.body.model.id).toBe("glm");
+  });
+
+  it("rejects an unknown model with 400 without retiring the process", async () => {
+    const project = await createProject("composer-unknown");
+    process.env.STUB_SESSION_FILE = join(sessionRoot, "--api-unknown--", "unknown.jsonl");
+    process.env.STUB_MODEL = JSON.stringify({ provider: "cz", id: "deepseek-flash", contextWindow: 128000, reasoning: true });
+    process.env.STUB_MODELS = JSON.stringify([
+      { provider: "cz", id: "deepseek-flash", contextWindow: 128000, reasoning: true },
+    ]);
+
+    const created = await post("/api/sessions", { projectId: project.id });
+    const res = await post(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/model`, {
+      provider: "cz",
+      id: "nope",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/无法切换到 cz\/nope/);
+    // A typo is not a broken pi: the session is still usable.
+    expect((await api("/api/health")).body.activeSessions).toBe(1);
+  });
+
+  it("requires a provider and an id", async () => {
+    const project = await createProject("composer-invalid");
+    process.env.STUB_SESSION_FILE = join(sessionRoot, "--api-invalid--", "invalid.jsonl");
+    const created = await post("/api/sessions", { projectId: project.id });
+
+    expect((await post(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/model`, { provider: "cz" })).status).toBe(400);
+    expect((await post(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/model`, { id: "glm" })).status).toBe(400);
+  });
 });
 
 describe("slash commands api", () => {
@@ -538,9 +783,10 @@ describe("settings", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       appearance: "system",
-      contentFontSize: 14,
+      contentFontSize: 15,
       transcriptDisplay: "normal",
       busySendBehavior: "queue",
+      todoNoticeDismissed: false,
     });
   });
 
@@ -556,10 +802,24 @@ describe("settings", () => {
       contentFontSize: 15,
       transcriptDisplay: "normal",
       busySendBehavior: "queue",
+      todoNoticeDismissed: false,
     });
 
     const reread = await api("/api/settings");
     expect(reread.body.appearance).toBe("dark");
+  });
+
+  it("persists the task-panel notice dismissal", async () => {
+    const patched = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ todoNoticeDismissed: true }),
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.todoNoticeDismissed).toBe(true);
+    // The whole point of storing it here: closing the notice must survive a
+    // reload, or the panel would ask again on every visit.
+    expect((await api("/api/settings")).body.todoNoticeDismissed).toBe(true);
   });
 
   it("rejects an unknown appearance instead of falling back", async () => {
@@ -582,7 +842,7 @@ describe("settings", () => {
       });
       expect(res.status).toBe(400);
     }
-    expect((await api("/api/settings")).body.contentFontSize).toBe(14);
+    expect((await api("/api/settings")).body.contentFontSize).toBe(15);
   });
 
   it("rejects an unknown option for the enum fields", async () => {
@@ -784,5 +1044,256 @@ describe("fork and tree api", () => {
     const created = await post("/api/sessions", { projectId: project.id });
     const res = await post(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/fork`, {});
     expect(res.status).toBe(400);
+  });
+});
+
+describe("extensions api", () => {
+  // Same reasoning as the model providers: pi's config lives outside our data
+  // dir, so these point `PI_CODING_AGENT_DIR` at a scratch directory instead of
+  // reading and writing the user's real ~/.pi/agent.
+  let agentDir: string;
+
+  beforeEach(async () => {
+    agentDir = await mkdtemp(join(tmpdir(), "piws-api-ext-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+  });
+
+  afterEach(async () => {
+    delete process.env.PI_CODING_AGENT_DIR;
+    await rm(agentDir, { recursive: true, force: true });
+  });
+
+  it("lists the workspace scope and reports the files it resolved against", async () => {
+    const project = await createProject("extensions-project");
+    await mkdir(join(agentDir, "extensions"), { recursive: true });
+    await writeFile(
+      join(agentDir, "extensions", "hello.ts"),
+      "export default function () {}\n",
+      "utf8",
+    );
+
+    const res = await api(`/api/extensions?projectPath=${encodeURIComponent(project.path)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.error).toBeNull();
+    expect(res.body.settingsPath).toBe(join(agentDir, "settings.json"));
+    expect(res.body.projectSettingsPath).toBe(join(project.path, ".pi", "settings.json"));
+    expect(res.body.extensions).toMatchObject([
+      { name: "hello", scope: "user", origin: "top-level", enabled: true },
+    ]);
+  });
+
+  it("toggles an extension and answers with the re-resolved list", async () => {
+    await mkdir(join(agentDir, "extensions"), { recursive: true });
+    const path = join(agentDir, "extensions", "hello.ts");
+    await writeFile(path, "export default function () {}\n", "utf8");
+
+    const res = await api("/api/extensions", {
+      method: "PUT",
+      body: JSON.stringify({ projectPath: null, path, enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.extensions).toMatchObject([{ path, enabled: false }]);
+    // The pattern pi's matcher compares against: relative to the agent dir.
+    expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8"))).toMatchObject({
+      extensions: ["-extensions/hello.ts"],
+    });
+  });
+
+  it("rejects a toggle for a path that is not in the inventory", async () => {
+    const res = await api("/api/extensions", {
+      method: "PUT",
+      body: JSON.stringify({ projectPath: null, path: join(agentDir, "ghost.ts"), enabled: false }),
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/没有找到扩展/);
+  });
+
+  it("rejects a toggle without a boolean state", async () => {
+    const res = await api("/api/extensions", {
+      method: "PUT",
+      body: JSON.stringify({ projectPath: null, path: "x", enabled: "yes" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("mcp api", () => {
+  // Same isolation rule as the model and extension APIs: the adapter is loaded
+  // from the agent dir, so a stub package goes there instead of the user's
+  // real ~/.pi/agent install.
+  let agentDir: string;
+
+  beforeEach(async () => {
+    agentDir = await mkdtemp(join(tmpdir(), "piws-api-mcp-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const packageDir = join(agentDir, "npm", "node_modules", "pi-mcp-adapter");
+    await mkdir(join(packageDir, "dist"), { recursive: true });
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "pi-mcp-adapter",
+        version: "0.0.0",
+        exports: { "./config": { import: "./dist/config.js" } },
+      }),
+      "utf8",
+    );
+    await copyFile(
+      join(HERE, "testing", "stub-mcp-adapter.mjs"),
+      join(packageDir, "dist", "config.js"),
+    );
+  });
+
+  afterEach(async () => {
+    delete process.env.PI_CODING_AGENT_DIR;
+    const mcp = await import("./mcp.ts");
+    mcp.resetMcpAdapterCache();
+    await rm(agentDir, { recursive: true, force: true });
+  });
+
+  const seedServer = async (name: string, entry: Record<string, unknown>): Promise<void> => {
+    await writeFile(
+      join(agentDir, "mcp.json"),
+      JSON.stringify({ mcpServers: { [name]: entry } }, null, 2),
+      "utf8",
+    );
+  };
+
+  it("serves the inventory with the paths the page shows", async () => {
+    await seedServer("figma", { command: "npx", args: ["-y", "figma-developer-mcp"], env: { KEY: "secret" } });
+
+    const res = await api("/api/mcp");
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(true);
+    expect(res.body.servers).toMatchObject([{ name: "figma", transport: "stdio" }]);
+    expect(res.body.paths.piGlobal).toBe(join(agentDir, "mcp.json"));
+    // Secret values never reach the response.
+    expect(JSON.stringify(res.body)).not.toContain("secret");
+  });
+
+  it("creates a server and answers with the re-read inventory", async () => {
+    const project = await createProject("mcp-project");
+    const res = await api("/api/mcp/servers", {
+      method: "PUT",
+      body: JSON.stringify({
+        projectPath: project.path,
+        scope: "global",
+        originalName: null,
+        draft: {
+          name: "web-search",
+          transport: "stdio",
+          command: "npx",
+          args: "-y search-mcp",
+          cwd: "",
+          url: "",
+          env: [],
+          headers: [],
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.servers).toMatchObject([{ name: "web-search", detail: "npx -y search-mcp" }]);
+  });
+
+  it("rejects a malformed draft with a 400", async () => {
+    const res = await api("/api/mcp/servers", {
+      method: "PUT",
+      body: JSON.stringify({
+        scope: "global",
+        draft: { name: "bad", transport: "http", url: "not-a-url" },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/http/);
+  });
+
+  it("toggles a server for a workspace and explains the missing-workspace case", async () => {
+    await seedServer("figma", { command: "npx" });
+    const project = await createProject("mcp-toggle");
+
+    const off = await api("/api/mcp/state", {
+      method: "PUT",
+      body: JSON.stringify({ projectPath: project.path, name: "figma", enabled: false }),
+    });
+    expect(off.status).toBe(200);
+    expect(off.body.servers).toMatchObject([{ name: "figma", enabled: false }]);
+
+    const noWorkspace = await api("/api/mcp/state", {
+      method: "PUT",
+      body: JSON.stringify({ name: "figma", enabled: true }),
+    });
+    expect(noWorkspace.status).toBe(400);
+    expect(noWorkspace.body.error).toMatch(/工作区/);
+  });
+
+  it("deletes a server and refuses one owned by another agent", async () => {
+    await seedServer("figma", { command: "npx" });
+    const deleted = await api("/api/mcp/servers", {
+      method: "DELETE",
+      body: JSON.stringify({ name: "figma" }),
+    });
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.servers).toEqual([]);
+
+    await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ imports: ["cursor"] }), "utf8");
+    const refused = await api("/api/mcp/servers", {
+      method: "DELETE",
+      body: JSON.stringify({ name: "from-cursor" }),
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toMatch(/cursor/);
+  });
+
+  it("imports another agent's config", async () => {
+    const res = await post("/api/mcp/imports", { kinds: ["cursor"] });
+    expect(res.status).toBe(200);
+    expect(res.body.servers).toMatchObject([{ name: "from-cursor", hostImport: true }]);
+  });
+
+  it("treats install as a no-op when the adapter already loads", async () => {
+    // The install endpoint shells out to pi's package manager, so this asserts
+    // the guard: with the stub present it must answer from the loaded module
+    // instead of running npm again.
+    const res = await post("/api/mcp/install", {});
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(true);
+  });
+
+  it("restarts by retiring the resident processes", async () => {
+    const project = await createProject("mcp-restart");
+    await post("/api/sessions", { projectId: project.id });
+
+    const res = await post("/api/mcp/restart");
+    expect(res.status).toBe(200);
+    expect(res.body.closed).toBeGreaterThan(0);
+    expect(registry.list()).toHaveLength(0);
+  });
+});
+
+describe("mcp api without the adapter", () => {
+  // No stub package here on purpose: this is the state a user is in before
+  // installing pi-mcp-adapter, and the page has to say so rather than render an
+  // empty inventory. Nothing in this block may call the install endpoint — it
+  // would run a real `npm install`.
+  let agentDir: string;
+
+  beforeEach(async () => {
+    agentDir = await mkdtemp(join(tmpdir(), "piws-api-mcp-missing-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const mcp = await import("./mcp.ts");
+    mcp.resetMcpAdapterCache();
+  });
+
+  afterEach(async () => {
+    delete process.env.PI_CODING_AGENT_DIR;
+    await rm(agentDir, { recursive: true, force: true });
+  });
+
+  it("answers with an install hint instead of an empty list", async () => {
+    const res = await api("/api/mcp");
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(false);
+    expect(res.body.unavailableReason).toMatch(/pi-mcp-adapter/);
+    expect(res.body.servers).toEqual([]);
   });
 });

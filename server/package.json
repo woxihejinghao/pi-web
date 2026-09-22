@@ -1,9 +1,11 @@
 {
   "name": "@pi-web-simple/server",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

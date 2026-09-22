@@ -13,6 +13,57 @@
   container-type: inline-size;
 }
 
+/*
+ * The jump-to-bottom button's slot. The same zero-height sticky trick the rail
+ * uses: sticky to the scrollport's bottom edge, with the disc absolutely placed
+ * inside it. A `position: relative` wrapper around the scrollport would say the
+ * same thing, but it would also re-parent the rail, whose arithmetic is written
+ * against the scrollport itself.
+ */
+.jumpSlot {
+  position: sticky;
+  z-index: 8;
+  bottom: 18px;
+  height: 0;
+  pointer-events: none;
+}
+
+/*
+ * dsh's jump disc: 36px, opaque, the thinnest possible edge and a soft lift.
+ * Opaque because it floats over live text — a translucent disc is unreadable
+ * the moment it covers a code block — and the edge is what keeps it from
+ * melting into a pale one. It sits a little further in than the rail so the two
+ * do not overlap on a tall session.
+ */
+.jump {
+  position: absolute;
+  right: 30px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-soft);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color 0.15s ease;
+}
+
+.jump:hover {
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.jump:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
 .column {
   max-width: 780px;
   margin: 0 auto;

@@ -1,3 +1,7 @@
+/* Ported from deepseek-harness (MIT — Copyright (c) 2026 DeepSeek): the token
+   tables below are copied verbatim from its design platform, including the four
+   dark-theme blocks. See THIRD_PARTY_NOTICES.md. */
+
 /* Figma font-weight 510 (an SF Pro variable-font weight) always renders as
    font-weight: 500 in this UI — non-variable webfonts snap intermediate
    weights unpredictably across platforms. */

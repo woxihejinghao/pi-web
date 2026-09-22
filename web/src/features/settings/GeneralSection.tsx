@@ -9,6 +9,7 @@ import {
   SettingsSelect,
   SettingsStepper,
 } from "./SettingsRow.tsx";
+import { UpdateSection } from "./UpdateSection.tsx";
 
 /**
  * Labels are dsh's zh dictionary, verbatim (`appearance.*`, `fontSize.*`,
@@ -42,7 +43,14 @@ const AUTO_COMPACTION_OPTIONS = [
  * Split from the models section because everything here is a scalar the store
  * already holds, while that one owns files and a dialog.
  */
-export function GeneralSection({ className }: { className?: string }) {
+export function GeneralSection({
+  className,
+  onOpenPlugins,
+}: {
+  className?: string;
+  /** Where 关于 sends someone who wants to act on a package update. */
+  onOpenPlugins?: () => void;
+}) {
   const state = useStore(appStore);
   const projectPath =
     state.projects.find((project) => project.id === state.selectedProjectId)?.path ??
@@ -127,6 +135,13 @@ export function GeneralSection({ className }: { className?: string }) {
             }}
           />
         </SettingsRow>
+
+        {/*
+          Last, because it answers a question about the app itself rather than
+          about how it behaves — a version notice is not a preference, and the
+          rows above are the ones people come here to change.
+        */}
+        <UpdateSection projectPath={projectPath} onOpenPlugins={onOpenPlugins} />
     </div>
   );
 }

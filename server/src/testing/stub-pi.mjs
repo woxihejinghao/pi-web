@@ -25,6 +25,18 @@ const sessionId = process.env.STUB_SESSION_ID ?? "stub-session-id";
 let autoCompactionEnabled = true;
 
 /**
+ * Model state for the composer routes. `STUB_MODEL` is what the session is
+ * currently on (null when the test does not care), `STUB_MODELS` is what
+ * `get_available_models` reports, and `set_model` moves the former to the
+ * latter's entry — the same lookup-and-reject the real pi does.
+ */
+let currentModel = process.env.STUB_MODEL ? JSON.parse(process.env.STUB_MODEL) : null;
+const stubModels = process.env.STUB_MODELS ? JSON.parse(process.env.STUB_MODELS) : [];
+const stubContextUsage = process.env.STUB_CONTEXT_USAGE
+  ? JSON.parse(process.env.STUB_CONTEXT_USAGE)
+  : undefined;
+
+/**
  * Payload for `get_commands`. Tests set STUB_COMMANDS to assert on a known
  * list; the default mirrors the three sources pi reports (skill, prompt
  * template, extension command).
@@ -84,7 +96,7 @@ process.stdin.on("data", (chunk) => {
         respond(
           "get_state",
           {
-            model: null,
+            model: currentModel,
             thinkingLevel: "medium",
             isStreaming: false,
             isCompacting: false,
@@ -143,6 +155,27 @@ process.stdin.on("data", (chunk) => {
           message.id,
         );
         break;
+      case "get_available_models":
+        respond("get_available_models", { models: stubModels }, message.id);
+        break;
+      case "set_model": {
+        const found = stubModels.find(
+          (model) => model.provider === message.provider && model.id === message.modelId,
+        );
+        if (!found) {
+          write({
+            id: message.id,
+            type: "response",
+            command: "set_model",
+            success: false,
+            error: `Model not found: ${message.provider}/${message.modelId}`,
+          });
+          break;
+        }
+        currentModel = found;
+        respond("set_model", found, message.id);
+        break;
+      }
       case "get_session_stats":
         respond(
           "get_session_stats",
@@ -156,6 +189,7 @@ process.stdin.on("data", (chunk) => {
             totalMessages: 9,
             tokens: { input: 100, output: 200, cacheRead: 0, cacheWrite: 0, total: 300 },
             cost: 0.0125,
+            ...(stubContextUsage === undefined ? {} : { contextUsage: stubContextUsage }),
           },
           message.id,
         );

@@ -1,4 +1,7 @@
-/* Syntax-highlight token palette: the values behind shiki's css-variables
+/* Ported from deepseek-harness (MIT — Copyright (c) 2026 DeepSeek); see
+   THIRD_PARTY_NOTICES.md.
+
+   Syntax-highlight token palette: the values behind shiki's css-variables
    theme (--shiki-* custom properties emitted by the ui-primitives CodeBlock).
    Dark overrides are keyed off the shell's appearance attribute — the same
    cascade as every other token sheet. */

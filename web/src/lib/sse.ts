@@ -54,7 +54,7 @@ export function connectEvents(): () => void {
         const text = typeof request.message === "string" ? request.message : "";
         if (text.length > 0) actions.setNotice(text);
       } else if (["confirm", "select", "input", "editor"].includes(request.method)) {
-        actions.setPendingUiRequest({ sessionPath: data.sessionPath, request });
+        actions.enqueueUiRequest({ sessionPath: data.sessionPath, request });
       }
     }
   });

@@ -4,7 +4,37 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { EventBus } from "./bus.ts";
 import { BUILTIN_COMMANDS, runBuiltinCommand } from "./commands.ts";
 import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
+import type { StaticHandler } from "./static.ts";
+import {
+  ExtensionConfigError,
+  readExtensions,
+  setExtensionEnabled,
+} from "./extensions.ts";
+import { TodoConfigError, installTodoExtension, readTodo } from "./todo.ts";
+import {
+  UpdatesConfigError,
+  readUpdates,
+  updateExtension,
+} from "./updates.ts";
+import {
+  McpConfigError,
+  deleteMcpServer,
+  importMcpConfigs,
+  installMcpAdapter,
+  probeMcpServer,
+  readMcp,
+  saveMcpServer,
+  setMcpServerEnabled,
+  type McpSecretRow,
+  type McpServerDraft,
+} from "./mcp.ts";
 import { listDirectories, startLocations } from "./fs-browse.ts";
+import { pendingUiRequests, type PendingUiRequests } from "./ui-requests.ts";
+import {
+  readComposerFromClient,
+  readComposerFromDisk,
+  type ComposerState,
+} from "./composer.ts";
 import {
   API_PROTOCOLS,
   KNOWN_PROVIDERS,
@@ -13,6 +43,7 @@ import {
   deleteProvider,
   fetchProviderModels,
   modelsPath,
+  readModelCatalog,
   readProviders,
   saveProvider,
   type FetchModelsInput,
@@ -29,7 +60,8 @@ import {
   reorderProjects,
   setSessionOverride,
 } from "./projects.ts";
-import { sendRawCommand, type SessionHandle, type SessionRegistry, type SlashCommand } from "./registry.ts";
+import { type SessionHandle, type SessionRegistry, type SlashCommand } from "./registry.ts";
+import { deleteSession } from "./session-delete.ts";
 import { assertAllowedSessionPath, getSessionRoot, sessionDirFor } from "./session-path.ts";
 import { readSessionSnapshot, readSessionTree } from "./session-reader.ts";
 import { listSessions } from "./sessions.ts";
@@ -64,6 +96,14 @@ export interface RouteDeps {
   bus: EventBus;
   /** Directory the API is allowed to open sessions from. Defaults to pi's store. */
   sessionRoot?: string;
+  /** Blocking extension dialogs. Defaults to the process-wide table. */
+  uiRequests?: PendingUiRequests;
+  /**
+   * Serves the built front end for everything outside `/api`. Null (or
+   * omitted) leaves the server API-only, which is what the dev setup wants:
+   * Vite owns the browser-facing port there and proxies `/api` here.
+   */
+  staticHandler?: StaticHandler | null;
 }
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
@@ -151,6 +191,56 @@ function optionalString(body: Record<string, unknown>, key: string): string | un
   return value;
 }
 
+/**
+ * The workspace a settings request is about, or null for the user scope.
+ *
+ * `null` and the empty string both mean "no workspace": the settings page sends
+ * null before one is selected, and an empty query parameter is what a missing
+ * value looks like on the wire.
+ */
+function optionalProjectPath(body: Record<string, unknown>): string | null {
+  const value = body.projectPath;
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw badRequest("projectPath must be a string");
+  return value.length > 0 ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** One `KEY=value` row from the MCP editor; an empty value means "keep stored". */
+function parseSecretRows(value: unknown): McpSecretRow[] {
+  if (!Array.isArray(value)) return [];
+  const rows: McpSecretRow[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const key = typeof entry.key === "string" ? entry.key.trim() : "";
+    if (key.length === 0) continue;
+    rows.push({ key, value: typeof entry.value === "string" ? entry.value : "" });
+  }
+  return rows;
+}
+
+function parseMcpDraft(value: unknown): McpServerDraft {
+  const draft = asObject(value);
+  const transport = draft.transport;
+  if (transport !== "stdio" && transport !== "http" && transport !== "sse") {
+    throw badRequest("transport must be stdio, http, or sse");
+  }
+  const text = (key: string): string => (typeof draft[key] === "string" ? draft[key] : "");
+  return {
+    name: text("name"),
+    transport,
+    command: text("command"),
+    args: text("args"),
+    cwd: text("cwd"),
+    url: text("url"),
+    env: parseSecretRows(draft.env),
+    headers: parseSecretRows(draft.headers),
+  };
+}
+
 function parseModelEntries(value: unknown): ProviderModelEntry[] {
   if (!Array.isArray(value)) throw badRequest("models must be an array");
   return value.map((entry) => {
@@ -182,6 +272,10 @@ function toHttpError(err: unknown): HttpError {
   // failing. "已有提供方使用了这个 ID" belongs in the form, at 400, not in the
   // error banner as a 500.
   if (err instanceof ModelConfigError) return badRequest(err.message);
+  if (err instanceof ExtensionConfigError) return badRequest(err.message);
+  if (err instanceof TodoConfigError) return badRequest(err.message);
+  if (err instanceof UpdatesConfigError) return badRequest(err.message);
+  if (err instanceof McpConfigError) return badRequest(err.message);
   if (err instanceof ProjectError) {
     switch (err.code) {
       case "ENOENT":
@@ -237,8 +331,9 @@ function assertLocalRequest(req: IncomingMessage): void {
  * tests can drive a stub pi process and a private storage root.
  */
 export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { registry, bus } = deps;
+  const { registry, bus, staticHandler = null } = deps;
   const sessionRoot = deps.sessionRoot ?? getSessionRoot();
+  const uiRequests = deps.uiRequests ?? pendingUiRequests;
   const routes: Route[] = [];
 
   const route = (method: string, path: string, handler: Handler): void => {
@@ -279,6 +374,34 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       if (err instanceof HttpError) throw err;
       registry.markDead(handle.sessionPath);
       throw new HttpError(502, `pi rpc failed: ${(err as Error).message}`);
+    }
+  };
+
+  /**
+   * Composer state from a resident process.
+   *
+   * The runtime answers with the model's window but not its display name —
+   * names live in `models.json` — so the on-disk catalog rides along and fills
+   * that in. Reading it is a few hundred bytes next to the RPCs already in
+   * flight, and the alternative is showing raw model ids where the settings page
+   * shows names.
+   */
+  const liveComposer = async (handle: SessionHandle): Promise<ComposerState> => {
+    const catalog = await readModelCatalog();
+    return await callClient(handle, () => readComposerFromClient(handle.client, catalog));
+  };
+
+  /**
+   * Composer state from the session file, with a missing session reported as
+   * 404 and a broken `models.json` left to bubble up as the 400 it is.
+   */
+  const diskComposer = async (sessionPath: string): Promise<ComposerState> => {
+    // Read first, so a config error is not misreported as a missing session.
+    const catalog = await readModelCatalog();
+    try {
+      return await readComposerFromDisk(sessionPath, catalog);
+    } catch (err) {
+      throw notFound(`无法读取会话：${(err as Error).message}`);
     }
   };
 
@@ -334,6 +457,12 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
           ["queue", "steer"],
           "busySendBehavior",
         );
+      }
+      if (patch.todoNoticeDismissed !== undefined) {
+        if (typeof patch.todoNoticeDismissed !== "boolean") {
+          throw badRequest("todoNoticeDismissed must be a boolean");
+        }
+        next.todoNoticeDismissed = patch.todoNoticeDismissed;
       }
       return next;
     });
@@ -444,6 +573,230 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     const apiKey = optionalString(payload, "apiKey");
     if (apiKey !== undefined) input.apiKey = apiKey;
     json(res, 200, { models: await fetchProviderModels(input) });
+  });
+
+  // --- extensions -----------------------------------------------------------
+
+  /**
+   * Every extension pi would consider loading, resolved by pi's own package
+   * manager against the settings and package files on disk.
+   *
+   * `projectPath` is optional: without it the answer covers the user scope only,
+   * which is what the settings page asks for before a workspace is selected.
+   * Resolution failures come back as `error` on a 200 rather than as an HTTP
+   * error, because an empty list and a broken read are different states and the
+   * page has to tell them apart.
+   */
+  route("GET", "/api/extensions", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readExtensions(projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  /**
+   * Turn one extension on or off, then answer with the full re-resolved list.
+   *
+   * The write lands in pi's settings file, and only a freshly started process
+   * reads that file back — the same reason provider edits retire the resident
+   * processes. Extensions are loaded at startup, so a process that predates
+   * this change would keep running the old set; sessions live on disk, so the
+   * cost is one cold start on the next switch.
+   */
+  route("PUT", "/api/extensions", async ({ res, body }) => {
+    const payload = asObject(body);
+    const path = requireString(payload, "path");
+    if (typeof payload.enabled !== "boolean") throw badRequest("enabled must be a boolean");
+
+    const view = await setExtensionEnabled({
+      projectPath: optionalProjectPath(payload),
+      path,
+      enabled: payload.enabled,
+    });
+    await registry.closeAllExcept(null, "extensions-changed");
+    json(res, 200, view);
+  });
+
+  // --- update notices -------------------------------------------------------
+
+  /**
+   * Whether a newer pi is published, and which installed packages are behind.
+   *
+   * `refresh=true` bypasses the server's short cache; the default read reuses
+   * an answer from the last few minutes, so opening the settings page does not
+   * spawn an `npm view` per package on every visit. A check that could not be
+   * completed is reported inside the payload (`error`) rather than as an HTTP
+   * error: "could not check" and "up to date" are different facts, and the page
+   * renders them differently.
+   */
+  route("GET", "/api/updates", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(
+      res,
+      200,
+      await readUpdates(projectPath && projectPath.length > 0 ? projectPath : null, {
+        force: query.get("refresh") === "true",
+      }),
+    );
+  });
+
+  /**
+   * Update one installed pi package to its upstream version.
+   *
+   * Slow by nature — npm has to resolve and download — and the resident pi
+   * processes have to be retired afterwards so the next message loads the new
+   * copy instead of the one already in memory.
+   */
+  route("POST", "/api/updates/extensions", async ({ res, body }) => {
+    const payload = asObject(body);
+    const view = await updateExtension(
+      optionalProjectPath(payload),
+      requireString(payload, "source"),
+    );
+    await registry.closeAllExcept(null, "extensions-updated");
+    json(res, 200, view);
+  });
+
+  // --- the task-list extension ----------------------------------------------
+
+  /**
+   * Whether the next pi start would load the extension behind the `todo` tool.
+   *
+   * The task panel is a projection of that tool's transcript output, so with
+   * the extension missing there is nothing to project. The answer separates
+   * `available` (loadable now) from `installed` (referenced in pi's settings at
+   * all), so the UI can tell "not installed" apart from "installed but
+   * disabled" — only the first one should offer an install button.
+   */
+  route("GET", "/api/todo", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readTodo(projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  /**
+   * Install the extension the `todo` tool ships in.
+   *
+   * The same operation as `pi install npm:@juicesharp/rpiv-todo`, through pi's
+   * own package manager. Slow by nature (npm has to resolve and download), and
+   * the resident pi processes have to be retired afterwards so the next message
+   * actually loads it.
+   */
+  route("POST", "/api/todo/install", async ({ res, body }) => {
+    const payload = body === undefined ? {} : asObject(body);
+    const view = await installTodoExtension(optionalProjectPath(payload));
+    await registry.closeAllExcept(null, "todo-extension-installed");
+    json(res, 200, view);
+  });
+
+  // --- MCP servers ----------------------------------------------------------
+
+  /**
+   * The MCP inventory: every server the adapter would load for a workspace,
+   * plus the files it read and the host configs it could import.
+   *
+   * pi has no MCP support of its own — it comes from the `pi-mcp-adapter`
+   * extension — so this is served through the adapter's exported config layer
+   * rather than by parsing its files here. When the extension is missing the
+   * response says so (`available: false`) instead of looking empty.
+   */
+  route("GET", "/api/mcp", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readMcp(projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  /**
+   * Install `pi-mcp-adapter` (the extension MCP support comes from).
+   *
+   * Same operation as `pi install npm:pi-mcp-adapter`, through pi's own package
+   * manager, so the two agree on where the package lands and what settings.json
+   * records. It can take a while — npm has to resolve and download — and the
+   * page shows progress rather than blocking on a spinner with no explanation.
+   */
+  route("POST", "/api/mcp/install", async ({ res, body }) => {
+    const payload = body === undefined ? {} : asObject(body);
+    const view = await installMcpAdapter(optionalProjectPath(payload));
+    // The next pi process has to load the new extension, and MCP servers are
+    // connected at startup; retiring the resident ones is the equivalent of
+    // dsh's 重启.
+    await registry.closeAllExcept(null, "mcp-adapter-installed");
+    json(res, 200, view);
+  });
+
+  /** Create or update one server. Secrets are write-only, like provider keys. */
+  route("PUT", "/api/mcp/servers", async ({ res, body }) => {
+    const payload = asObject(body);
+    const originalName = payload.originalName;
+    const view = await saveMcpServer({
+      projectPath: optionalProjectPath(payload),
+      scope: payload.scope === "project" ? "project" : "global",
+      originalName:
+        typeof originalName === "string" && originalName.length > 0 ? originalName : null,
+      draft: parseMcpDraft(payload.draft),
+    });
+    await registry.closeAllExcept(null, "mcp-config-changed");
+    json(res, 200, view);
+  });
+
+  route("DELETE", "/api/mcp/servers", async ({ res, body }) => {
+    const payload = asObject(body);
+    const view = await deleteMcpServer({
+      projectPath: optionalProjectPath(payload),
+      name: requireString(payload, "name"),
+    });
+    await registry.closeAllExcept(null, "mcp-config-changed");
+    json(res, 200, view);
+  });
+
+  /**
+   * Enable or disable one server for a workspace.
+   *
+   * This writes the project-local Pi override, which is what pi's own
+   * `/mcp disable` does — there is no user-level "off" for an MCP server.
+   */
+  route("PUT", "/api/mcp/state", async ({ res, body }) => {
+    const payload = asObject(body);
+    if (typeof payload.enabled !== "boolean") throw badRequest("enabled must be a boolean");
+    const view = await setMcpServerEnabled({
+      projectPath: optionalProjectPath(payload),
+      name: requireString(payload, "name"),
+      enabled: payload.enabled,
+    });
+    await registry.closeAllExcept(null, "mcp-config-changed");
+    json(res, 200, view);
+  });
+
+  route("POST", "/api/mcp/imports", async ({ res, body }) => {
+    const payload = asObject(body);
+    const kinds = Array.isArray(payload.kinds)
+      ? payload.kinds.filter((kind): kind is string => typeof kind === "string")
+      : [];
+    const view = await importMcpConfigs(optionalProjectPath(payload), kinds);
+    await registry.closeAllExcept(null, "mcp-config-changed");
+    json(res, 200, view);
+  });
+
+  /**
+   * Connect to one server and report the handshake.
+   *
+   * Runs only when asked: a stdio entry is an arbitrary command, and a cold
+   * `npx` download inside it can take a while.
+   */
+  route("POST", "/api/mcp/check", async ({ res, body }) => {
+    const payload = asObject(body);
+    const result = await probeMcpServer(
+      optionalProjectPath(payload),
+      requireString(payload, "name"),
+    );
+    json(res, 200, result);
+  });
+
+  /**
+   * Retire every resident pi process so the next message re-reads the MCP
+   * config. This is dsh's 重启, narrowed to what this server can actually do:
+   * sessions live on disk, so the cost is one cold start per session.
+   */
+  route("POST", "/api/mcp/restart", async ({ res }) => {
+    const closed = registry.list().length;
+    await registry.closeAllExcept(null, "mcp-restart");
+    json(res, 200, { ok: true, closed });
   });
 
   // --- filesystem (directory picker) ---------------------------------------
@@ -676,6 +1029,61 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(res, 200, { sessionPath: handle.sessionPath, state });
   });
 
+  /**
+   * The figures the composer shows on the right: the current model, the models
+   * it could switch to, and the context-window usage.
+   *
+   * Served from the JSONL file whenever no process is resident, for the same
+   * reason the transcript is: opening a session must not cost a pi cold start,
+   * and pi records the model in the file itself (`model_change`). `spawn=true`
+   * is the deliberate exception, used the moment the user opens the model menu
+   * or the context panel — the *list* of switchable models only exists inside a
+   * running process, and at that point the cold start is buying something the
+   * user asked for rather than blocking a click on the sidebar.
+   */
+  route("GET", "/api/sessions/:id/composer", async ({ res, params, query }) => {
+    const sessionPath = allowedPath(params.id!);
+    const live = registry.get(sessionPath);
+
+    if (live && !live.dead) {
+      json(res, 200, await liveComposer(live));
+      return;
+    }
+
+    if (query.get("spawn") === "true") {
+      const handle = await openSession(sessionPath);
+      json(res, 200, await liveComposer(handle));
+      return;
+    }
+
+    json(res, 200, await diskComposer(sessionPath));
+  });
+
+  /**
+   * Switch the model a session talks to.
+   *
+   * pi persists this by appending a `model_change` entry, so the choice
+   * survives a reload and is visible to the terminal as well. An unknown model
+   * is the caller's mistake (`pi` rejects it too), so it answers 400 without
+   * retiring the process — a healthy pi should not be killed over a bad id.
+   */
+  route("POST", "/api/sessions/:id/model", async ({ res, params, body }) => {
+    const sessionPath = allowedPath(params.id!);
+    const payload = asObject(body);
+    const provider = requireString(payload, "provider");
+    const id = requireString(payload, "id");
+    const handle = await openSession(sessionPath);
+
+    try {
+      await handle.client.setModel(provider, id);
+      registry.touch(handle.sessionPath);
+    } catch (err) {
+      throw badRequest(`无法切换到 ${provider}/${id}：${(err as Error).message}`);
+    }
+
+    json(res, 200, await liveComposer(handle));
+  });
+
   route("POST", "/api/sessions/:id/prompt", async ({ res, params, body }) => {
     const sessionPath = allowedPath(params.id!);
     const payload = asObject(body);
@@ -744,6 +1152,28 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(res, 200, { ok: true, override });
   });
 
+  /**
+   * Delete a session for good.
+   *
+   * The resident pi process is retired first, so nothing keeps a file handle
+   * on a JSONL that is about to disappear — and so the next click on that row
+   * cannot respawn against a missing file. The file itself prefers the system
+   * trash (see `session-delete.ts`), and the UI-side rename/hide override goes
+   * with it. Sessions live only in pi's storage, so there is no local copy to
+   * clean up beyond that override.
+   */
+  route("DELETE", "/api/sessions/:id", async ({ res, params }) => {
+    const sessionPath = allowedPath(params.id!);
+    await registry.close(sessionPath, "deleted");
+    const result = await deleteSession(sessionPath);
+    if (!result.ok) {
+      if (result.missing === true) throw notFound("会话文件不存在");
+      throw new HttpError(500, `无法删除会话：${result.error}`);
+    }
+    bus.publish({ type: "sessions_changed", projectPath: "" });
+    json(res, 200, { ok: true, method: result.method });
+  });
+
   route("POST", "/api/sessions/:id/stop", async ({ res, params }) => {
     const sessionPath = allowedPath(params.id!);
     await registry.close(sessionPath, "user-request");
@@ -769,15 +1199,29 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
 
   // --- extension UI responses ----------------------------------------------
 
-  route("POST", "/api/sessions/:id/ui-response", async ({ res, params, body }) => {
-    const sessionPath = allowedPath(params.id!);
-    const handle = registry.get(sessionPath);
-    if (!handle) throw notFound("session is not open");
+  /**
+   * The dialogs still waiting on the user.
+   *
+   * A page that loads (or reloads) while a dialog is pending learns about it
+   * here: the SSE stream carries no history, so without this the card would
+   * never come back and the pi process would stay blocked with nobody able to
+   * answer it.
+   */
+  route("GET", "/api/ui-requests", ({ res }) => {
+    json(res, 200, { requests: uiRequests.list() });
+  });
+
+  /**
+   * Answer a dialog by its own id.
+   *
+   * The id is the address rather than the session path, because a fresh session
+   * has no path yet when its extension asks: pi only reports one through
+   * `get_state`, after `session_start` has already run.
+   */
+  route("POST", "/api/ui-requests/:id/response", async ({ res, params, body }) => {
     const payload = asObject(body);
-    if (typeof payload.id !== "string") throw badRequest("id is required");
-    await callClient(handle, () =>
-      sendRawCommand(handle.client, { type: "extension_ui_response", ...payload }),
-    );
+    const answered = await uiRequests.answer(params.id!, payload);
+    if (!answered) throw notFound("no dialog is waiting under that id");
     json(res, 200, { ok: true });
   });
 
@@ -845,6 +1289,11 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       const url = new URL(req.url ?? "/", "http://localhost");
       const match = matchRoute(req.method ?? "GET", url.pathname);
       if (!match) {
+        // Not an API route: the built front end gets first refusal, and only
+        // then does an unknown path become a 404.
+        if (staticHandler && (await staticHandler(req, res, url.pathname))) {
+          return;
+        }
         json(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
         return;
       }

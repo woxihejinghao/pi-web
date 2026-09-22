@@ -173,6 +173,18 @@ export interface ExtensionUiRequest {
   [key: string]: unknown;
 }
 
+/**
+ * A blocking extension dialog the server is holding open.
+ *
+ * `sessionPath` is empty while the session has not been written to disk yet —
+ * pi reveals the path only after `session_start`, where an extension asks its
+ * first question. The dialog's own id is the address for answering it.
+ */
+export interface PendingUiDialog {
+  sessionPath: string;
+  request: ExtensionUiRequest;
+}
+
 export interface SessionEvent {
   type: string;
   [key: string]: unknown;
@@ -188,6 +200,40 @@ export interface RpcSessionState {
   sessionName?: string;
   messageCount: number;
   pendingMessageCount: number;
+}
+
+/** One selectable model, as the input bar's model menu renders it. */
+export interface ComposerModel {
+  provider: string;
+  id: string;
+  /** Display name from `models.json`; null falls back to the id. */
+  name: string | null;
+  /** 0 when unknown, matching pi's own `contextWindow ?? 0`. */
+  contextWindow: number;
+  reasoning: boolean;
+}
+
+/** How full the model's context window is, per pi's own estimate. */
+export interface ComposerContext {
+  /** null when the figure is unknown — right after a compaction, say. */
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+}
+
+/**
+ * What the composer's right-hand controls render.
+ *
+ * `live: false` means this was read from the session file because no pi process
+ * is resident. That is enough for the model and the context figure — pi records
+ * both on disk — but not for `models`, which only exists inside a running
+ * process (null means "not known", not "none configured").
+ */
+export interface ComposerState {
+  live: boolean;
+  model: ComposerModel | null;
+  models: ComposerModel[] | null;
+  context: ComposerContext | null;
 }
 
 /** One entry in the server-side directory browser. */
@@ -241,6 +287,8 @@ export interface WebSettings {
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
+  /** The user closed the task panel's "install rpiv-todo" notice. */
+  todoNoticeDismissed: boolean;
 }
 
 /**
@@ -363,4 +411,187 @@ export interface ProviderInput {
   api?: string;
   apiKey?: string;
   models?: ProviderModelEntry[];
+}
+
+/**
+ * One extension pi would consider loading, resolved by pi's own package
+ * manager. `origin` and `scope` decide which settings key a toggle writes, so
+ * they travel with the row rather than being re-derived on the client.
+ */
+export interface ExtensionItem {
+  /** The entry file (or directory) pi loads; also the toggle identity. */
+  path: string;
+  /** Row label: file stem, directory name, or package name. */
+  name: string;
+  /** What contributed it: `auto`, `local`, or a package source. */
+  source: string;
+  scope: "user" | "project";
+  origin: "top-level" | "package";
+  enabled: boolean;
+}
+
+export interface ExtensionsView {
+  agentDir: string;
+  /** pi's global settings file. */
+  settingsPath: string;
+  projectPath: string | null;
+  /** `<project>/.pi/settings.json`, when a workspace was resolved. */
+  projectSettingsPath: string | null;
+  /** pi gates project-local resources on this. */
+  projectTrusted: boolean;
+  extensions: ExtensionItem[];
+  /**
+   * Resolution failure. Present instead of an empty list so the page can tell
+   * "you have no extensions" apart from "the read broke".
+   */
+  error: string | null;
+}
+
+/**
+ * Whether the extension behind pi's `todo` tool would load on the next start.
+ *
+ * The task panel is a projection of that tool's transcript output, so with the
+ * extension missing there is nothing to project. `installed` and `available`
+ * are separate: a package can be in pi's settings but disabled, and only the
+ * "not installed at all" case is worth offering an install button for.
+ */
+export interface TodoView {
+  available: boolean;
+  installed: boolean;
+  packageName: string;
+  source: string;
+  /** Workspace the check was resolved against; null is the user scope only. */
+  projectPath: string | null;
+  /** A broken read (not a missing package): the notice stays hidden. */
+  error: string | null;
+}
+
+/**
+ * Whether a newer pi is published. Resolved by the server against pi's own
+ * release endpoint — the same one the CLI polls at startup.
+ */
+export interface PiVersionInfo {
+  /** The pi this server runs (the version of the package it imported). */
+  current: string;
+  /** Newest announced release, or null when it could not be determined. */
+  latest: string | null;
+  available: boolean;
+  note: string | null;
+  packageName: string;
+  /** The command that moves *this server* to the newer pi. */
+  updateCommand: string;
+  /**
+   * Why the check produced no answer. Kept apart from `available: false` so
+   * the page can say "could not check" instead of claiming "up to date".
+   */
+  error: string | null;
+  /** The check was deliberately skipped (`PI_OFFLINE` / `PI_SKIP_VERSION_CHECK`). */
+  skipped: boolean;
+}
+
+/** One installed pi package pi reports as behind its upstream. */
+export interface ExtensionUpdate {
+  /** The source string as pi's settings record it; matches `ExtensionItem.source`. */
+  source: string;
+  displayName: string;
+  type: "npm" | "git";
+  scope: "user" | "project";
+}
+
+/**
+ * Both update notices for one workspace: pi itself, and the installed packages
+ * pi can compare against upstream.
+ */
+export interface UpdatesView {
+  pi: PiVersionInfo;
+  extensions: ExtensionUpdate[];
+  /** A package check that broke (not "no updates"); the list stays empty. */
+  extensionsError: string | null;
+  /** When the server resolved this answer (epoch ms). */
+  checkedAt: number;
+}
+
+/**
+ * One MCP server as `pi-mcp-adapter` would load it for a workspace. Secret
+ * *values* never appear here — `envKeys` and `headerKeys` are names only.
+ */
+export interface McpServerView {
+  name: string;
+  transport: "stdio" | "http" | "sse" | "socket" | "unknown";
+  /** Command line, URL, or socket path — whatever the row should show. */
+  detail: string;
+  /** Editable fields for the editor; `args` is the joined form. */
+  command: string | null;
+  args: string;
+  cwd: string | null;
+  url: string | null;
+  envKeys: string[];
+  headerKeys: string[];
+  auth: "oauth" | "bearer" | "none";
+  enabled: boolean;
+  /** The file pi would write this server's override to. */
+  sourcePath: string;
+  sourceKind: "user" | "project" | "import";
+  importKind: string | null;
+  /** True when another agent's config file owns the definition. */
+  hostImport: boolean;
+}
+
+export interface McpSourceView {
+  id: string;
+  label: string;
+  path: string;
+  exists: boolean;
+  scope: "global" | "project";
+  kind: "shared" | "pi";
+  serverCount: number;
+}
+
+export interface McpView {
+  /** False when `pi-mcp-adapter` is not installed — pi has no MCP of its own. */
+  available: boolean;
+  unavailableReason: string | null;
+  agentDir: string;
+  projectPath: string | null;
+  servers: McpServerView[];
+  sources: McpSourceView[];
+  imports: { kind: string; path: string; serverCount: number }[];
+  hostConfigs: { kind: string; path: string; serverCount: number; active: boolean }[];
+  /** Detected host configs that have not been imported yet. */
+  importable: { kind: string; path: string }[];
+  hostConfigDiscovery: "off" | "prompt" | "on";
+  conflicts: {
+    serverName: string;
+    sources: { kind: string; path: string }[];
+    winner: { kind: string; path: string };
+  }[];
+  paths: { global: string; project: string; projectPi: string; piGlobal: string };
+  error: string | null;
+}
+
+/** The result of a one-shot `initialize` (+ `tools/list`) connection check. */
+export interface McpProbeResult {
+  ok: boolean;
+  message: string;
+  toolCount?: number;
+  serverName?: string;
+  serverVersion?: string;
+  durationMs: number;
+}
+
+/** One environment/header row. An empty value means "keep the stored one". */
+export interface McpSecretRow {
+  key: string;
+  value: string;
+}
+
+export interface McpServerDraft {
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  command: string;
+  args: string;
+  cwd: string;
+  url: string;
+  env: McpSecretRow[];
+  headers: McpSecretRow[];
 }

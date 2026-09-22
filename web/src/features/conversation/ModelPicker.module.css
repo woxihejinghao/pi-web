@@ -1,0 +1,126 @@
+/*
+ * The model trigger mirrors the composer's other text controls: it reads as
+ * part of the card, not as a button, until it is hovered or open.
+ */
+
+.anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 220px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.trigger:hover,
+.trigger[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.triggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.trigger svg {
+  flex: none;
+}
+
+.menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 260px;
+  max-height: 320px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-elevation-float);
+  /* The menu itself never scrolls — the viewport does, so the rounded corners
+   * stay clean and max-height cannot squeeze the rows. */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.viewport {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.groupTitle {
+  padding: 6px 10px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.groupTitle:not(:first-child) {
+  margin-top: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex: none;
+  padding: 6px 10px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.itemActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.itemName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.itemMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.itemMeta svg {
+  color: var(--dsw-alias-brand-primary);
+}
+
+.empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}

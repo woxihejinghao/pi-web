@@ -24,21 +24,32 @@ node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = 项目目录)
 需要 Node.js `>= 22.19`。
 
 ```sh
+npx pi-web-simple
+```
+
+一个进程同时提供前端和 API，监听 <http://127.0.0.1:5319> 并自动打开浏览器——地址和下面的开发模式一致，所以不必记两个端口。不想要自动打开就设 `PI_WEB_SIMPLE_OPEN=0`。
+
+首次使用：点击左侧栏的 **+**，在弹出的目录选择器里逐级进入目标目录（顶部快捷位置可直达主目录 / 桌面 / 文稿 / 下载 / 根目录，地址栏也可直接粘贴路径），点 **选择此目录** 添加项目；再点项目下的 **+** 新建会话开始对话。
+
+### 从源码开发
+
+```sh
 pnpm install
 pnpm dev
 ```
 
-然后打开 <http://127.0.0.1:5319>。
+开发模式分成两个进程，改代码即时生效：
 
 - 前端 dev server：`127.0.0.1:5319`（Vite，`/api` 反向代理到后端）
 - 后端 API：`127.0.0.1:4319`
 
-首次使用：点击左侧栏的 **+**，在弹出的目录选择器里逐级进入目标目录（顶部快捷位置可直达主目录 / 桌面 / 文稿 / 下载 / 根目录，地址栏也可直接粘贴路径），点 **选择此目录** 添加项目；再点项目下的 **+** 新建会话开始对话。
+浏览器里打开的仍然是 5319，所以两种模式在地址栏没有区别。
 
 其他命令：
 
 ```sh
-pnpm build       # 构建前端
+pnpm build       # 构建前端 + 编译后端到 server/build
+pnpm start       # 用构建产物启动（等价于 npx，端口 5319）
 pnpm typecheck   # 前后端类型检查
 pnpm test        # 前后端测试（vitest）
 ```
@@ -48,18 +59,35 @@ pnpm test        # 前后端测试（vitest）
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `PI_WEB_SIMPLE_HOME` | `~/.pi-web-simple` | 项目记录（`store.json`）的存放目录 |
-| `PI_WEB_SIMPLE_PORT` | `4319` | 后端 API 端口 |
+| `PI_WEB_SIMPLE_PORT` | 开发 `4319`、发布版 `5319` | 监听端口。开发模式下这是**后端 API** 端口（Vite 反代的目标）；发布版 CLI 里这是**唯一**端口，前端和 API 都在上面 |
+| `PI_WEB_SIMPLE_STATIC_DIR` | 自动探测 `web/dist` | 前端构建产物的位置。非空值即启用静态托管，空串强制只跑 API |
+| `PI_WEB_SIMPLE_OPEN` | 发布版 `1` | 设为 `1` 时启动后打开浏览器；开发模式默认不开，免得抢走编辑器焦点 |
 | `PI_WEB_SIMPLE_SESSION_DIR` | pi 的默认目录 | 覆盖会话存储根目录；同时作用于会话查找与派生的 pi 子进程（`--session-dir`） |
 | `PI_WEB_SIMPLE_IDLE_MS` | `600000` | 会话空闲多久后回收其 pi 进程（预热进程同样适用） |
 | `PI_WEB_SIMPLE_MAX_SESSIONS` | `8` | 同时存活的 pi 进程上限 |
 
-前端 dev server 的代理目标端口读取 `PI_WEB_SIMPLE_PORT`，两处要保持一致。
+开发模式下前端 dev server 的代理目标端口读取 `PI_WEB_SIMPLE_PORT`，两处要保持一致。
 
 ## 目录选择器为什么要走服务端
 
 浏览器拿不到本地目录的绝对路径：`<input webkitdirectory>` 只给出相对路径，File System Access API 出于安全考虑刻意不暴露真实位置。所以目录浏览由服务端提供（`/api/fs/list`、`/api/fs/locations`），只列出子目录名，**从不读取文件内容**。
 
 因为无鉴权的服务端能枚举文件系统，所有 `/api/*` 请求都会校验 `Host`（以及存在时的 `Origin`）必须是回环地址。这样即使恶意页面通过 DNS rebinding 把自己的域名解析到 `127.0.0.1`，也会因携带非回环的 `Host` 头而被拒。
+
+## 网络与隐私
+
+这个工具按**单机单人、无鉴权**设计，服务端只绑定 `127.0.0.1`。上一条的 `Host`/`Origin` 校验只挡浏览器发起的跨源请求，**不是认证边界**——别把它暴露到公网，也别用反向代理把外部流量转进来。报告安全问题见 [SECURITY.md](./SECURITY.md)。
+
+它会发起这些对外请求、并带有这些副作用；除版本检查外全部由你显式触发：
+
+| 时机 | 目标 | 说明 |
+|---|---|---|
+| 启动时 | `https://pi.dev/api/latest-version` | 与 pi CLI 启动时轮询的同一个端点，只做版本比较（见「更新提示为什么分两条路」） |
+| 点「获取可用模型」 | 你配置的 provider 地址 | 用 `GET <baseUrl>/models` 拉取模型列表 |
+| 点 MCP 的「检查」 | MCP 配置里的命令或地址 | **会真的启动那个 stdio 命令**或请求那个 URL，超时 15 秒 |
+| 与模型对话 | 你配置的 provider | 会话内容按 pi 的正常行为发给模型 |
+
+除此之外，服务端不联网、不埋点、不上报。它读到的东西都留在本机：会话正文只有 pi 一份（`~/.pi/agent/`，或 `PI_WEB_SIMPLE_SESSION_DIR` 指定的目录），项目记录与 UI 偏好在 `~/.pi-web-simple/store.json`，模型的 API 密钥由 pi 自己管理（页面只写不读，见「模型配置为什么在改文件」）。目录浏览（`/api/fs/*`）会枚举**服务端所在机器**的目录，但只列子目录名、不读文件内容。
 
 ## 与 pi CLI 并存
 
@@ -93,30 +121,44 @@ Web 不会静默合并两边的写入 —— 那样会互相覆盖 leaf 指针�
 
 **重命名不写 pi 的文件。** 在 Web 里改会话名只写入 `store.json` 的覆盖项，pi 的 `/name` 和 JSONL 内容都不动。
 
+**删除会话是先关进程，再交给系统废纸篓。** 这是本项目里唯一会丢数据的操作，所以每一步都按“删错了能不能退”来定：先结束该会话的驻留 pi 进程（否则它继续握着文件句柄，下一次点击还会对着一个已经不存在的文件重启）；文件优先交给 `trash` 命令，与 pi 自己在 `/resume` 里的删除路径保持一致，删错了还能从废纸篓捞回来；系统没有这个命令（它不是 pi-web-simple 的依赖）时回退到 `unlink` 永久删除，两种结果在侧栏的提示里分开说。Web 端的重命名/隐藏覆盖项一并清掉——它按会话路径索引，留着只会永远指向一个不存在的文件，并在该路径被复用时突然复活。文件已经不在时接口返回 404，不谎报成功。
+
 ## 目录结构
 
 ```
+bin/
+  pi-web-simple.js 发布版入口：一个进程同时提供前端与 API
 server/src/
   config.ts        端口、存储位置、超时等常量
   store.ts         store.json 的读取与原子写入（临时文件 + rename）
   projects.ts      项目 CRUD：realpath 规范化、路径唯一性、排序
   sessions.ts      会话列表：SessionManager.list 派生 + 覆盖项合并
+  session-delete.ts 会话删除：先试 trash CLI，回退 unlink，并清掉 UI 覆盖项
   registry.ts      pi RPC 进程池：懒启动、空闲回收、单写者
+  ui-requests.ts   阻塞式扩展问答的待答表（按 dialog id 寻址、刷新后仍可恢复）
   routes.ts        REST + SSE 路由（依赖注入，便于测试）
+  static.ts        构建产物的静态托管：SPA 回退、缓存头、路径穿越防护
   fs-browse.ts     目录浏览（供目录选择器使用，只列目录不读文件）
   models.ts        pi 的模型提供方配置（models.json + auth.json 的读与写）
+  composer.ts      输入框的模型与上下文：驻留时问进程，否则按 pi 的规则从会话文件重算
+  extensions.ts    pi 的扩展清单（用 pi 自己的资源解析器）与启用/禁用写入
+  updates.ts       pi 版本与已装包的更新检查（pi 自己的发布端点 + 包管理器）
+  mcp.ts           pi 的 MCP 配置（通过 pi-mcp-adapter 的 config 层读与写）
+  mcp-probe.ts     MCP 服务器的连接检查（initialize 握手，stdio 另取工具数）
   watch.ts         会话目录监听，区分自身写入与外部写入
   session-path.ts  会话路径校验与 per-project 会话目录推导
   bus.ts           事件总线（进程事件 → SSE）
 web/src/
   theme/           设计令牌，移植自 deepseek-harness 的 ui-theme
-  layout/          两栏外壳、侧栏、扩展弹窗
+  layout/          两栏外壳、侧栏
   features/projects/     工作区树（含会话嵌套）与目录选择器
   features/conversation/ 新会话页、对话流、Composer、工具行、思考行、轮次导轨
                          消息操作行（复制 / 分支 / 用量 / 用时）、话题树
-                         任务清单（转录投影 + 面板 + 专用工具行）
-  features/settings/     设置页（外壳 + 行原语 + 通用设置 + 模型提供方）
-  lib/             API 客户端、SSE 订阅、状态 store
+                         任务清单（转录投影 + 面板 + 专用工具行）、Markdown 与代码高亮（shiki）
+                         输入框右下角的模型选择器与上下文环（含共用统计面板 StatPanel）
+                         扩展问答卡片（接管输入框座位）及其纯投影 question-model
+  features/settings/     设置页（外壳 + 行原语 + 通用设置 + 模型提供方 + 插件清单 + MCP + 更新提示）
+  lib/             API 客户端、SSE 订阅、状态 store、更新提示的纯投影
   components/      图标
 ```
 
@@ -132,6 +174,8 @@ web/src/
 
 **侧栏跟随 dsh 的信息层级**：顶部是全宽「新会话」按钮，下方是「工作区」分区，每个工作区展开后把它的会话嵌在下一层（会话行不重复文件夹图标，右侧只给紧凑的 `7天`）。工作区支持按目录祖先关系嵌套（`/a` 包的 `/a/b` 收在它下面，没有注册父目录的保持平铺）；每个工作区默认只列 5 条会话，其余折叠为「展开其余 N 个会话」。选中项用浅底 + 文字加粗，而不是只换背景色。
 
+**顶部那枚「新会话」是 dsh 的 pill，不是自绘的方块。** 度量逐项照 `.hHd-Xa_newSession`：12px 圆角、38px 盒高、`8px 16px` 内边距、14px/22px 文字、6px 图标间距；填充用 `--dsw-alias-button-elevated-fill`（浅色下就是白，深色下是 `neutral-bluish-750`），悬停才换成 `--dsw-alias-button-floating-hover`。那根 `0.5px solid var(--dsw-alias-border-l3)` 是 dsh 原件写在 border 上的，不是 elevation 阴影里的发丝，所以这里也留成真 border。侧栏左右内边距同时收到 14px —— dsh 是 12px 的轨道内边距加按钮自己的 2px 外边距，这里把两者合进父容器的 padding，结果一样而少一层盒子。
+
 **整行都是切换目标，而不只是标题文字**。会话行的标题按钮用一个拉伸的伪元素（`.sessionTitle::after` + `inset: 0`）铺满整行：仍是**一个**真实控件（键盘焦点和读屏不会看到多余东西），但行的内边距、时间戳、以及短标题旁边的空白都算在内 —— 实测非悬停状态下 225px 行宽的采样 76/76 全部命中。两个容易踩的坑：`inset: 0` 必须相对已定位的 `.sessionRow` 解析（否则只铺开标题自己那么宽）；`.rowActions` 的渐变背景从透明开始，命中测试走的是 padding 盒，不给它 `pointer-events: none` 就会默默吞掉右侧约三分之一的点击 —— 只把指针留给真正的按钮。
 
 **新会话页是一个独立的空状态**：未选中会话时不再是一个「请选择会话」的占位，而是 dsh 风格的居中页 —— 品牌标记 + 标题 + 「预览版」标签、工作区选择器、大圆角输入框。在这里输入第一句话会同时完成两件事：立即切到 draft，并把这句话排队交给即将就绪的会话。
@@ -142,7 +186,19 @@ web/src/
 
 **输入框里的 `/` 补全**：命令列表来自运行中的 pi 进程（`get_commands` RPC），所以服务端优先复用该项目的活跃会话，没有就走预热进程，结果按项目缓存 60 秒。补全覆盖三类：扩展命令、prompt 模板，以及注册为 `/skill:name` 的技能。pi 在投递 prompt 前会自己展开 skill 与模板命令，所以前端只负责补全文本，不做任何替换。候选按「名字前缀 → 名字子串 → 描述」排序，上下键选择，Enter/Tab 补全（此时不会发送消息），Esc 关闭。对话输入框和新会话页共用同一套逻辑。
 
-**扩展 UI 请求**：pi 的自有工具不会弹确认框，但已安装的扩展可以通过 `ctx.ui.confirm/select/input/editor` 阻塞运行。这类请求会被转成弹窗；`notify` 变成页面提示；`setTitle` / `setStatus` 等终端专用请求在服务端就被丢弃（一次普通对话会产生 50 多次 `setTitle`）。
+**扩展 UI 请求接管输入框，而不是弹窗**。pi 的自有工具不会弹确认框，但已安装的扩展可以通过 `ctx.ui.confirm/select/input/editor` 阻塞运行。这类请求**替换输入框**——dsh 的 `ask_user_question` 就是这么处理的：问题出现在你正要打字的地方，上方的对话仍然可读，回答用的还是那双手。盖一层模态则相反：它把已经发生的事遮住，只为了问一件本就属于「继续对话」的事；而「扩展在等你回答」与「你在写消息」抢的是同一个座位，同一时刻只该有一个占着。
+
+四种请求共用一张卡片：`select` 渲染成带序号的选项列表（点击选中、Enter 提交，数字键直接选中该项——序号同时是快捷键），`confirm` 是「是 / 否」两行、点击即答，`input` / `editor` 换成自增长的文本框（`input` 用 Enter 提交；`editor` 装的是本就有换行的文本，所以 Enter 换行、Cmd/Ctrl+Enter 提交）。选项标签末尾的 `(Recommended)` / `（推荐）` 会剥成徽章——那是 dsh 的约定，扩展沿用了它——但**回给 pi 的值保留原串**，扩展是按原串匹配的。
+
+卡片可以折叠成一行标题条，把对话让出来；关掉或按 Esc 等价于 `cancelled: true`。带 `timeout` 的请求显示倒计时：pi 到点自行结算且**不通知客户端**，所以浏览器按同一个 deadline 计时并在到点时收起卡片（不再补发响应——那时 pi 已经走完了）。请求按会话排队，一次只占一个座位；答完一个才会露出下一个，这样后来的请求不会把前一个还没看过的抹掉。
+
+**答案按 dialog id 送回，而不是按会话路径。** 这不是风格问题：新会话在 pi 写出第一条 assistant 回复前没有落盘，而 pi 只在 `session_start` **之后**才通过 `get_state` 报出会话文件路径——扩展的第一次提问恰好就发生在 `session_start` 里。按路径回传会 POST 到 `/api/sessions//ui-response`（404），而这个进程会一直卡着。所以服务端把待答的 dialog 记在一张以 request id 为键的表里（`ui-requests.ts`），广播仍带 `sessionPath`（可能为空串，只用于展示），应答走 `POST /api/ui-requests/:id/response`。同一张表还让**刷新页面不至于丢问题**：SSE 不重放历史，所以挂载时先 `GET /api/ui-requests` 把在等的问题收进来，否则那个 pi 进程会永远等一个没人知道的答案。
+
+**回传不能走 `RpcClient.send()`。** 它是个请求/响应通道：会拿自己的 `req_N` **盖掉**调用方的 id（pi 于是永远匹配不上是哪个 dialog），然后等一条 `extension_ui_response` 根本不会有的回复——30 秒后以超时错误告终，而这期间用户以为已经答过了。dialog 应答在 pi 那侧是即发即忘的，所以服务端直接往子进程的 stdin 写这一帧。
+
+**预热进程的提问也会出现。** 选中项目时后台已经起了一个 pi（见上文），它的扩展可能在会话还没被认领时就提问。这类请求同样进队列：它就是「这个新会话要问你的第一件事」，答完后会话接管这个进程。代价是问题属于哪个会话还看不出来（那时它还没有路径），所以卡片上不会显示会话名。
+
+`notify` 仍然变成页面提示；`setTitle` / `setStatus` 等终端专用请求在服务端就被丢弃（一次普通对话会产生 50 多次 `setTitle`）。
 
 **切换会话不启动进程**。`GET /api/sessions/:id/messages` 原本走 `openSession` → spawn pi，而冷启动要 1.2–3.3 秒 —— 这就是「正在载入会话…」等待的**全部**来源，尽管转录一直躺在磁盘上。现在只有**已驻留**的会话才走 RPC（它的内存视图是权威的，可能含有尚未落盘的轮次），其余直接从 JSONL 读：`SessionManager.open(path).buildSessionContext()`，也就是 pi 自己重建会话时用的那套（compaction-aware、从当前 leaf 走树）。35 个真实会话实测中位 **4ms**、p95 23ms、最大 28ms，且**零进程启动**；7 个会话与 RPC 结果逐条比对**完全一致**（覆盖 352 条消息 / 189 次工具调用，到 3 条消息的空会话）。浏览器里实测点击到内容可见 19–160ms。
 
@@ -156,11 +212,37 @@ web/src/
 
 **`/skill:` 命令在转录里是展开态，显示时必须折回去。** pi 在投递前就把 `/skill:<name> [args]` 解成一条用户消息：`<skill name="git-commit" location="…">`、整份 SKILL.md、`</skill>`。于是「发一条 skill 命令」在这个 UI 里曾经是**两三千字的文件倾倒**，会话标题也跟着变成 `<skill name="git-commit" location="/Users/…`（pi 的标题取首条消息）。dsh 没有这个问题——它存的就是字面 `/git-commit`，`projectUserText` 把 `/` 开头的 token 渲染成蓝字等宽的 chip。这里做同一件事：`skill-block.ts` 用 **pi 自己的正则**（`parseSkillBlock`，`dist/core/agent-session.js`）解析，气泡里只画 `/skill:<name>`（外加用户写在命令后面的参数），复制按钮复制同一串命令，服务端派生标题时也先折叠（`foldSkillCommand`，同时容错 pi 已经截断的形态——标题只有 80 字，完整块多半只剩个开头）。chip 与气泡都照 dsh：chip 是 `refChip` + `slashChip`（品牌蓝、500 字重、代码字体、无自己的底色），气泡从灰底描边方块换成 `--dsw-specific-bubble` 的浅蓝胶囊（22px 圆角、10/16 内边距、22px 行高）。
 
+**对话框下面是两枚会话级 pill，turn 级的那两个仍在每条消息下面。** 左边是 `2 轮 39 步 · 192 tok/s`（仪表图标），右边是 `364K tok · 缓存命中 56%`（数据库图标），点开各是一个详情面板（「会话统计」/「Token 用量」），位置、形状、文案都照搬 dsh 的 `StatsPills` 加 `StatDialog`——只把面板从 `position: fixed` 的 portal 改成锚在 pill 上方的绝对定位，因为两枚 pill 所在的那行从不裁切，这样省掉每次打开的一次测量。轮 = 用户消息数，步 = assistant 消息数，总量 = 计费输入（未缓存 + 缓存读 + 缓存写）+ 输出，命中率 = 缓存读 / 计费输入，并且**有未命中就绝不四舍五入到 100%**（999/1000 显示 99.9）。**速度是这一个客户端自己量的**：pi 的 usage 里没有时长，`get_session_stats` 也没有，所以 tok/s、模型用时、TTFT 只在本次浏览器会话的流式过程中累积（`useConversation` 的 `TimingState`，`message_start`/首个非空 delta/`message_end`/工具 start-end 四个边界）；从磁盘重新读回的会话只显示轮、步和用量，速度那一段干脆不出现——dsh 在自己缺时间数据时也退化成同样的纯文本 pill，而不是去猜一个数。
+
+**输入框右下角还有两个控件：模型切换和上下文环，位置与 dsh 相同。** 模型名加一个 chevron，点开是按 provider 分组的菜单（当前模型带勾，每行右侧是它的上下文窗口）；环是一个细圆弧，点开是一张「上下文」面板（窗口 / 已用 / 剩余 / 百分比）。两者都在 2026-09 这次改动里加上，数据来源按代价分岔——因为它们的数据根本不在同一个地方。
+
+**输入卡的描边比默认的 elevation 浅一档，这不是调出来的。** `--dsw-elevation-soft` 的第一段是 0.5px 发丝描边，默认取 `--dsw-alias-border-l4`；dsh 的输入卡在卡片自身上把 `--dsw-elevation-stroke-color` 重绑到 `border-l2`（菜单面重绑最浅的 l1，工作区的拖放触发态置 `transparent` 只留柔光），滚动条 thumb 也一并切到 l2 那一对。这里照做，且 `Composer` 与 hero 两张卡共用同一组重绑——它们在 dsh 里本来就是同一张 `InputBar` 卡的两个变体。卡上的字号/行高也从硬编码的 14/24 接回 `--dsh-content-font-size` / `--dsh-content-font-delta`：设置页调字号时输入框里的字跟着动，而不是只有正文动。
+
+**发送与停止是同一枚蓝色圆钮的两个图标。** dsh 的 `.uV2eYG_primary` 只有一个 className：静止时画发送箭头，运行中画一个 10×10 的圆角方块，但底色始终是 `--dsw-alias-button-info-fill`（浅色 `deepseek-500`、深色 `deepseek-400`）、图标始终是白、悬停始终换 `-hover` 那一档、禁用态统一 `opacity: .4`，另有 0.1s 的 `background-color` 过渡。这里把原来拆开的两枚——发送读 `button-primary-fill`（浅色黑/深色白）、停止读 `bg-layer-2` 的灰底——统一回这一枚：尺寸、999px 圆角、底色、过渡一起照抄，两态只差图标（那枚白色写作 `--dsw-static-neutral-00`，值与 dsh 硬编码的 `#fff` 相同，只是用本项目的调色板拼出来）。输入区的光标也按 dsh 设成业务蓝（`caret-color: var(--dsw-alias-state-business-primary)`），并把 textarea 的内边距换成 dsh 的 `4px 8px 0 14px`——右边只给 8px 是因为 dsh 的滚动容器另有一段 4px 外边距（这里由 textarea 自己的滚动条轨道承担同一角色），左边 14px 是为了与下方工具行的图标对齐。
+
+**新会话页的「预览版」徽章也是 dsh 原件。** `state-business-tertiary` 底 + `label-primary-bluish` 字 + 0.5px 的 `interactive-bg-hover` 描边 + 24px 圆角 + 代码字体 12/18 与 `1px 7px 0` 内边距，并保留 dsh 给它的顶部对齐（`align-self: flex-start` + `margin-top: 2px`）——那是为了跟更大号的标题错位对齐，而不是居中。
+
+**模型从磁盘就能答，上下文也能，但模型列表不能。** 切会话不启动进程是上面那节的核心优化，所以这两个控件要能在没有 pi 进程时工作：
+
+- **会话的模型是 pi 自己写进文件里的**：每次切换都 append 一条 `model_change`（`provider` + `modelId`），磁盘上就有权威答案；显示名和 `contextWindow` 从 `models.json` 取——那是 pi 启动时读的同一份文件，不是我们自己编一份目录。没有 `model_change` 的新会话返回 null（pi 还没选过模型，编一个默认值是猜）。
+- **上下文用量按 pi 自己的规则重算**：`AgentSession.getContextUsage()` 算的是 `estimateContextTokens(this.messages)`，而那个函数没有从包入口导出，所以这里用导出的 `estimateTokens` / `calculateContextTokens` / `getLastAssistantUsage` 把它的十几行规则重写了一遍（有测试锁住）。压缩边界照抄：最后一条有效 usage 在压缩之前、其后又没有成功回复时，答案是「未知」，而不是一个描述压缩前上下文的数字——那恰好是用户最可能来看这个数的一刻。磁盘值与 live 值可能差千分之几（实测 209954 vs 210540）：pi 运行时那个 `messages` 是 agent 的状态（含它自己注入的 system prompt），磁盘上重建的只有会话文件里的消息。
+- **可切换的模型列表只能来自进程**：`get_available_models` 是 runtime 解析后的视图（带上每个模型真实的 `contextWindow`），磁盘上没有等价物。所以 `models: null` 表示「不知道」而不是「一个都没有」，菜单打开时才带 `?spawn=true` 拉一次：用户主动要切换的那一刻付一次 1.5s 冷启动，而不是每次点侧栏都付。实测那一次 1.73s，之后菜单里的 8 个模型都带着窗口值。
+
+**环画的是弧，不是数字。** 它要回答的是「离上限还有多远」，那是个形状问题；具体数字在点开的面板里。环有 75% / 90% 两档变色——那是显示层的判断，不是 pi 的压缩阈值（pi 的阈值可配置），所以面板永远把原始数字写出来，不靠颜色暗示。
+
+**「未知」画成空环，不是满环也不是零。** pi 在刚压缩完时返回 `tokens: null`，磁盘路径上也可能根本没有 `contextWindow`（`models.json` 没写这个字段，而内置 provider 的默认窗口不在依赖树里拿不到）。两种情况都只画轨道，面板里写「未知」并说明估算口径——一个看起来精确的错误数字比「未知」糟得多。
+
+**只在轮次结束时刷新。** 上下文用量来自最后一次模型回复上报的 usage，所以流式过程中它不会变；`agent_settled` 之后拉一次既是最新值，又保证进程一定在（不会为了刷新而 spawn）。模型切换由 POST 的响应直接更新，不需要再读一次。
+
+**新会话页（hero）没有这两个控件。** hero 里还没有会话：没有对象可切换，也没有上下文可查看，而那个输入框属于「即将创建的会话」。pi 的默认模型由它自己的设置决定，在这里放一个选择器只会让人以为它已经绑定了某个会话。第一条消息发出、会话出现之后，两个控件就在输入框右下角。
+
+**统计面板的样式抽出来共用了。** `StatPanel` 现在是两枚会话 pill 和上下文面板共用的组件（它原本长在 `SessionStats.module.css` 里），上下文面板只多了一个贴右对齐——环在发送按钮旁边，居中的面板会越过视口右缘。
+
 **空思考块不渲染**。模型返回的思考常常以空行开头，直接取第一行会渲染出孤零零的「思考 ·」；pi 还会产生**完全空的** reasoning 块（思考被打断）。dsh 的 `ReasoningRow` 取字面第一行，但它另一个 helper 明确用 `find(c => c !== "")`，这里跟随后者。在一个真实会话上，这消灭了 39 行里的 11 行噪音。
 
 **流式思考跟随末尾**：正在输出时摘要取**最后一个非空行**并右对齐（`data-follow-end`），文本从左侧溢出而不是整行重新省略号——否则每来一个 token 整行都会跳一下。输出结束后回到第一行。
 
-**执行中有一处专门的指示**。`TurnStatus.tsx` 是消息列表末尾那行「深度求索中...」——字符串本身被渐变填充（`background-clip: text` + 透明文字色），渐变以 1.8s 平移，于是那道光扫过文字而完全不参与布局。它**不随首个 token 出现而消失**：dsh 的注释写得很明白，这个标签要跨越「首字之前、工具执行、流式输出」三个阶段，而这正好是 pi 的 `agent_start` → `agent_settled`，所以窗口直接用 `isStreaming`。超过 15 秒才会追加一个 `tabular-nums` 计时——大多数轮次在那之前就结束了，闪一下反而像故障。
+**执行中有一处专门的指示**。`TurnStatus.tsx` 是消息列表末尾那行「working...」——字符串本身被渐变填充（`background-clip: text` + 透明文字色），渐变以 1.8s 平移，于是那道光扫过文字而完全不参与布局。它**不随首个 token 出现而消失**：dsh 的注释写得很明白，这个标签要跨越「首字之前、工具执行、流式输出」三个阶段，而这正好是 pi 的 `agent_start` → `agent_settled`，所以窗口直接用 `isStreaming`。超过 15 秒才会追加一个 `tabular-nums` 计时——大多数轮次在那之前就结束了，闪一下反而像故障。
 
 **重试有独立的一行**。pi 在模型请求失败后会自己退避重试，这段时间界面本该是「卡住」的——而 `auto_retry_start` 带着 `attempt` / `maxAttempts` / `delayMs` / `errorMessage`，所以可以有带倒计时的「等待重试模型请求（1/3） · 8s」，倒计时归零后切成 shimmer 的「正在重试模型请求（2/3）」，展开能看到延迟和失败原因（照 dsh 的 `<details>` 结构）。这里有一处刻意的偏离：dsh 在重试进行中也显示秒数，但它的取值恒为 `1s`（helper 有 `Math.max(1, …)` 下限，而 deadline 已经过去了），显示一个永不变化的数字比不显示更糟，所以进行中的状态去掉了时钟、只留尝试次数。
 
@@ -178,17 +260,33 @@ web/src/
 
 **没做「完成项下一轮隐藏」，虽然终端面板有这条规则。** 它靠的是一份运行时的「已经显示过」记账（`/reload` 或 compaction 会重置这份账），而这个 UI 每次切会话都从磁盘重建转录，没有那份账。按轮次硬推会在重新打开会话时把终端仍会显示的旧完成项藏起来——一个看起来一样、实际不同的模仿。同理没做每行的 `#id` 前缀：终端面板在至少一行带 `blockedBy` 时给每行标 `#N`，是为了让 `⛓ #1,#2` 的引用可解析；这里同样显示依赖，但 `#N` 从不被点击，只在一处被引用，前缀于是只是噪音。
 
-**设置分两层，因为它们真的属于两层。** 侧栏底部的「设置」进入一个全屏设置页（左栏导航 + 右栏内容，照 dsh 重建）。导航有两项——**通用设置**和**模型**——它们各自的内容来自不同的地方：
+**「任务清单需要 rpiv-todo」是一条提示，不是一次弹窗。** pi 的 `todo` 工具不属于 pi 自己，它随 `@juicesharp/rpiv-todo` 一起装上来——于是扩展缺席时任务面板里什么都没有，而那不是「这个会话还没有任务」，是「这个会话不可能有任务」。把这两种状态画成同一块空面板是错的，所以面板在这个位置放了一条与 MCP 那节同形的提示：一行说明 + 「安装」+「不再提示」。判断规则收在一个纯函数里（`shouldOfferTodoInstall`），它排除四种「不显示」：答案还没回来（`null`，每次重载都会短暂经过，否则提示会在每个页面上闪一下）、读取失败（读崩了不等于包不在，重装很可能装的是已经装好的东西）、装了但被停用（那是用户自己在插件页做的选择，不是缺依赖）、以及用户关过。只有干净的「没装」才给安装按钮。
+
+**安装走 pi 自己的包管理器，关掉则记在 `store.json`。** 安装这个动作就是 `pi install npm:@juicesharp/rpiv-todo`（`installAndPersist`），装完像 MCP 那样把所有驻留进程关掉，下一条消息才真的加载它。而「不再提示」是这份 UI 自己的偏好——pi 里没有「提示已关闭」这个概念，它只存在于用户脑子里——所以它进 `store.json` 的 `todoNoticeDismissed`，刷新和重启都还在。代价是关掉之后对话页不再有入口，于是**插件页顶部常驻同一枚安装按钮**（同一个判断函数，只是不看 dismissal）：一个能关掉、却没有任何地方能再打开的提示，会把「关闭」变成死胡同。
+
+**设置分两层，因为它们真的属于两层。** 侧栏底部的「设置」进入一个全屏设置页（左栏导航 + 右栏内容，照 dsh 重建）。导航有四项——**通用设置**、**模型**、**插件**和**MCP**——它们各自的内容来自不同的地方：
 
 - **外观 / 字号大小 / 对话显示 / 繁忙时的发送行为** 存在本项目的 `store.json` 里。pi 没有对应物，改它们不该影响终端里跑着的 `pi`。
 - **自动压缩** 属于 pi，所以是从一个活的 pi 进程 `get_state` 读回来的，写也走 `set_auto_compaction`。一个项目进程都起不来时这一行显示为禁用——**宁可禁用，也不要显示一个我们猜的值**，否则用户会把它「改成」它看起来已经是的样子。
 - **模型提供方** 既不在我们的 store 里，也没有 RPC，所以直接改 pi 的两个配置文件（下一节）。
+- **插件（扩展）** 同样既不在我们的 store 里，也没有 RPC——而且这一次连「当前加载了哪些」都问不到，所以清单由 **pi 自己的资源解析器**算出来（下文「插件清单为什么交给 pi 自己解析」）。顶部还常驻了任务清单扩展的安装入口——对话页那条提示可以关掉，这一处不关。
+- **MCP 服务器** 自己不是 pi 的一部分，而是 `pi-mcp-adapter` 扩展提供的；配置散在七八个文件里且有合并顺序，所以这一节直接加载那个扩展公开的 config 入口（下文「MCP 管理为什么要靠 pi-mcp-adapter」）。
 
 **外观：深色主题是 dsh 的原件，不是调出来的。** dsh 的主题包里有四个 `body[data-ds-dark-theme]` 块，重新指向整套 static 色阶再由 semantic alias 引用它。它们本来就在 `design-platform.css` 里（当初是逐字移植的），只是**从来没生效过**——dsh 的运行时写的是 `data-ds-dark-theme`，而本项目写 `data-appearance`。把选择器改成 `html[data-appearance="dark"] body` 之后，深色立刻是对的：`--dsw-alias-bg-base` → `rgb(21,21,23)`，`--dsh-scrollbar-thumb` → `rgb(60,60,61)`，连思考行的渐隐带都从白换成 `#151517`。
 
 **选择器写成 `html[…] body` 而不是 `body[…]` 是有原因的**：浅色 token 就声明在 `body` 上，深色块必须**在同一元素上比它更具体**，而不是去命中它的后代。三个 token 表（`design-platform` / `gradient-shadow-text` / `shiki`）都是这个形状。
 
-**字号只写一个变量，其余靠 CSS 派生。** dsh 的字号是 12–17 的整数（`Schema.number().step(1).min(12).max(17).default(14)`）。`--dsh-content-font-size` 由设置页写成 `documentElement` 上的内联属性，而 `--dsh-content-font-delta` / `-secondary` / `-delta-secondary` 在 `gradient-shadow-text.css` 的 `body` 块里用 `calc` / `min` / `max` 从它派生——那份是 dsh 原件，本项目一直就有。
+**代码高亮是这套 token 表的第一个消费者。** `highlight.ts` 移植的是 dsh `ui-primitives` CodeBlock 的静态路径：主题不是某一套内置配色，而是 `createCssVariablesTheme({ name: "css-variables", variablePrefix: "--shiki-", fontStyle: true })` —— token 颜色就是 `shiki.css` 里那 9 个变量，浅色声明在 `:root`，深色声明在 `html[data-appearance="dark"] body`。所以切外观是**重新解析颜色**，不是重新高亮。改之前这里写死 `github-light`，深色主题下代码块是唯一一块仍然发白的面板。
+
+**引擎换成 JavaScript 正则，因为 wasm 比语法更贵。** dsh 用 `createJavaScriptRegexEngine({ forgiving: true })`，并把 `lazyCompileLength: Infinity` 交给 oniguruma-to-es（长 pattern 首次用到时才编译），本项目照抄。代价是少数语法不支持的模式被跳过（`forgiving` 就是为此存在的），换来的是不再下载 shiki 的 Oniguruma wasm：同一份产物实测，主包 633.9 KB + wasm 622.3 KB（gzip 200.6 + 231.2）变成主包 902.9 KB 且无 wasm（gzip 239.0），首次打开少下约 195 KB。
+
+**语言表照抄 dsh，因为「支持哪些语言」是一个产品决定，不是 shiki 的决定。** 26 种语言、43 个别名（`ts` / `js` / `jsx` → `typescript`，`bash` / `sh` / `zsh` → `shellscript`，`yml` → `yaml`…），其中 `typescript` / `shellscript` / `json` 随入口 chunk 一起到（dsh 的 `Lm`），其余 23 种走动态 `import()`。不在表里的语言渲染纯文本——dsh 对 `diff`、`text` 也是这样，而 shiki 的 web bundle 认得它们，所以这曾经是「本项目比 dsh 高亮得多」的一处。
+
+**grammar 是「先进视口，再按需到货」。** 代码块进入视口才请求 grammar（照 dsh 的 `useLangReady`，一个只触发一次的 IntersectionObserver），首帧是纯文本，`import()` 落地后由 `useSyncExternalStore` 订阅重渲染上色——dsh 用的是同一套两段式（`n8` / `yo`），而不是每个代码块各维护一个 async 状态机，也不会为长转录里没滚到的代码块拉语言 chunk。
+
+**唯一的偏离是流式路径。** dsh 的 CodeBlock 在流式期间改用增量 tokenizer（`codeToTokensBase` 接上一次的 `grammarState`，按行追加），所以它没有长度上限；本项目每次重渲染都全量 `codeToHtml`（与 dsh 的静态路径同构），因此留了 2 万字符的上限兜底——200 行 typescript 实测单次 33ms，而增量路径不会有这个代价。
+
+**字号只写一个变量，其余靠 CSS 派生。** dsh 的字号是 12–17 的整数（`Schema.number().step(1).min(12).max(17).default(14)`）。`--dsh-content-font-size` 由设置页写成 `documentElement` 上的内联属性，而 `--dsh-content-font-delta` / `-secondary` / `-delta-secondary` 在 `gradient-shadow-text.css` 的 `body` 块里用 `calc` / `min` / `max` 从它派生——那份是 dsh 原件，本项目一直就有。**本项目的默认值是 15，不是 dsh 的 14**（`server/src/store.ts` 的 `FONT_SIZE_DEFAULT`，前端 `DEFAULT_SETTINGS` 跟着它）。同一个值也写在 `:root` 的 `--dsh-content-font-size` 上：第一帧的绘制发生在 `/api/settings` 返回之前，两处不一致的话会先闪一下 14px 再跳成 15px。变量自己的 `14px` 回退保留不动——那是 dsh 原件里的写法，只在根本没有声明该变量时才生效，而上面这一行恰好把那种情况排除掉了。
 
 **真正断掉的是消费端。** `Markdown.module.css` 把正文字号硬编码成 13.5px、标题 19/17/15/14px，`MessageList.module.css` 把用户气泡写成 13.5px——全都不读那几个 token。后果是：改字号时只有工具行和思考行会动（它们读 `--dsh-content-font-size-secondary`），而读者停留最久的**正文一动不动**。接上 dsh 的 `--dsw-font-markdown-*` 尺寸后，正文 14→17px 时行高跟着 24→27px，标题按同一像素增量保持层级。顺带把基准从 13.5px 拉回 14px：dsh 的 `--dsw-font-markdown-base-font-size` 就是 `--dsh-content-font-size`，13.5px 是当初手写时滑掉的。code 与行内 code 保持固定，dsh 把它们归为密集次级文本。
 
@@ -226,7 +324,7 @@ fork 到第 3 条用户消息时，新会话里只有 **2** 条用户消息—�
 
 **话题树能看，不能“切过去”。** pi 的 TUI `/tree` 可以把叶子指针移到任意节点，但**没有任何 RPC 能移叶子**：分支相关的方法只有 `fork`，而且它只接受用户消息。所以这一页展示树、标出当前所在位置、在能分叉的节点上标「可分叉」，而不提供一个看起来能切换分支、实际什么都不做的按钮。节点标签是本项目自拟的（pi 的 TUI 文案是英文终端文本，没有可以照搬的 zh 词典），默认展开当前叶子那条路径。
 
-**设置页的导航只有两项，但轨道形状是对的。** dsh 的面板有模型 / 插件 / Agent 预设 等一节节，本项目做的是通用设置和模型。搜索框没做——它只能搜到几个结果，加一个搜索框是为了显得完整，不是为了好用。
+**设置页的导航现在有四项。** dsh 的面板有模型 / 插件 / Agent 预设 等一节节，本项目做到了通用设置、模型、插件和 MCP，Agent 预设还没有。搜索框只在**插件**一节里有，而且是从 dsh 的插件列表照搬的：那一节列的是从磁盘和已安装包解析出来的清单，行数由用户的安装状况决定，不像通用设置那样固定四五行——一个能长出几十行的列表和一个永远四行的列表，要不要搜索框根本不是一个问题。MCP 那一节用两个筛选下拉代替搜索框，因为它列的是同一批配置在两种维度上的切片（作用域 × 状态），而条数通常是个位数。
 
 ### 模型配置为什么在改文件
 
@@ -255,6 +353,58 @@ auth.json    { <id>: { type: "api_key", key: "..." } }
 
 **不列出未配置的内置 provider，虽然 dsh 会列。** 截图里 `DeepSeek` 带着红点出现在列表里，因为 dsh 知道它的端点与协议。pi 的 provider 必须在 `models.json` 里显式定义（含模型列表），所以我们不知道一个没配置的 provider 该长什么样——列出来点开也没有可填的东西。入口交给「添加提供方」：它从那 41 个 id 里选一个。
 
+### 插件清单为什么交给 pi 自己解析
+
+**「装了哪些扩展」这个问题，pi 的 RPC 答不了。** 一个正在跑的会话只知道它自己加载了什么，而设置页要回答的是「下次启动会加载什么」——那由磁盘上的 `settings.json`、`.pi/settings.json` 和已安装的包共同决定。所以这一节把解析交给 pi 自己的 `DefaultPackageManager.resolve()` 与 `SettingsManager`：两个都从本服务已经依赖的 `pi-coding-agent` 里导出。
+
+**不自己走目录，是因为走不对。** 要复现的规则并不显眼：包的 `pi.extensions` manifest 与每包 filter 叠加、`extensions/` 下的自动发现与 `+` / `-` / `!` 覆盖模式合并、同一个包在项目设置里覆盖全局设置时的去重与 `autoload: false` 的增量语义。一个「看起来一样、实际不同」的清单比没有清单更糟——用户会拿它去判断 pi 为什么不加载某个文件。附带的好处是开关的编码：`pi config` 写的就是这些模式，这里照抄它的 `toggleTopLevelResource` 与 `togglePackageResource`。
+
+**开关写的是带 `+` / `-` 前缀的相对路径，而不是删除条目。** 顶层扩展在所属作用域的 `extensions` 数组里追加 `-extensions/foo.ts`（相对 agent 目录，或相对 `<工作区>/.pi`），包内扩展写在包的对象形式里（`{ source, extensions: [...] }`）。这正是 pi 的匹配器拿来比较的对象（`relative(baseDir, path)`，`baseDir` 由解析器给出），所以写进去的模式一定会被读到。重复切换会替换同一条模式，而不是叠加——留一个 `-` 和一个 `+` 同时指着一个文件，下一次启动就变成掷硬币。
+
+**写入走 `SettingsManager`，不是自己拼 JSON。** 它带着 pi 自己的字段记账、项目信任校验和写队列；在这里重新实现一遍那个格式，等于把 pi 拥有的东西复制一份，然后等它漂移。只有一点是我们自己做的：解析结果里对**本地包**的 `source` 是一个路径（本机是 `/var/folders/...` 那种临时目录名），所以包名从它的 `package.json` 里读——否则一行会叫 `probe-package-6Mwr5T`。
+
+**没有「运行状态」，因为 pi 里没有这个东西。** dsh 的插件有 fiber 生命周期（加载中 / 等待依赖 / 运行中 / 卸载中），它的宿主能观察到；pi 的扩展是进程启动时同步加载进去的，诚实的答案会是「在 3 个打开的会话里的 2 个中运行着」——一个每渲染一次都可能变、而这一页没有便宜办法知道的数字。坏扩展的可见性在会话里，以 `extension_error` 事件出现在它真正发生的地方。
+
+**没有「插件配置」标签页，因为 pi 侧没有那份 schema。** dsh 的第二个标签页给每个被宿主服务的 settings 命名空间渲染一张卡片；pi 的扩展不声明这种命名空间，它读什么写在扩展自己的代码里，所以没有东西可以据此生成表单。摆一个没有卡片的标签页比不摆更糟。同理没有运行时重载（`/reload`）按钮：那是终端里的动作，Web 侧没有对应命令。
+
+**未信任的工作区照样列，只是不能改。** 清单是磁盘真相，信任状态（`ProjectTrustStore`）单独报出来，所以一个 `.pi` 里有扩展、但 pi 还没被信任的工作区会看到它们，并看到一行说明「不会被加载，也无法在这里改写」。开关置灰而不是隐藏——状态本身仍然是真信息。真的去写会被 pi 的 `SettingsManager` 拒绝，服务端把它翻译成一个 400。
+
+**改完关掉所有驻留进程。** 扩展是启动时加载的，一个比这次编辑更早启动的进程会继续跑旧的那套。和模型写入一样：代价是下次切换付一次冷启动。本机实测这一页有 14 行（4 个自动发现的 `.ts` + 10 个包提供的入口）。
+
+### 更新提示为什么分两条路，而且都不代劳
+
+**「pi 有没有新版」和「装的包有没有新版」是两个问题，答案来自两个地方。** pi 本身是这个服务的一个 npm 依赖（`@earendil-works/pi-coding-agent`），它的「最新版」由 pi 自己的发布端点回答 —— `https://pi.dev/api/latest-version`，也就是 CLI 启动时轮询的那一个。拿 npm registry 去比会报出 pi 从未公布过的版本（撤回的发布、预发布噪音），所以端点照用，只有版本比较是自己写的：`updates.ts` 里那份 semver 子集，发布版高于同版本预发布、数字段按数值比、无法解析的 tag 一律不当成更新。
+
+**扩展的更新问题 pi 已经会答，所以不重写。** `DefaultPackageManager.checkForAvailableUpdates()` 正好做了要做的筛选：本地路径、钉死版本、没装到磁盘的包都不参与比较，`PI_OFFLINE` 也认。这份知识在 pi 里，复刻只会漂移。
+
+**两条提示的「更新方式」不一样，因为后果不一样。** pi 是依赖，动它要改 lockfile 并重启这个服务，所以那一行只报版本、给一枚「复制更新命令」（`pnpm update @earendil-works/pi-coding-agent`），不做一枚假装能就地完成的按钮。包是运行时资产，pi 自己的包管理器就能换（`packages.update(source)`），所以插件页每一行直接带「更新」，更新完关掉所有驻留进程，下一条消息加载新副本 —— 和装 `rpiv-todo`、`pi-mcp-adapter` 是同一条路。
+
+**「检查失败」和「已是最新」分开报。** 网络不通时如果落回「已是最新」，那是在替用户下一个它并不知道的结论。所以 `error`、`skipped`、`available: false` 是三种状态，页面分别说「无法检查更新」「已跳过检查」「已是最新」；`PI_OFFLINE` / `PI_SKIP_VERSION_CHECK` 照 pi 自己的规则认。
+
+**服务端缓存几分钟，是因为打开设置页不该等于发一次网络请求。** pi 自己每次启动最多查一次；这里缓存的粒度是「每个工作区一份」（项目级包可能落后而全局的没有），显式的「检查更新」按钮（`refresh=true`）绕过缓存。
+
+**侧栏那枚圆点是用户作用域的答案。** 它回答的是「这个工具本身要不要动」，所以在 bootstrap 时用 user scope 查一次并常驻；设置页和插件页的行则解当前工作区的答案。两者按工作区 key 分开存（`updates: Record<string, UpdatesView>`，键是路径，`""` 是用户作用域），不会互相覆盖。
+
+### MCP 管理为什么要靠 pi-mcp-adapter
+
+**pi 本身没有 MCP。** 这份能力来自 `pi-mcp-adapter` 扩展（一个用户自己装的 npm 包），所以这一页存在的前提就是那个包。没装时它显示一个安装提示，带一枚「安装 pi-mcp-adapter」按钮——那枚按钮做的就是 `pi install npm:pi-mcp-adapter`，**走 pi 自己的包管理器**（ `installAndPersist`，写同一个 settings、装到同一个 npm 根），所以终端与这个页面事后看到的是同一份状态；旁边另给一个「复制安装命令」给习惯终端的人，以及一个「重新检查」给刚在其他窗口装完的人。加载失败**不入缓存**：装完刷新一下就能用，不用重启本服务。
+
+**配置不由我们自己解析，而是调那个扩展公开的入口。** 要复现的东西不少：`~/.config/mcp/mcp.json`（跨工具共享）、两个 `~/.agents` 文件、Pi 全局与项目两层的 override、项目 `.mcp.json`，再加上 cursor / claude-code / claude-desktop / codex / opencode 六种兼容导入——每一层都有优先级，项目胜过全局，导入只在被 `imports` 声明或 `hostConfigDiscovery` 打开时才生效。所以这一页动态加载 `pi-mcp-adapter/config`，用它的 `loadMcpConfig` / `getServerProvenance` / `getMcpDiscoverySummary` 和几个写 helper。入口路径从那个包的 `exports["./config"]` 解析，而不是猜 `dist/` 的内部布局；代价是这一节依赖一个不在我们依赖树里的包——这正是「未安装」分支存在的原因。
+
+**密钥值一步都不出服务端。** 视图里只有 `envKeys` / `headerKeys`（名字），没有值；编辑框里的值初始为空，**留空表示保持已存值，删掉整行才移除那个变量**——所以「没重打一遍」不会把密钥清掉，表单里的行集合就是最终的 key 集合。密钥值确实会进 JSON 文件（那是那个扩展自己的格式），这条规则只保证它不出这个进程。
+
+**参数是一行文本，但保存时只在它真的变了才拆分。** 编辑器把 `args` 数组连成一行显示，保存时如果逐字未变就原样写回原数组——否则 `--config=/a b/c.json` 这种含空格的参数会被拆成两个（有测试守着）；真改了就按空格拆分，与配置里那行命令的写法一致。
+
+**「停用」是工作区级的，没有全局开关。** pi 自己的 `/mcp disable` 写的是 `<工作区>/.pi/mcp.json` 的 override，所以 dsh 的「当前 profile」在这里对应工作区：没选工作区时那个按钮是禁用的，并给出原因，而不是假装它是全局的。
+
+**「删除」是这一页唯一自己重写文件的地方。** 那个扩展没有删除 API（它的面板只停用），所以删除是读 JSON、删一个 key、保留其余字段、原子写回。两个语义细节：删的是**实际承载定义的那个文件**（adapter 报的 `sourcePath` 是写目标，对共享文件里的 server 来说那是 Pi 的 override 层，删那里不会有任何效果）；来自 cursor / claude-code 这类**别的工具的配置文件**时拒绝删除、只允许停用——那个文件不归 pi 也不归这一页。如果更低优先级的层里还有同名定义，删完之后它会重新生效，这句话写在确认框里，而不是等删完才发现。
+
+**「检查」是真的连一次。** 它做的是 pi 启动时同样的握手：`initialize`，然后 stdio 再发一次 `tools/list` 并把工具数报出来。只在点击时跑：一个 stdio 条目可以是任意命令，`npx -y something@latest` 冷启动可能要几十秒，所以超时给了 15 秒，状态也只挂在那一张卡片上。HTTP 只做 `initialize`——取工具列表要先拿 `Mcp-Session-Id` 再往返一次，收益不抵复杂度。socket（rmcp-mux）传输明说不支持，而不是猜一个结果。本机实测：`mobai` 2.0 秒握手成功，服务端公布 22 个工具。
+
+**「重启」就是关掉所有驻留的 pi 进程。** dsh 重启的是它自己；这里能做的等价事情是让下一条消息重新 spawn 一个，于是一次性关掉全部（会话在磁盘上，代价是切回去时一次冷启动）。MCP 配置和扩展、模型、provider 一样，都是启动时读的。
+
+**页面底部列出这一节读写的文件。** dsh 不列，因为它有自己的注册表；这里配置放在别人也会读的文件里，而卡片上的「停用」实际在写其中一个——把路径写出来，按钮才不是一个猜测。
+
 ### 获取可用模型
 
 **「获取可用模型」这件事 pi 做不了。** `get_available_models` 报的是**已经配好**的模型，而 pi-ai 里的 `refreshModels` 是**每个 provider 自己的方法**（各 provider 自建 `models-store.json` 条目，比如 `opencode-go`），而且 `@earendil-works/pi-ai` 不在依赖树里。所以这个请求由服务端自己发。
@@ -273,7 +423,7 @@ auth.json    { <id>: { type: "api_key", key: "..." } }
 
 **删除的确认文案分两种，因为后果真的不同。** 凭据在 `auth.json` 里时，提示是「会移除其配置和存储的 API 密钥」；否则是「其使用的凭证（如有）由其他位置管理，将会保留」——环境变量给的 key 从来不是我们写的，删除 provider 也不该去碰它。两句都是 dsh 原文。
 
-**图标从 dsh 的产物里取出来，逐字节相同。** 这一次新增了四个 glyph：侧栏齿轮、外观三个方块（`IconLightOutline16` / `IconDarkOutline16` / `IconFollowsystemOutline16`）。字号 stepper 的上下箭头共用一套 chevron，向上的那个是 `rotate(180deg)`，而不是第二份 path。
+**图标从 dsh 的产物里取出来，逐字节相同。** 这一次新增了四个 glyph：侧栏齿轮、外观三个方块（`IconLightOutline16` / `IconDarkOutline16` / `IconFollowsystemOutline16`）。字号 stepper 的上下箭头共用一套 chevron，向上的那个是 `rotate(180deg)`，而不是第二份 path。插件那枚拼图和 MCP 那枚两端连线，是**两枚不是 dsh 原件的 glyph**：dsh 的插件分区和它的 MCP 面板都不声明导航图标（它的轨道按分区注册的内容画，而这两节注册的都是空的），所以形状是按同一套规则补的——16px viewBox、单条描边路径、1.25 线宽（和 `database` / `clock` 同一基线）——`dsh-icons.tsx` 的注释里也这么写着。刷新按钮直接复用了 `icons.tsx` 里的 `RefreshIcon`，没有为这一节再造一个圆箭头。
 
 **图标是从 dsh 的产物里取出来的**。dsh 的工具图标表是 Figma 导出的（bash→终端方框、read→浏览、edit→铅笔、search→放大镜、其余→星芒），`dsh-icons.tsx` 里是逐字节相同的 path。它们是纯填充（`fill: currentColor`）而不是描边，所以没和 `icons.tsx` 那套描边图标混在一起。
 
@@ -284,6 +434,10 @@ auth.json    { <id>: { type: "api_key", key: "..." } }
 **当前轮次是数出来的，不是猜出来的**：在滚动区顶部往下 `min(96px, 高度的 20%)` 处拉一条探针线，取最后一个起点在线上方的轮次（`turnAtLine`）。跳转用 `scrollTop += rowTop - 24` 而不是 `scrollIntoView`——后者没法在目标行上方留出固定空白，会把标题贴在面板边缘。跳转后若没落到底部就关掉自动跟随，否则下一个流式增量会把读者拽回去。
 
 **三处与 dsh 的偏离，都是因为它有分页而我没有**：dsh 的轨道由「已加载窗口 + 未加载的 outline 投影」拼接而成，所以有 `markUnloaded`（8px、60% 透明）、「加载并跳转到第 N 轮」文案，以及点击后等待 `loadThrough(seq)` 的忙态；pi 一次读回整个转录，每个标记都是已加载的，这些状态没有对应物。另外 dsh 用 `100dvh - composer-height (152px)` 估算轨道所在带子的高度，我改成用 `ResizeObserver` 量滚动容器的实际高度——顶部多一条横幅或错误条时不会失准。
+
+**「回到最新」是第二条通往底部的路，但它和自动跟随共用同一个判断**。dsh 在右下角浮一个 36px 圆钮，往上翻过 80px 就出现，点一下滑回底部；这里照做，只是把「是不是贴底」这一个答案同时给了两个消费方——是否继续跟随新输出仍然只看 `STICK_THRESHOLD_PX`，而按钮在不在场必须能触发重渲染，所以同一个值也存进 state，`applyPinned` 是唯一的写入口，ref 和 state 不可能各说各话。圆盘用零高度 sticky 槽位浮在滚动区底部（和上面那条导轨同一个技巧），而不是给滚动区套一层 `position: relative` 的外壳：外壳会把导轨重新挂到另一个父节点上，而导轨的算术是对着滚动区本身写的。
+
+**平滑滚动期间要假装什么都没发生**。动画会经过沿途每一个偏移量，若照单全收，按钮会在半空中重现、自动跟随也会被解开——读者要的是「到底」，不是「停在半路」。所以跳转一开始就置上 `jumpingRef`，滚动处理在这期间只记账不判底，直到三种信号之一出现：`scrollend`（浏览器说滚动结束了，包括被滚轮打断、以及因为底部在动画期间被流式输出推远而追不上）、到达底部、或者 `scrollTop` 开始变小（读者接管）。三种都留的原因是它们各自都有盖不住的情况：`scrollend` 最权威但不保证存在，偏移量序列永远不会告诉你「动画放弃了」，而只看向上滚动则会在「内容长到追不上」时永远卡住。跳转被打断时，解除抑制的那一次滚动事件必须顺手判一次底，否则「滚一下就走」的读者会看到按钮再也不出现。
 
 **一个真 bug 值得记下**。`syncActiveTurn` 用 `requestAnimationFrame` 节流，标志位是 `frameRef`；cleanup 里 `cancelAnimationFrame` 了却没把这个 ref 复位。于是 StrictMode 的双挂载在**第一次渲染**就踩中：effect 排队一帧 → 卸载时被取消 → ref 仍是非空 → 之后每次调度都认为「已经有一帧在排队」而直接返回，轨道永远停在初始状态（安安静静，不报错）。修复是 cleanup 里无条件把 ref 置回 `null`。
 
@@ -307,11 +461,28 @@ auth.json    { <id>: { type: "api_key", key: "..." } }
 - 助手消息下的「赞/踩」**没有做**：pi 没有对应字段，也没有 RPC，做了也写不进任何会被读的地方。
 - 「用时」是墙上时间（含工具执行），不是模型生成时间——pi 没有暴露后者。
 - compaction 的可视化还没接。
-- 设置页有「通用设置」和「模型」两节；插件 / Agent 预设 等还没有。
+- **模型切换与上下文环只在会话输入框里**：新会话页（hero）没有会话，也就没有可切换的对象和可查看的上下文；模型选择器在那里只会暗示一个尚未绑定的会话。
+- **上下文环的数字依赖 `models.json` 里写了 `contextWindow`**：pi 内置 provider 的默认窗口不在依赖树里拿不到，所以没写这个字段的模型只显示空环（面板写「未知」），而不是去猜一个窗口。
+- **上下文环在每轮结束后刷新**，不在流式过程中逐 token 更新——这个数字本来就只在模型回复完成后才有（它来自最后一条回复的 usage）。因此环不会因为一次超长回复而提前预警。
+- **模型切换会启动会话进程**（如果它还没驻留）：切模型是 pi 的会话级状态，没有进程就没有对象可切。实测一次 1.7s。
+- 设置页有「通用设置」「模型」「插件」和「MCP」四节；Agent 预设还没有。
+- **任务清单需要 `@juicesharp/rpiv-todo` 扩展**：pi 的 `todo` 工具由这个包提供，没装时任务面板的位置显示一条安装提示，可以关掉（关掉后入口在设置 → 插件）。装完之后那一轮会话的下一条消息才加载得到它。
+- **MCP 一节需要 `pi-mcp-adapter` 扩展**：pi 本身没有 MCP，所以没装那个包时这一节显示安装提示，并提供一键安装（等同 `pi install npm:pi-mcp-adapter`）。安装会跑真实的 npm 下载，可能要一分钟；加载失败不入缓存，装完刷新即可。
+- **MCP 的「停用」是工作区级别的**，与 pi 自己的 `/mcp disable` 一致：没有用户级开关，没选工作区时那个按钮是禁用的。启用/停用写 `<工作区>/.pi/mcp.json`。
+- **MCP 的「删除」只对可写的配置文件生效**（全局共享、`.agents`、Pi 两层 override、项目 `.mcp.json`）。来自 cursor / claude-code / codex 等别的工具的定义只能停用，因为那个文件不归 pi 也不归这一页。
+- **MCP 的「检查」会真的启动配置里那个命令**（stdio）或请求那个地址（http/sse），超时 15 秒；HTTP 只做 `initialize`，不报工具数；socket（rmcp-mux）传输不支持检查。
 - 模型一节不列举未配置的内置 provider（pi 需要显式的模型列表，列出来也没有可填的东西），但可以**向提供方询问它有哪些模型**。这需要 provider 有一个 API 地址：内置 provider 的默认地址不归我们管，新建的 known provider 又还没保存，所以这两种情况下要先填上地址。dsh 的限制完全一样（`fetchNeedsBaseUrl: "请先填写 API 地址，再获取。"`）。
 - 模型写入只对真实 pi 做过**读**的验证；写入用临时栈验证过（包括中途发现并修掉的字段丢失），但用户全局 `~/.pi/agent/*.json` 的写入每次都会先备份再原子替换。
 - 模型状态点只反映两个配置文件，**环境变量提供的密钥看不到**（`@earendil-works/pi-ai` 不在依赖树里，拿不到它的 `findEnvKeys`）。措辞已经收敛成「配置文件里没有 API 密钥」，不会断言成「未配置」使环境变量用户去做多余操作。
 - 没有「权限」和「语言」两项：前者在 pi 侧没有对应概念（`trust` 管的是项目动态配置的信任，不是工具执行级别），后者在单语言项目里只有一个选项。
 - 设置页的下拉用原生 `<select>`：外壳是自绘的，展开的菜单是系统的。换取的是键盘、读屏、首字跳转全部由平台提供，不必重新发明一遍。
-- 代码高亮固定浅色主题。
+- 代码高亮走的是 dsh 的静态路径（`codeToHtml` + `css-variables` 主题），但没有移植它的流式增量 tokenizer：代码块每变化一次就全量重新高亮，因此超过 2 万字符的栅栏直接显示为纯文本（dsh 无此上限）。
 - `web/src/features/dev/TokenPreview.tsx` 是设计系统的自检页，不在路由里；需要时把 `App.tsx` 临时指向它即可。
+
+## 许可证
+
+MIT，见 [LICENSE](./LICENSE)。
+
+界面与部分服务端逻辑移植、改编自 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（MIT，Copyright (c) 2026 DeepSeek）与 [@earendil-works/pi-coding-agent](https://github.com/earendil-works/pi-coding-agent)（MIT）。逐字节复制的范围与来源清单见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)——该文件随源码分发，请勿移除。
+
+本项目是非官方项目，与 pi（Earendil Works）和 DeepSeek 均无隶属关系；π 名称与标识归各自所有者。

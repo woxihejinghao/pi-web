@@ -5,9 +5,17 @@
 
 /* Mirrors dsh's InputBar card: 22px corners, a 12px gap between the input and
  * its toolbar, and horizontal padding carried by the children rather than the
- * card so the text starts at the same offset as the toolbar icons. */
+ * card so the text starts at the same offset as the toolbar icons.
+ *
+ * The stroke rebind is dsh's, not a local choice: `--dsw-elevation-soft`
+ * carries a 0.5px hairline, and its default (`--dsw-alias-border-l4`) is a full
+ * step darker than what an input surface wants. dsh's InputBar re-points it at
+ * border-l2 for the card (menu surfaces rebind to l1, the workspace-trigger
+ * state to transparent), so the same rebind is made here. The scrollbar pair
+ * follows the same reasoning: an elevated surface uses the l2 thumb. */
 .composer {
   position: relative;
+  box-sizing: border-box;
   max-width: 780px;
   margin: 0 auto;
   display: flex;
@@ -17,9 +25,12 @@
   border-radius: 22px;
   border: 0;
   background: var(--dsw-specific-input-major);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   box-shadow: var(--dsw-elevation-soft);
-  font-size: 14px;
-  line-height: 24px;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }
 
 .input {
@@ -32,7 +43,12 @@
   background: transparent;
   font: inherit;
   color: var(--dsw-alias-label-primary);
-  padding: 4px 14px 0;
+  /* dsh's caret is the business blue, not the browser default. The uneven
+   * padding is dsh's too: 8px on the right because its scroll container adds a
+   * 4px margin on top of it, 14px on the left to line the text up with the
+   * toolbar icons below. */
+  caret-color: var(--dsw-alias-state-business-primary);
+  padding: 4px 8px 0 14px;
 }
 
 .input::placeholder {
@@ -76,41 +92,35 @@
   flex: 1;
 }
 
+/* Send and stop are two states of dsh's single `.uV2eYG_primary` disc — the
+ * blue `button-info-fill` one, with a white glyph. The resting state is an
+ * arrow and the running state a 10x10 rounded square, but the surface never
+ * changes, so neither does its color. The white is written as the static token
+ * rather than `#fff`: it is the same value dsh hard-codes, spelled in the
+ * palette this project consumes. */
 .send,
 .stop {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 50%;
+  border-radius: 999px;
   corner-shape: round;
-  flex: 0 0 auto;
-  /* dsh lifts the send button by 2px so it optically centres against the
-   * 22px corner of the card. */
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-static-neutral-00);
+  /* dsh lifts the button by 2px so it optically centres against the 22px
+   * corner of the card. */
   transform: translateY(-2px);
+  transition: background-color 0.1s;
+  flex: 0 0 auto;
 }
 
-.send {
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-inverted);
-}
-
-.send:hover:not(:disabled) {
-  background: var(--dsw-alias-button-primary-hover);
+.send:hover:not(:disabled),
+.stop:hover {
+  background: var(--dsw-alias-button-info-hover);
 }
 
 .send:disabled {
-  background: var(--dsw-alias-button-primary-dimmed);
+  opacity: 0.4;
   cursor: default;
-}
-
-.stop {
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.stop:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }

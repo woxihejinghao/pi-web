@@ -62,13 +62,15 @@ const BUSY_SEND_VALUES: readonly BusySendBehavior[] = ["queue", "steer"];
 
 /**
  * Conversation content font size bounds, copied from dsh's theme schema
- * (`Schema.number().step(1).min(12).max(17).default(14)`). Out-of-range values
+ * (`Schema.number().step(1).min(12).max(17).default(14)`). The range is dsh's;
+ * the default is not: this project starts at 15 while upstream dsh starts at
+ * 14. Out-of-range values
  * are rejected rather than clamped: silently showing a different number than
 the user typed is worse than refusing the write.
  */
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 17;
-export const FONT_SIZE_DEFAULT = 14;
+export const FONT_SIZE_DEFAULT = 15;
 
 /**
  * Preferences this Web UI owns end to end. Anything pi itself persists
@@ -81,6 +83,12 @@ export interface WebSettings {
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
+  /**
+   * The user closed the todo panel's "install rpiv-todo" notice. Stored here
+   * because it is a preference this UI owns: pi has no notion of a dismissed
+   * hint, and the panel must not reappear on every reload once it is closed.
+   */
+  todoNoticeDismissed: boolean;
 }
 
 export function defaultSettings(): WebSettings {
@@ -91,6 +99,7 @@ export function defaultSettings(): WebSettings {
     // Queueing is the safe default: steering interrupts an in-flight run, so it
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
+    todoNoticeDismissed: false,
   };
 }
 
@@ -166,6 +175,9 @@ function normalizeSettings(raw: unknown): WebSettings {
     (BUSY_SEND_VALUES as readonly string[]).includes(raw.busySendBehavior)
   ) {
     settings.busySendBehavior = raw.busySendBehavior as BusySendBehavior;
+  }
+  if (typeof raw.todoNoticeDismissed === "boolean") {
+    settings.todoNoticeDismissed = raw.todoNoticeDismissed;
   }
   return settings;
 }

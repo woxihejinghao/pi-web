@@ -149,8 +149,8 @@ describe("toSessionView title precedence", () => {
 
   it("folds an expanded skill command back to what the user typed", () => {
     const firstMessage = [
-      '<skill name="git-commit" location="/Users/milan/.agents/skills/git-commit/SKILL.md">',
-      "References are relative to /Users/milan/.agents/skills/git-commit.",
+      '<skill name="git-commit" location="/home/user/.agents/skills/git-commit/SKILL.md">',
+      "References are relative to /home/user/.agents/skills/git-commit.",
       "",
       "# Git Commit",
       "",
@@ -176,7 +176,7 @@ describe("toSessionView title precedence", () => {
   });
 
   it("folds a skill command that pi already clipped", () => {
-    const clipped = '<skill name="git-commit" location="/Users/milan/.agents/skills/git-commit/SKILL…';
+    const clipped = '<skill name="git-commit" location="/home/user/.agents/skills/git-commit/SKILL…';
     expect(sessions.toSessionView(makeInfo({ firstMessage: clipped }), undefined).title).toBe(
       "/skill:git-commit",
     );

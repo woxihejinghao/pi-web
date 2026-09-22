@@ -1,10 +1,6 @@
 /*
- * Ported from dsh's StatsPills.module.css. The panel rules come from its
- * StatDialog.module.css, with one deliberate change: dsh portals the panel to
- * `document.body` and positions it with `position: fixed`, while here it is a
- * child of the pill's anchor and opens upward from it. Both pills live in a row
- * that never clips, so the simpler anchored panel gets the same result without a
- * measurement pass on every open.
+ * Ported from dsh's StatsPills.module.css. The panel the pills open lives in
+ * `StatPanel.module.css`, because the context meter opens the same one.
  */
 
 .root {
@@ -70,82 +66,3 @@ button.pill[aria-expanded="true"] {
   margin: 0 6px;
 }
 
-/* --- details panel --- */
-
-.panel {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-  box-sizing: border-box;
-  width: max-content;
-  min-width: min(300px, 100vw - 24px);
-  max-width: min(440px, 100vw - 24px);
-  padding: 16px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--dsw-specific-menu);
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
-  box-shadow: var(--dsw-elevation-prominent);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  text-align: left;
-  cursor: default;
-}
-
-.title {
-  color: var(--dsw-alias-label-primary);
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 8px;
-  font-weight: 500;
-  display: flex;
-}
-
-.titleLabel {
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  display: inline-flex;
-}
-
-.titleLabel svg {
-  flex: none;
-  width: 14px;
-  height: 14px;
-}
-
-.titleValue {
-  font-variant-numeric: tabular-nums;
-}
-
-.titleRule {
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-  margin-bottom: 10px;
-}
-
-.details {
-  color: var(--dsw-alias-label-tertiary);
-  grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
-  gap: 6px 16px;
-  margin: 0;
-  display: grid;
-}
-
-.details dt,
-.details dd {
-  min-width: 0;
-  margin: 0;
-}
-
-.details dd {
-  color: var(--dsw-alias-label-secondary);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.route {
-  overflow-wrap: anywhere;
-}

@@ -1,15 +1,50 @@
 {
   "name": "pi-web-simple",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Local web UI for the pi coding agent — one directory per workspace, in the shell of deepseek-harness",
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=22.19.0"
   },
+  "bin": {
+    "pi-web-simple": "bin/pi-web-simple.js"
+  },
+  "files": [
+    "bin",
+    "server/build",
+    "web/dist",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "SECURITY.md",
+    "README.md"
+  ],
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "coding-agent",
+    "web",
+    "ui",
+    "deepseek-harness"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/woxihejinghao/pi-web.git"
+  },
+  "homepage": "https://github.com/woxihejinghao/pi-web#readme",
+  "bugs": {
+    "url": "https://github.com/woxihejinghao/pi-web/issues"
+  },
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
+    "start": "node bin/pi-web-simple.js",
     "typecheck": "pnpm -r run typecheck",
-    "test": "pnpm -r run test"
+    "test": "pnpm -r run test",
+    "prepublishOnly": "pnpm build && pnpm test"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.86.1"
   }
 }

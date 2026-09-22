@@ -157,6 +157,41 @@ const GLYPHS = {
     ],
   },
   /**
+   * Two endpoints and the link between them — the settings nav glyph for the
+   * MCP section.
+   *
+   * Like the plugins glyph, this one has no dsh original to copy: dsh's MCP
+   * panel lives in an extension package that draws its own chrome and declares
+   * no nav icon. The drawing follows the module's rules (16px viewBox, stroked
+   * path, 1.25 baseline) so it sits correctly beside `database` and `plugin`.
+   */
+  mcp: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1.25,
+    paths: [
+      "M5.25 8h5.5",
+      "M2.25 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0",
+      "M10.75 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0",
+    ],
+  },
+  /**
+   * IconPuzzleOutline16 — the settings nav glyph for the plugins section.
+   *
+   * dsh's own plugin section declares no nav icon (its rail draws the cell from
+   * whatever the section registers, and this one registers none), so there is
+   * no original to copy here. The shape follows the same rules as the rest of
+   * the module: a 16px viewBox, one stroked path, 1.25 stroke — the same
+   * baseline the database and clock glyphs use — so it sits correctly next to
+   * them even though the drawing itself is ours.
+   */
+  plugin: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1.25,
+    paths: [
+      "M6.25 2.5a1.75 1.75 0 0 1 3.5 0h2.5a1.25 1.25 0 0 1 1.25 1.25v2.5a1.75 1.75 0 0 1 0 3.5v2.5a1.25 1.25 0 0 1 -1.25 1.25h-8.5a1.25 1.25 0 0 1 -1.25 -1.25v-8.5a1.25 1.25 0 0 1 1.25 -1.25h2.5z",
+    ],
+  },
+  /**
    * IconClockOutline16 — pairs with the 用时 label. dsh draws the face as a
    * `<circle cx="8" cy="8" r="6.375">`; the arc path below is that same circle,
    * so this module keeps the one-`<path>` shape every other glyph has.

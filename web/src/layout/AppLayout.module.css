@@ -42,6 +42,13 @@
   z-index: 20;
 }
 
+/* The question card is bottom-anchored too, so a notify has to clear its
+   height in that case — otherwise the toast covers the title and the rows the
+   user is being asked to choose between. */
+.noticeAboveCard {
+  bottom: calc(min(60vh, 520px) + 32px);
+}
+
 .noticeDismiss {
   color: var(--dsw-alias-label-tertiary);
   font-size: 16px;

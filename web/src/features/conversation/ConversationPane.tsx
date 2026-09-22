@@ -5,12 +5,14 @@ import { api } from "../../lib/api.ts";
 import { actions, appStore, isDraftSession } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import { Composer } from "./Composer.tsx";
+import { QuestionCard } from "./QuestionCard.tsx";
 import { SessionStats } from "./SessionStats.tsx";
 import { MessageList } from "./MessageList.tsx";
 import { NewSessionHero } from "./NewSessionHero.tsx";
 import { parseBuiltinCommand } from "./slash.ts";
 import { TodoPanel } from "./TodoPanel.tsx";
 import { TreeDialog } from "./TreeDialog.tsx";
+import { useComposerState } from "./useComposerState.ts";
 import { useConversation } from "./useConversation.ts";
 import styles from "./ConversationPane.module.css";
 
@@ -24,6 +26,10 @@ export function ConversationPane() {
   const sessionPath = draft ? null : selected;
 
   const conversation = useConversation(sessionPath);
+  // The model picker and context ring describe the session the text goes into.
+  // They read from the session file until a pi process is needed, which is only
+  // when the user actually opens one of them — see `useComposerState`.
+  const composer = useComposerState(sessionPath);
 
   const project = state.projects.find((candidate) => candidate.id === state.selectedProjectId);
   const sessions = state.selectedProjectId ? (state.sessions[state.selectedProjectId] ?? []) : [];
@@ -98,11 +104,42 @@ export function ConversationPane() {
       .catch((err: Error) => actions.setNotice(err.message));
   };
 
+  // A waiting dialog is a hard block on its pi process, so it takes the
+  // composer's seat rather than floating over the page: the answer goes where
+  // the next message would have been typed. The open session's own request
+  // wins the seat; a request from another session still appears, because that
+  // process is just as blocked, and carries a jump line instead.
+  const pendingUi =
+    state.pendingUiRequests.find((item) => item.sessionPath === sessionPath) ??
+    state.pendingUiRequests[0] ??
+    null;
+  const pendingSession =
+    pendingUi && pendingUi.sessionPath !== sessionPath
+      ? Object.values(state.sessions)
+          .flat()
+          .find((candidate) => candidate.path === pendingUi.sessionPath)
+      : undefined;
+  const questionCard = pendingUi ? (
+    <QuestionCard
+      // The request id is the card's identity, and only that: a draft session
+      // swaps its provisional path for the real one a second after the spawn
+      // resolves, and keying on the session path would remount the card and
+      // throw away the row the user had already picked.
+      key={pendingUi.request.id}
+      pending={pendingUi}
+      sessionLabel={pendingSession?.title}
+      onOpenSession={
+        pendingSession ? () => actions.selectSession(pendingUi.sessionPath) : undefined
+      }
+    />
+  ) : null;
+
   // Nothing open: show the new-session hero instead of a header + empty list.
   if (!sessionPath && !draft) {
     return (
       <div className={styles.pane}>
         <NewSessionHero />
+        {questionCard}
       </div>
     );
   }
@@ -172,15 +209,32 @@ export function ConversationPane() {
       />
       {/* Between transcript and composer, where dsh puts its plan strip: the
           list belongs to the input it is about to steer, not to the history. */}
-      <TodoPanel todos={conversation.todos} />
-      <Composer
-        isStreaming={conversation.isStreaming}
-        disabled={conversation.loading}
-        commands={commands}
-        busySendBehavior={state.settings.busySendBehavior}
-        onSend={sendMessage}
-        onAbort={() => void conversation.abort()}
-      />
+      <TodoPanel todos={conversation.todos} projectPath={project?.path ?? null} />
+      {/* One seat, two occupants: a pending question replaces the input rather
+          than stacking above it, so the card cannot be confused for a message
+          that has already been sent. */}
+      {questionCard ?? (
+        <Composer
+          isStreaming={conversation.isStreaming}
+          disabled={conversation.loading}
+          commands={commands}
+          busySendBehavior={state.settings.busySendBehavior}
+          session={
+            sessionPath === null
+              ? undefined
+              : {
+                  model: composer.state?.model ?? null,
+                  models: composer.state?.models ?? null,
+                  context: composer.state?.context ?? null,
+                  loading: composer.modelsLoading,
+                  onRequestLive: () => void composer.ensureLive(),
+                  onSelectModel: (provider, id) => void composer.selectModel(provider, id),
+                }
+          }
+          onSend={sendMessage}
+          onAbort={() => void conversation.abort()}
+        />
+      )}
       {/* Under the composer, where dsh puts its two stat pills: they describe
           the session the input is being typed into, not the transcript above. */}
       <SessionStats stats={conversation.stats} />

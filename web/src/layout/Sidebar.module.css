@@ -46,29 +46,37 @@
   flex: 0 0 auto;
 }
 
-/* Top-level primary action, mirroring dsh's full-width "新会话" pill. */
+/* Top-level primary action, mirroring dsh's full-width "新会话" pill
+ * (`.hHd-Xa_newSession`): 12px corners, a 38px box, 8/16 padding, 14px text on
+ * a 22px line, and the elevated/floating button fills. The 0.5px border is part
+ * of dsh's original rather than a local guard, so it stays a border here (not a
+ * shadow) exactly as it does upstream. */
 .primaryAction {
-  padding: 4px 12px 10px;
+  padding: 4px 14px 10px;
   flex: 0 0 auto;
 }
 
 .newSession {
+  box-sizing: border-box;
   width: 100%;
-  height: 36px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  border-radius: 10px;
-  font-size: 13px;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  font-size: 14px;
   font-weight: 500;
+  line-height: 22px;
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-alias-button-elevated-fill);
   border: 0.5px solid var(--dsw-alias-border-l3);
+  overflow: hidden;
 }
 
 .newSession:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-button-floating-hover);
 }
 
 .newSession:disabled {
@@ -188,6 +196,19 @@
 
 .settingsTrigger:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/*
+ * The update dot on 设置. The label is the only place it fits without inventing
+ * a nav item: the notices themselves live inside the settings page, and this is
+ * what makes them discoverable without opening it.
+ */
+.updateDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
 }
 
 /* --- project row --- */

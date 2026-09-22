@@ -6,6 +6,7 @@ import { DirectoryPicker } from "../features/projects/DirectoryPicker.tsx";
 import { ProjectTreeItem } from "../features/projects/ProjectTree.tsx";
 import { actions, appStore } from "../lib/app-state.ts";
 import { buildProjectTree } from "../lib/project-tree.ts";
+import { hasAnyUpdate } from "../lib/updates.ts";
 import { useStore } from "../lib/store.ts";
 import styles from "./Sidebar.module.css";
 
@@ -14,6 +15,9 @@ export function Sidebar() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const tree = buildProjectTree(state.projects);
   const currentProject = state.projects.find((project) => project.id === state.selectedProjectId);
+  // The user-scope answer, loaded at bootstrap: the badge is about the tool
+  // itself, so it does not follow whichever workspace is selected.
+  const updateAvailable = hasAnyUpdate(state.updates[""] ?? null);
 
   return (
     <div className={styles.sidebar}>
@@ -96,10 +100,12 @@ export function Sidebar() {
         <button
           type="button"
           className={styles.settingsTrigger}
+          title={updateAvailable ? "设置 · 有可用更新" : "设置"}
           onClick={actions.openSettings}
         >
           <Glyph name="settings" size={16} />
           设置
+          {updateAvailable ? <span className={styles.updateDot} aria-hidden /> : null}
         </button>
       </div>
 

@@ -1,4 +1,7 @@
-/* Smooth corner curvature for every rounded surface. Inside the support
+/* Ported from deepseek-harness (MIT — Copyright (c) 2026 DeepSeek); see
+ * THIRD_PARTY_NOTICES.md.
+ *
+ * Smooth corner curvature for every rounded surface. Inside the support
  * guard, all corners curve along superellipse(1.5) — between a circular arc
  * (round = superellipse(1)) and a squircle (superellipse(2)) — instead of the
  * default arc; engines without corner-shape keep circular corners because the

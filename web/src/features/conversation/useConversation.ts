@@ -241,6 +241,22 @@ export interface ConversationApi extends ConversationView {
  */
 export function useConversation(sessionPath: string | null): ConversationApi {
   const [view, setView] = useState<ConversationView>(emptyView);
+  /**
+   * The path whose history `messages` currently reflects, or null while a load
+   * is in flight.
+   *
+   * A queued prompt may only be delivered once this matches its session. Gating
+   * on `view.loading` instead is not the same thing and silently loses the
+   * first message of every new session: on the render where `sessionPath` first
+   * appears, `view` is still the *previous* render's snapshot — `loading:
+   * false`, from the draft that had nothing to load — so the effect fires while
+   * `load()` is still awaiting disk, and the `messagesRef.current = visible`
+   * that lands a moment later erases the user turn it had just added
+   * optimistically. The turn never comes back, because pi's own `message_end`
+   * for user messages is deliberately ignored, and all that is left of the
+   * message is the session title the sidebar derives from it.
+   */
+  const [loadedPath, setLoadedPath] = useState<string | null>(null);
 
   const messagesRef = useRef<AgentMessage[]>([]);
   const forkPointsRef = useRef<ForkPoint[]>([]);
@@ -466,6 +482,10 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         errorRef.current = (err as Error).message;
         loadingRef.current = false;
       }
+      // Batched with the `publish()` below, so the render that sees the settled
+      // view is the same one that allows a queued prompt through — by which
+      // point this load can no longer overwrite what the delivery appends.
+      setLoadedPath(path);
       publish();
     },
     [publish],
@@ -483,6 +503,9 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     // a countdown ticking for something that is no longer happening.
     retryRef.current = null;
     persistedNotifiedRef.current = false;
+    // The history below belongs to the previous session until `load` says
+    // otherwise; leaving this set would let a queued prompt skip the wait.
+    setLoadedPath(null);
 
     if (!sessionPath) {
       loadingRef.current = false;
@@ -549,11 +572,13 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   }, [sessionPath, load]);
 
   // Deliver a message the user typed while the session was still spawning.
+  // Waiting on `loadedPath` rather than `view.loading` is what keeps the turn
+  // from being erased by the load that is still in flight; see `loadedPath`.
   useEffect(() => {
-    if (!sessionPath || view.loading) return;
+    if (!sessionPath || loadedPath !== sessionPath) return;
     const pending = actions.takePendingPrompt(sessionPath);
     if (pending) void send(pending.text, pending.mode);
-  }, [sessionPath, view.loading, send]);
+  }, [sessionPath, loadedPath, send]);
 
   const fork = useCallback(
     async (entryId: string): Promise<{ text: string; sessionPath: string } | null> => {

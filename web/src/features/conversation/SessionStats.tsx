@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { GaugeIcon } from "../../components/icons.tsx";
 import { formatRunDuration, formatTokens } from "../../lib/duration.ts";
+import { StatPanel, StatRow } from "./StatPanel.tsx";
 import {
   formatExactCount,
   formatLatencySeconds,
@@ -122,26 +123,26 @@ function TimePill({
         {label}
       </button>
       {open ? (
-        <Panel icon={<Glyph name="clock" size={14} />} title="会话统计">
+        <StatPanel icon={<Glyph name="clock" size={14} />} title="会话统计">
           {timing.llmMs > 0 ? (
-            <Row label="模型用时" value={formatRunDuration(timing.llmMs)} />
+            <StatRow label="模型用时" value={formatRunDuration(timing.llmMs)} />
           ) : null}
           {timing.toolMs > 0 ? (
-            <Row label="工具调用用时" value={formatRunDuration(timing.toolMs)} />
+            <StatRow label="工具调用用时" value={formatRunDuration(timing.toolMs)} />
           ) : null}
           {timing.ttftSteps > 0 ? (
-            <Row
+            <StatRow
               label="首 token 平均（TTFT）"
               value={formatLatencySeconds(timing.ttftMs / timing.ttftSteps)}
             />
           ) : null}
           {timing.decodeMs > 0 ? (
-            <Row
+            <StatRow
               label="输出速度（TPS）"
               value={`${formatTokensPerSecond(stats.tokensPerSecond ?? 0)} tok/s`}
             />
           ) : null}
-        </Panel>
+        </StatPanel>
       ) : null}
     </span>
   );
@@ -184,20 +185,20 @@ function UsagePill({
         </span>
       </button>
       {open ? (
-        <Panel
+        <StatPanel
           icon={<Glyph name="database" size={14} />}
           title="Token 用量"
           value={`用量 ${total}`}
         >
-          {stats.model === null ? null : <Row label="提供方 / 模型" value={stats.model} route />}
+          {stats.model === null ? null : <StatRow label="提供方 / 模型" value={stats.model} route />}
           {stats.cacheHitPercent === null ? null : (
-            <Row label="缓存命中" value={`${stats.cacheHitPercent}%`} />
+            <StatRow label="缓存命中" value={`${stats.cacheHitPercent}%`} />
           )}
-          <Row label="未缓存输入" value={tok(usage.input)} />
-          <Row label="缓存读取" value={tok(usage.cacheRead)} />
-          <Row label="缓存写入" value={tok(usage.cacheWrite)} />
-          <Row label="输出" value={tok(usage.output)} />
-        </Panel>
+          <StatRow label="未缓存输入" value={tok(usage.input)} />
+          <StatRow label="缓存读取" value={tok(usage.cacheRead)} />
+          <StatRow label="缓存写入" value={tok(usage.cacheWrite)} />
+          <StatRow label="输出" value={tok(usage.output)} />
+        </StatPanel>
       ) : null}
     </span>
   );
@@ -205,40 +206,4 @@ function UsagePill({
 
 function tok(count: number): string {
   return `${formatExactCount(count)} tok`;
-}
-
-/** dsh's stat panel: an icon-and-title header, a rule, then a two-column `dl`. */
-function Panel({
-  icon,
-  title,
-  value,
-  children,
-}: {
-  icon: ReactNode;
-  title: string;
-  value?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className={styles.panel} role="dialog" aria-label={title}>
-      <div className={styles.title}>
-        <span className={styles.titleLabel}>
-          {icon}
-          {title}
-        </span>
-        {value === undefined ? null : <span className={styles.titleValue}>{value}</span>}
-      </div>
-      <div className={styles.titleRule} aria-hidden />
-      <dl className={styles.details}>{children}</dl>
-    </div>
-  );
-}
-
-function Row({ label, value, route }: { label: string; value: string; route?: boolean }) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd className={route === true ? styles.route : undefined}>{value}</dd>
-    </>
-  );
 }

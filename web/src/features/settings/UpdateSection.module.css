@@ -1,0 +1,77 @@
+/*
+ * The right-hand control for both 关于 rows.
+ *
+ * It wraps rather than squeezing: the version, its status, and two buttons do
+ * not fit beside the description on a narrow window, and a wrapped button is
+ * still usable where a clipped one is not.
+ */
+.control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.version {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.status {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Amber, not red: an available update is news, not a failure. */
+.statusNew {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.statusError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* The section's primary action: copying the command is the next step. */
+.action {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+/* Secondary, shaped like the plugins header's 复制配置路径. */
+.ghost {
+  flex: none;
+  padding: 4px 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.ghost:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.ghost:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}

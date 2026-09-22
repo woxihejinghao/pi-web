@@ -7,7 +7,7 @@ import {
   resetAppState,
   DRAFT_PREFIX,
 } from "./app-state.ts";
-import type { ProjectView, SessionView } from "./types.ts";
+import type { ExtensionUiRequest, ProjectView, SessionView } from "./types.ts";
 
 vi.mock("./api.ts", () => ({
   api: {
@@ -20,7 +20,9 @@ vi.mock("./api.ts", () => ({
     removeProject: vi.fn(),
     renameSession: vi.fn(),
     setSessionHidden: vi.fn(),
+    deleteSession: vi.fn(),
     listCommands: vi.fn(),
+    listUiRequests: vi.fn(),
     env: vi.fn(),
   },
 }));
@@ -50,6 +52,7 @@ beforeEach(() => {
   mocked.listSessions.mockResolvedValue([]);
   mocked.prewarmSession.mockResolvedValue({ ok: true, projectPath: "/home/me/proj" });
   mocked.listCommands.mockResolvedValue({ commands: [] });
+  mocked.listUiRequests.mockResolvedValue({ requests: [] });
   mocked.env.mockResolvedValue({ home: "/home/me" });
 });
 
@@ -160,6 +163,70 @@ describe("pending prompts", () => {
     deferredCreate();
     actions.startDraftSession("project-1");
     expect(appStore.get().pendingPrompt).toBeNull();
+  });
+});
+
+describe("extension dialogs", () => {
+  const dialog = (sessionPath: string, id: string): { sessionPath: string; request: ExtensionUiRequest } => ({
+    sessionPath,
+    request: { type: "extension_ui_request", id, method: "select", options: ["allow", "block"] },
+  });
+
+  it("keeps a second request instead of overwriting the first", () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    actions.enqueueUiRequest(dialog("/other.jsonl", "ui_2"));
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual([
+      "ui_1",
+      "ui_2",
+    ]);
+  });
+
+  it("ignores a request that is already queued", () => {
+    const first = dialog(REAL_PATH, "ui_1");
+    actions.enqueueUiRequest(first);
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    expect(appStore.get().pendingUiRequests).toHaveLength(1);
+  });
+
+  it("dismisses only the request that was answered", () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_2"));
+    actions.dismissUiRequest("ui_1");
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual(["ui_2"]);
+  });
+
+  it("keeps one entry for a dialog whose session path only arrives later", () => {
+    // A fresh session has no path when its extension asks, so the same uuid is
+    // delivered twice: once with an empty path, once with the real one.
+    actions.enqueueUiRequest(dialog("", "ui_1"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    expect(appStore.get().pendingUiRequests).toEqual([dialog(REAL_PATH, "ui_1")]);
+  });
+
+  it("does not demote a resolved path back to an empty one", () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    actions.enqueueUiRequest(dialog("", "ui_1"));
+    expect(appStore.get().pendingUiRequests).toEqual([dialog(REAL_PATH, "ui_1")]);
+  });
+
+  it("adopts the dialogs the server held across a reload", async () => {
+    // A session with no path yet is the case that matters: pi only reports its
+    // file after the question has already been asked.
+    mocked.listUiRequests.mockResolvedValue({ requests: [dialog("", "ui_1")] });
+    await actions.loadPendingUiRequests();
+    expect(appStore.get().pendingUiRequests).toEqual([dialog("", "ui_1")]);
+  });
+
+  it("does not drop a dialog that arrived while the list was in flight", async () => {
+    mocked.listUiRequests.mockImplementation(async () => {
+      actions.enqueueUiRequest(dialog("/other.jsonl", "ui_2"));
+      return { requests: [dialog(REAL_PATH, "ui_1")] };
+    });
+    await actions.loadPendingUiRequests();
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual([
+      "ui_2",
+      "ui_1",
+    ]);
   });
 });
 
@@ -305,6 +372,39 @@ describe("sidebar ui state", () => {
     actions.toggleSearch(); // closes and clears
     expect(appStore.get().searchOpen).toBe(false);
     expect(appStore.get().sessionQuery).toBe("");
+  });
+});
+
+describe("deleting a session", () => {
+  it("clears the selection and says where the file went", async () => {
+    mocked.deleteSession.mockResolvedValue({ ok: true, method: "trash" });
+    actions.selectSession(REAL_PATH);
+    actions.markExternalChanged(REAL_PATH);
+
+    await actions.deleteSession(REAL_PATH);
+
+    expect(mocked.deleteSession).toHaveBeenCalledWith(REAL_PATH);
+    expect(appStore.get().selectedSessionPath).toBeNull();
+    expect(appStore.get().externalChanged[REAL_PATH]).toBeUndefined();
+    expect(appStore.get().notice).toBe("已将会话移到废纸篓。");
+  });
+
+  it("distinguishes a permanent delete from a trashed one", async () => {
+    mocked.deleteSession.mockResolvedValue({ ok: true, method: "unlink" });
+
+    await actions.deleteSession("/other.jsonl");
+
+    expect(appStore.get().notice).toBe("已永久删除会话。");
+  });
+
+  it("keeps the open conversation and reports the failure when the delete fails", async () => {
+    mocked.deleteSession.mockRejectedValue(new Error("无法删除会话：EPERM"));
+    actions.selectSession(REAL_PATH);
+
+    await actions.deleteSession(REAL_PATH);
+
+    expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
+    expect(appStore.get().notice).toBe("无法删除会话：EPERM");
   });
 });
 

@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-22T06:34:08.166Z",
+  "machine": {
+    "cpu": "Apple M2",
+    "cores": 8,
+    "memGb": 16
+  },
+  "cli": "/Users/milan/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
+  "varyCwd": true,
+  "settleMs": 5000,
+  "sampleMs": 2000,
+  "records": [
+    {
+      "n": 1,
+      "spawned": 1,
+      "ready": 1,
+      "readyMsMin": 1261,
+      "readyMsP50": 1261,
+      "readyMsMax": 1261,
+      "rssKbTotal": 227808,
+      "rssKbPerSession": 227808,
+      "treeProcs": 1,
+      "mainProcs": 1,
+      "childProcs": 0,
+      "idleCpuPercent": 0,
+      "stderrBytes": 0
+    },
+    {
+      "n": 2,
+      "spawned": 2,
+      "ready": 2,
+      "readyMsMin": 1450,
+      "readyMsP50": 1450,
+      "readyMsMax": 1450,
+      "rssKbTotal": 462992,
+      "rssKbPerSession": 231496,
+      "treeProcs": 2,
+      "mainProcs": 2,
+      "childProcs": 0,
+      "idleCpuPercent": 0,
+      "stderrBytes": 0
+    },
+    {
+      "n": 4,
+      "spawned": 4,
+      "ready": 4,
+      "readyMsMin": 1768,
+      "readyMsP50": 1770,
+      "readyMsMax": 1800,
+      "rssKbTotal": 918576,
+      "rssKbPerSession": 229644,
+      "treeProcs": 4,
+      "mainProcs": 4,
+      "childProcs": 0,
+      "idleCpuPercent": 1.000000000000023,
+      "stderrBytes": 0
+    },
+    {
+      "n": 8,
+      "spawned": 8,
+      "ready": 8,
+      "readyMsMin": 2937,
+      "readyMsP50": 2963,
+      "readyMsMax": 2990,
+      "rssKbTotal": 1492864,
+      "rssKbPerSession": 186608,
+      "treeProcs": 8,
+      "mainProcs": 8,
+      "childProcs": 0,
+      "idleCpuPercent": 2.999999999999936,
+      "stderrBytes": 0
+    }
+  ]
+}

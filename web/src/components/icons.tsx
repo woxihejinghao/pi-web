@@ -118,6 +118,15 @@ export const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/** The tick on the model menu's current row. dsh has no stroked check glyph to
+ * copy (its menus use a different marker), so this follows `icons.tsx`'s own
+ * 16px / 1.4 stroke baseline. */
+export const CheckIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base(props)}>
+    <path d="M3.5 8.5l3 3 6-7" />
+  </svg>
+);
+
 export const SearchIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg {...base(props)}>
     <circle cx="7.2" cy="7.2" r="4.2" />

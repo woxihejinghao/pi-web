@@ -1,0 +1,511 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The header's actions, wrapped so the header keeps its space-between layout
+   now that there is more than one. */
+.headerActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Same narrowing as the models section's 复制配置路径, for the same reason. */
+.configPath {
+  flex: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.configPath:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.configPath:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.lead {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* --- search ---------------------------------------------------------------- */
+
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+}
+
+.searchInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px 0 36px;
+  border: none;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.searchInput:focus {
+  outline: 1px solid var(--dsw-alias-border-l3);
+  outline-offset: -1px;
+}
+
+/* --- states ---------------------------------------------------------------- */
+
+.placeholder {
+  margin-top: 20px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.failure {
+  margin-top: 20px;
+}
+
+.failureText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.failureDetail {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-all;
+}
+
+.retry {
+  box-sizing: border-box;
+  height: 28px;
+  margin-top: 10px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* --- groups ---------------------------------------------------------------- */
+
+.group {
+  margin-top: 24px;
+}
+
+.groupToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--dsw-alias-label-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.groupChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.groupChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.groupTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.groupSub {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.groupCount {
+  flex: none;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The one thing a row here cannot do is describe pi's trust rule as a value:
+ * it is a workspace-level gate, so it belongs to the group, not to each card.
+ */
+.note {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* --- card ------------------------------------------------------------------ */
+
+.card {
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.cardMainRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.cardToggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--dsw-alias-label-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.cardChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.cardChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.cardTitle {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.cardBadge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.status {
+  flex: none;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.statusOn {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.statusOff {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* --- switch ---------------------------------------------------------------- */
+
+.switch {
+  flex: none;
+  box-sizing: border-box;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--dsw-alias-border-l2);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.switchOn {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.switchPending {
+  opacity: 0.6;
+}
+
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-base);
+  transition: transform 0.15s ease;
+}
+
+.switchOn .switchKnob {
+  transform: translateX(16px);
+}
+
+/* --- details --------------------------------------------------------------- */
+
+.details {
+  margin: 0;
+  padding: 0 12px 12px 30px;
+}
+
+.detailRow {
+  display: flex;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.detailLabel {
+  flex: none;
+  width: 68px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.detailValue {
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  word-break: break-all;
+}
+
+/*
+ * The task-list extension's install offer.
+ *
+ * The task panel's own notice can be dismissed, so this is the one that stays:
+ * a plugin page that cannot install the plugin a feature is missing would turn
+ * "close" into a dead end. Same shell as the MCP section's notice.
+ */
+.todoNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.todoNoticeText {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.todoNoticeText code {
+  font-family: var(--dsh-code-font-family, ui-monospace, SFMono-Regular, monospace);
+}
+
+.todoNoticeAction {
+  flex: none;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.todoNoticeAction:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.todoNoticeAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.todoNoticeError {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* --- update notices -------------------------------------------------------- */
+
+/*
+ * The plugins summary. Same shell as the todo install offer below, but it only
+ * states the fact — the action lives on each row — so it carries no button.
+ */
+.updateNotice {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.updateNoticeText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/*
+ * Amber rather than red: an available update is news, not a failure. It sits
+ * beside the source badge it qualifies, and on the collapsed row too — a package
+ * that needs updating is the row's news, not a detail to expand for.
+ */
+.updateBadge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+/*
+ * The update action under an expanded card. Indented to line up with the
+ * details above it, and outside the <dl> because it acts on the package rather
+ * than describing it. A failure stays here, next to the button that caused it,
+ * instead of becoming a banner the user has to connect back to this row.
+ */
+.updatePanel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 12px 30px;
+}
+
+.updateText {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.updateAction {
+  box-sizing: border-box;
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 13px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.updateAction:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.updateAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.updateError {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}

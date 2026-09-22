@@ -1,0 +1,54 @@
+/*
+ * The context ring sits between the model name and the send button, so it is
+ * sized like the other toolbar affordances rather than like the 34px send
+ * circle: a 30px hit area around a 16px glyph, which is what dsh's ring reads
+ * as next to a full-size button.
+ */
+
+.anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  corner-shape: round;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.button:hover,
+.button[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.ring {
+  flex: none;
+}
+
+.track {
+  fill: none;
+  /* `separator-primary` is nearly invisible against the input card at this
+   * size; the ring needs a track that reads as a track, which is what dsh's
+   * screenshot shows. */
+  stroke: var(--dsw-alias-border-l3);
+}
+
+/* Two thresholds, because the ring's whole job is to be readable at a glance:
+ * 75% is "start thinking about compaction", 90% is "the next long turn will
+ * trigger it". Neither is a pi concept — pi's own compaction threshold is
+ * configurable — so these are display only and the panel always states the
+ * real numbers. */
+.ringWarning {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.ringCritical {
+  color: var(--dsw-alias-state-error-primary);
+}

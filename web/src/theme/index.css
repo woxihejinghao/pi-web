@@ -15,15 +15,22 @@
 @import "./shiki.css";
 
 :root {
-  /* In dsh this is written by the theme bootstrap at runtime; the markdown
-   * typography tokens read it with a 14px fallback. Pin it so layout does not
-   * depend on a missing runtime value. The settings page writes it as an inline
-   * property on `documentElement`, which outranks this declaration.
+  /* In dsh this is written by the theme bootstrap at runtime; every consumer of
+   * it reads the token with a 14px fallback. Pin it so layout does not depend on
+   * a missing runtime value. The settings page writes it as an inline property
+   * on `documentElement`, which outranks this declaration.
+   *
+   * The value is 15, not dsh's own default of 14: this project's schema default
+   * lives in `server/src/store.ts` (`FONT_SIZE_DEFAULT`) and the two must agree,
+   * because this declaration is what paints the first frame — before
+   * `/api/settings` has answered. The `14px` fallbacks left in the component and
+   * typography sheets are dsh originals and stay untouched: they only ever apply
+   * when no token is declared at all, which this block prevents.
    *
    * The derived sizes (--dsh-content-font-delta, -secondary, -delta-secondary)
    * are declared in gradient-shadow-text.css on `body`, where dsh puts them.
    * They are not repeated here. */
-  --dsh-content-font-size: 14px;
+  --dsh-content-font-size: 15px;
 
   /* Every dsh elevation token starts with `0 0 0 0.5px`, a hairline stroke
    * that reads as a border. Floating surfaces (menus, dialogs, toasts) should

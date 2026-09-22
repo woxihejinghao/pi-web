@@ -1,0 +1,396 @@
+/*
+ * The takeover seat where the composer card sits, so the card lands on the
+ * same axis and at the same width as the input it replaces. The metrics are
+ * copied from `Composer.module.css` on purpose: the swap has to read as the
+ * input changing its contents, not as a panel appearing over the page.
+ */
+.wrap {
+  flex: 0 0 auto;
+  padding: 8px 24px 8px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 780px;
+  /* The conversation column is a fixed-height overflow-hidden stack, so the
+     card caps itself and scrolls its body instead of pushing the transcript
+     out of view. Header and footer stay put while long copy scrolls. */
+  max-height: min(60vh, 520px);
+  margin: 0 auto;
+  border-radius: 22px;
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-elevation-soft);
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+}
+
+.card,
+.card * {
+  box-sizing: border-box;
+}
+
+/* Collapsed to the title strip: the card hugs the header so the conversation
+   above is fully readable while the question stays pending. */
+.cardMinimized {
+  max-height: none;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  padding: 14px 10px 0 14px;
+}
+
+/* The strip is the whole card when collapsed, so the header owes it the
+   padding the hidden body would have carried. */
+.cardMinimized .header {
+  padding-bottom: 14px;
+}
+
+.heading {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.eyebrowText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eyebrowAction {
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--dsw-alias-link);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.eyebrowAction:hover {
+  text-decoration: underline;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.iconButton {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  corner-shape: round;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+/* dsh ships only the down chevron; the collapsed state is the same glyph
+   turned over, which keeps the pair consistent with the menus. */
+.chevron {
+  display: grid;
+  place-items: center;
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chevronUp {
+  transform: rotate(180deg);
+}
+
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 8px 0;
+}
+
+/* Question copy is model-authored, so it goes through the same renderer and
+   the same untrusted-content path as assistant output. */
+.detail {
+  margin: 0 6px 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 0;
+  padding: 2px 6px;
+}
+
+.option {
+  display: flex;
+  /* flex-start, not center: a wrapped label keeps its number on the first
+     line instead of drifting down the taller copy block. */
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  flex-shrink: 0;
+  padding: 8px 10px 8px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.option:hover:not(:disabled),
+.optionSelected {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.optionSelected {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.option:disabled {
+  cursor: default;
+}
+
+/* The number is also the keyboard shortcut: pressing it picks the row. */
+.number {
+  display: grid;
+  place-items: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  /* Centers the 20px badge against the first 24px text line under flex-start. */
+  margin-top: 2px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.optionCopy {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.optionLabel {
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--dsw-specific-sidebar-nav-item-active-accent);
+  color: var(--dsw-alias-button-info-fill);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+/*
+ * Auto-growing answer field: a mirror renders the draft plus a trailing
+ * newline in normal flow and sizes the grid row, the textarea shares that one
+ * cell and stretches to it. Counting '\n' cannot see soft wraps, which is why
+ * the mirror exists instead of a scrollHeight measurement. Past the mirror's
+ * cap the textarea becomes the stack's only scrollport.
+ */
+.field {
+  display: grid;
+  min-width: 0;
+  margin: 2px 6px 0;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.field:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.field > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* The height ruler, never painted. content-box so the cap counts text lines
+   rather than the field's own vertical padding. */
+.fieldMirror {
+  box-sizing: content-box;
+  max-height: 132px;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.fieldInput {
+  resize: none;
+  overflow-y: auto;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  caret-color: var(--dsw-alias-state-business-primary);
+}
+
+.fieldInput::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+/* The editor holds prose, so it opens with room for a paragraph. */
+.fieldMultiline .fieldMirror {
+  min-height: 66px;
+  max-height: 220px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 10px 10px 12px 14px;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.feedback {
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.primary,
+.secondary {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.primary {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.primary:disabled {
+  background: var(--dsw-alias-button-primary-dimmed);
+  cursor: default;
+}
+
+.secondary {
+  color: var(--dsw-alias-label-secondary);
+  border: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+@media (max-width: 720px) {
+  .wrap {
+    padding: 6px 12px 6px;
+  }
+
+  .card {
+    border-radius: 16px;
+  }
+
+  .header {
+    padding: 12px 8px 0 12px;
+  }
+
+  .title {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .footer {
+    flex-wrap: wrap;
+    padding: 10px 8px 10px 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .option,
+  .chevron {
+    transition: none;
+  }
+}

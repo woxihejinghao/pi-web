@@ -1,6 +1,27 @@
+# Dependencies and build output
 node_modules/
 dist/
-*.local
-.DS_Store
+server/build/
 .vite/
 coverage/
+
+# Local overrides and secrets
+*.local
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+*-debug.log*
+
+# TypeScript incremental state
+*.tsbuildinfo
+
+# Benchmark scratch space (results/scenario-*.json is kept)
+bench/.bench-tmp/
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/

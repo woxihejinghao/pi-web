@@ -1,10 +1,16 @@
 import type {
   AgentMessage,
   AgentSettings,
+  ComposerState,
   DirListing,
+  ExtensionsView,
   ForkPoint,
   ForkResult,
+  McpProbeResult,
+  McpServerDraft,
+  McpView,
   ModelsView,
+  PendingUiDialog,
   ProjectView,
   ProviderInput,
   ProviderModelEntry,
@@ -13,6 +19,8 @@ import type {
   SessionView,
   SlashCommandList,
   StartLocation,
+  TodoView,
+  UpdatesView,
   WebSettings,
 } from "./types.ts";
 
@@ -188,6 +196,137 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  /**
+   * Installed extensions, resolved by pi's own package manager from the
+   * settings and package files on disk. There is no RPC for this: a running
+   * session only knows what *it* loaded, while the useful question is what the
+   * next pi start would load. `projectPath` adds the workspace scope.
+   */
+  getExtensions: (projectPath: string | null) =>
+    request<ExtensionsView>(
+      `/api/extensions${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`,
+    ),
+
+  /**
+   * Toggle one extension. The write lands in pi's settings file, so it is only
+   * read back by a freshly started process — the server retires the resident
+   * ones and answers with the full re-resolved list.
+   */
+  setExtensionEnabled: (input: {
+    projectPath: string | null;
+    path: string;
+    enabled: boolean;
+  }) =>
+    request<ExtensionsView>("/api/extensions", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+
+  /**
+   * Whether the extension pi's `todo` tool ships in is in place. The task
+   * panel is a projection of that tool's output, so this is what decides
+   * between showing tasks and showing the install notice.
+   */
+  getTodo: (projectPath: string | null) =>
+    request<TodoView>(
+      `/api/todo${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`,
+    ),
+
+  /**
+   * Install the package behind the `todo` tool, through pi's own package
+   * manager (the same thing `pi install npm:@juicesharp/rpiv-todo` does). Slow
+   * by nature: npm has to resolve and download, so callers keep a progress
+   * state.
+   */
+  installTodo: (projectPath: string | null) =>
+    request<TodoView>("/api/todo/install", {
+      method: "POST",
+      body: JSON.stringify({ projectPath }),
+    }),
+
+  /**
+   * Update notices: whether a newer pi is published, and which installed pi
+   * packages are behind their upstream.
+   *
+   * `refresh` bypasses the server's short cache — the default read reuses a
+   * recent answer, so opening the settings page does not spawn a check per
+   * visit. A failed check is reported in the payload rather than as an HTTP
+   * error; the page renders "could not check" differently from "up to date".
+   */
+  getUpdates: (projectPath: string | null, options: { refresh?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (projectPath !== null && projectPath.length > 0) params.set("projectPath", projectPath);
+    if (options.refresh === true) params.set("refresh", "true");
+    const query = params.toString();
+    return request<UpdatesView>(`/api/updates${query.length > 0 ? `?${query}` : ""}`);
+  },
+
+  /**
+   * Update one installed pi package to its upstream version, through pi's own
+   * package manager (the same thing `pi update <source>` does). Slow by nature:
+   * npm has to resolve and download, so the caller keeps a progress state.
+   */
+  updateExtension: (input: { projectPath: string | null; source: string }) =>
+    request<UpdatesView>("/api/updates/extensions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  /**
+   * MCP servers, served through `pi-mcp-adapter`'s own config layer — pi has no
+   * MCP support of its own, and a running session only knows what it already
+   * connected to. The page asks what the next start would connect to.
+   */
+  getMcp: (projectPath: string | null) =>
+    request<McpView>(
+      `/api/mcp${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`,
+    ),
+
+  /** Create or update one server. Secret values are write-only. */
+  saveMcpServer: (input: {
+    projectPath: string | null;
+    scope: "global" | "project";
+    originalName: string | null;
+    draft: McpServerDraft;
+  }) =>
+    request<McpView>("/api/mcp/servers", { method: "PUT", body: JSON.stringify(input) }),
+
+  deleteMcpServer: (input: { projectPath: string | null; name: string }) =>
+    request<McpView>("/api/mcp/servers", { method: "DELETE", body: JSON.stringify(input) }),
+
+  setMcpServerEnabled: (input: {
+    projectPath: string | null;
+    name: string;
+    enabled: boolean;
+  }) =>
+    request<McpView>("/api/mcp/state", { method: "PUT", body: JSON.stringify(input) }),
+
+  importMcpConfigs: (input: { projectPath: string | null; kinds: string[] }) =>
+    request<McpView>("/api/mcp/imports", { method: "POST", body: JSON.stringify(input) }),
+
+  /**
+   * Connect to one server and report the handshake. Slow by nature: a cold
+   * `npx` download inside the command can take a while, so the caller keeps a
+   * "checking…" state rather than a spinner over the whole list.
+   */
+  checkMcpServer: (input: { projectPath: string | null; name: string }) =>
+    request<McpProbeResult>("/api/mcp/check", { method: "POST", body: JSON.stringify(input) }),
+
+  /** Retire the resident pi processes so the next message re-reads the config. */
+  restartMcp: () =>
+    request<{ ok: true; closed: number }>("/api/mcp/restart", { method: "POST" }),
+
+  /**
+   * Install the extension this section needs, through pi's own package manager
+   * (the same thing `pi install npm:pi-mcp-adapter` does). Slow by nature: npm
+   * has to resolve and download, so callers keep a progress state.
+   */
+  installMcpAdapter: (projectPath: string | null) =>
+    request<McpView>("/api/mcp/install", {
+      method: "POST",
+      body: JSON.stringify({ projectPath }),
+    }),
+
   getMessages: (sessionPath: string) =>
     request<{
       sessionPath: string;
@@ -213,6 +352,26 @@ export const api = {
     request<{ sessionPath: string; state: RpcSessionState }>(
       `/api/sessions/${sessionId(sessionPath)}/state`,
     ),
+
+  /**
+   * The input bar's model and context figures.
+   *
+   * Served from the session file when no process is resident, so switching to a
+   * session never waits on pi. `spawn: true` is the deliberate exception: it is
+   * what opening the model menu asks for, because the list of switchable models
+   * only exists inside a running process.
+   */
+  getComposerState: (sessionPath: string, options: { spawn?: boolean } = {}) =>
+    request<ComposerState>(
+      `/api/sessions/${sessionId(sessionPath)}/composer${options.spawn === true ? "?spawn=true" : ""}`,
+    ),
+
+  /** Switch the model a session talks to; pi records it as a `model_change`. */
+  setSessionModel: (sessionPath: string, provider: string, id: string) =>
+    request<ComposerState>(`/api/sessions/${sessionId(sessionPath)}/model`, {
+      method: "POST",
+      body: JSON.stringify({ provider, id }),
+    }),
 
   prompt: (sessionPath: string, message: string) =>
     request<{ ok: true }>(`/api/sessions/${sessionId(sessionPath)}/prompt`, {
@@ -253,11 +412,29 @@ export const api = {
       body: JSON.stringify({ hidden }),
     }),
 
+  /**
+   * Delete a session file. The server retires the resident process first, then
+   * prefers the system trash over a permanent unlink. This is the one session
+   * action that destroys data, so the caller confirms before calling it.
+   */
+  deleteSession: (sessionPath: string) =>
+    request<{ ok: true; method: "trash" | "unlink" }>(
+      `/api/sessions/${sessionId(sessionPath)}`,
+      { method: "DELETE" },
+    ),
+
   stopSession: (sessionPath: string) =>
     request<{ ok: true }>(`/api/sessions/${sessionId(sessionPath)}/stop`, { method: "POST" }),
 
-  respondToExtensionUi: (sessionPath: string, payload: Record<string, unknown>) =>
-    request<{ ok: true }>(`/api/sessions/${sessionId(sessionPath)}/ui-response`, {
+  /** Dialogs the server is still holding open; the event stream has no history. */
+  listUiRequests: () => request<{ requests: PendingUiDialog[] }>("/api/ui-requests"),
+
+  /**
+   * Answer a dialog by its own id, not by session path: a session that has not
+   * been written to disk yet has no path to address it by.
+   */
+  respondToUiRequest: (id: string, payload: Record<string, unknown>) =>
+    request<{ ok: true }>(`/api/ui-requests/${encodeURIComponent(id)}/response`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

@@ -3,8 +3,8 @@ import { displayUserText, parseSkillBlock, skillCommandLabel } from "./skill-blo
 
 /** Exactly the shape pi writes: `_expandSkillCommand` in `dist/core/agent-session.js`. */
 function block(name: string, body: string, args?: string): string {
-  const head = `<skill name="${name}" location="/Users/milan/.agents/skills/${name}/SKILL.md">`;
-  const whole = `${head}\nReferences are relative to /Users/milan/.agents/skills/${name}.\n\n${body}\n</skill>`;
+  const head = `<skill name="${name}" location="/home/user/.agents/skills/${name}/SKILL.md">`;
+  const whole = `${head}\nReferences are relative to /home/user/.agents/skills/${name}.\n\n${body}\n</skill>`;
   return args === undefined ? whole : `${whole}\n\n${args}`;
 }
 
@@ -13,8 +13,8 @@ describe("parseSkillBlock", () => {
     const parsed = parseSkillBlock(block("git-commit", "# Git Commit\n\nDo the thing."));
     expect(parsed).toEqual({
       name: "git-commit",
-      location: "/Users/milan/.agents/skills/git-commit/SKILL.md",
-      content: "References are relative to /Users/milan/.agents/skills/git-commit.\n\n# Git Commit\n\nDo the thing.",
+      location: "/home/user/.agents/skills/git-commit/SKILL.md",
+      content: "References are relative to /home/user/.agents/skills/git-commit.\n\n# Git Commit\n\nDo the thing.",
     });
   });
 

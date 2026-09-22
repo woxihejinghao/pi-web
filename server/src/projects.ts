@@ -182,3 +182,17 @@ export async function setSessionOverride(
     return merged;
   });
 }
+
+/**
+ * Forget every UI override for a session, called when its file is deleted.
+ *
+ * An override is keyed by path, so leaving it behind would keep the deleted
+ * session's Web-side name (or hidden flag) in `store.json` forever — and hand
+ * it to whatever session landed at that path next.
+ */
+export async function removeSessionOverride(sessionPath: string): Promise<void> {
+  const key = resolve(expandHome(sessionPath));
+  await mutateStore((draft) => {
+    delete draft.sessionOverrides[key];
+  });
+}

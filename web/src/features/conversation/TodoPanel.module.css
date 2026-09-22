@@ -84,3 +84,79 @@
 .chevronCollapsed {
   transform: rotate(180deg);
 }
+
+/*
+ * The install notice: what the panel shows when there is no list because the
+ * extension behind pi's `todo` tool is missing. One line, the same padding as
+ * the collapsed panel, so an empty session does not grow a second card stack.
+ */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+}
+
+.noticeText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The filled control from dsh's panels, shrunk to a pill the strip can hold. */
+.noticeAction {
+  flex: none;
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.noticeAction:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.noticeAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.noticeClose {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.noticeClose:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.noticeClose:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.noticeError {
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
