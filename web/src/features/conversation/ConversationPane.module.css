@@ -131,3 +131,26 @@
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
+
+/* The right sidebar's toggle sits after the topic-tree button, in the same
+ * corner. It carries no `margin-left: auto` of its own — that belongs to the
+ * first trailing action, and two auto margins would push the pair apart. */
+.headerPanelAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 13px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+  cursor: pointer;
+}
+
+.headerPanelAction:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}

@@ -6,6 +6,9 @@ import type {
   ExtensionsView,
   ForkPoint,
   ForkResult,
+  GitFileEntry,
+  GitLogEntry,
+  GitStatusView,
   ImageBlock,
   McpProbeResult,
   McpServerDraft,
@@ -23,6 +26,8 @@ import type {
   TodoView,
   UpdatesView,
   WebSettings,
+  WorkspaceFileContent,
+  WorkspaceListing,
 } from "./types.ts";
 
 export class ApiError extends Error {
@@ -84,6 +89,73 @@ export const api = {
     ),
 
   listProjects: () => request<ProjectView[]>("/api/projects"),
+
+  /**
+   * One directory level of a project, for the right sidebar's file tree.
+   *
+   * `path` is relative to the project root (`""` lists the root itself); the
+   * server rejects anything that resolves outside the project.
+   */
+  listWorkspaceFiles: (projectId: string, path: string) =>
+    request<WorkspaceListing>(
+      `/api/projects/${encodeURIComponent(projectId)}/files${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
+
+  /** One file's content, for the right sidebar's preview tab. */
+  readWorkspaceFile: (projectId: string, path: string) =>
+    request<WorkspaceFileContent>(
+      `/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}`,
+    ),
+
+  /**
+   * The changes panel's state: branch, both sides of the diff, upstream drift
+   * and recent history.
+   *
+   * `repository: false` is a 200 answer, not an error: the panel says "not a git
+   * repository" rather than showing a failure over a directory that simply is
+   * not one.
+   */
+  getGitStatus: (projectId: string) =>
+    request<GitStatusView>(`/api/projects/${encodeURIComponent(projectId)}/git`),
+
+  /**
+   * Stage or unstage paths. `all` stages (or unstages) everything git currently
+   * reports, which is what the section header's button means — a list of paths
+   * assembled in the browser would miss a file that appeared since the last read.
+   */
+  stagePaths: (projectId: string, input: { paths?: string[]; all?: boolean; staged: boolean }) =>
+    request<GitStatusView>(`/api/projects/${encodeURIComponent(projectId)}/git/stage`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  /** Commit what is staged; the reply carries the refreshed state and the new hash. */
+  commitChanges: (projectId: string, message: string) =>
+    request<{ view: GitStatusView; hash: string }>(
+      `/api/projects/${encodeURIComponent(projectId)}/git/commit`,
+      { method: "POST", body: JSON.stringify({ message }) },
+    ),
+
+  /** Push the current branch (publishing it with `-u` when it has no upstream). */
+  pushBranch: (projectId: string) =>
+    request<{ view: GitStatusView; message: string }>(
+      `/api/projects/${encodeURIComponent(projectId)}/git/push`,
+      { method: "POST" },
+    ),
+
+  /** Throw away the work-tree changes of the given paths. */
+  discardPaths: (projectId: string, paths: string[]) =>
+    request<GitStatusView>(`/api/projects/${encodeURIComponent(projectId)}/git/discard`, {
+      method: "POST",
+      body: JSON.stringify({ paths }),
+    }),
+
+  /** Switch to an existing local branch. */
+  checkoutBranch: (projectId: string, branch: string) =>
+    request<GitStatusView>(`/api/projects/${encodeURIComponent(projectId)}/git/branch`, {
+      method: "POST",
+      body: JSON.stringify({ branch }),
+    }),
 
   /** Slash commands registered in a project's pi process. May have to wait for
    * the prewarm, and reports failure inline rather than as an HTTP error. */

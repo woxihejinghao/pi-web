@@ -80,14 +80,13 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--dsw-alias-label-secondary);
+  color: #000;
   padding: 4px 6px;
   border-radius: 8px;
 }
 
 .selectorButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }
 
 .selectorGlyph {
@@ -153,22 +152,27 @@
 }
 
 /* Same card as the conversation composer, with dsh's taller hero variant.
- * dsh draws both from one `InputBar` card, so every surface token — the 22px
- * corner, the border-l2 stroke rebind inside `--dsw-elevation-soft`, the l2
- * scrollbar thumb — is identical here; only `min-height` differs. */
+ * dsh draws both from one `InputBar` card, so the surface tokens — the 22px
+ * corner, the gradient edge, the l2 scrollbar thumb — are identical here;
+ * only `min-height` differs. See Composer.module.css for why the edge is a
+ * half-pixel border and why the lift is not `--dsw-elevation-soft`. */
 .composer {
   position: relative;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 8px;
+  padding-top: 0;
   border-radius: 22px;
-  background: var(--dsw-specific-input-major);
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  border: 0.5px solid transparent;
+  background:
+    linear-gradient(var(--dsw-specific-input-major), var(--dsw-specific-input-major)) padding-box,
+    linear-gradient(180deg, transparent, var(--dsw-alias-border-l3)) border-box;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-  box-shadow: var(--dsw-elevation-soft);
+  box-shadow:
+    0 0 32px rgba(0, 0, 0, 0.04),
+    0 8px 20px rgba(0, 0, 0, 0.07);
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }

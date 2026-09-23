@@ -1,0 +1,90 @@
+.body {
+  padding: 0 0 16px;
+}
+
+/* Markdown and plain text get the pane's inset; images and code do not (see
+ * their own rules), because a picture and a scrollport both read better when
+ * they reach the pane's edges. */
+.markdown {
+  padding: 12px 14px 0;
+  font-size: 13px;
+}
+
+.text {
+  margin: 0;
+  padding: 0 14px;
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code {
+  padding: 0;
+}
+
+.imageWrap {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+}
+
+.image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  min-height: 160px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.unsupportedName {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.notice {
+  margin: 10px 14px 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dsw-alias-border-l3);
+  border-top-color: var(--dsw-alias-label-secondary);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}

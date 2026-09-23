@@ -1,0 +1,577 @@
+/* The panel's own chrome: the commit box and the branch row come before the
+ * scrolling list, the file lists / history scroll inside it. */
+
+.branchWrap {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.branchButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.branchButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.branchButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.branchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branchMenu {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 10;
+  min-width: 160px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-elevation-float);
+  display: flex;
+  flex-direction: column;
+}
+
+.branchItem {
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branchItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.branchItemActive {
+  font-weight: 600;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  overflow: hidden;
+}
+
+.summaryMuted {
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.added {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.removed {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.body {
+  padding: 4px 0 16px;
+}
+
+.notice {
+  margin: 6px 12px 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.section {
+  margin-top: 4px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  padding-bottom: 4px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+}
+
+.sectionTitle {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 600;
+}
+
+.sectionAction {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-link);
+  cursor: pointer;
+}
+
+.sectionAction:hover {
+  text-decoration: underline;
+}
+
+.sectionAction:disabled {
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
+}
+
+.sectionEmpty {
+  padding: 2px 12px 8px 26px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* One file: the row of controls, then its patch. */
+.file {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  padding-right: 6px;
+}
+
+.fileMain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileMain:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.filePath {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.filePath > * {
+  direction: ltr;
+}
+
+/* The status letter keeps one slot so paths line up down the list, and the one
+ * fixed box means the six colours never shift the row's other columns. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.badge_modified {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.badge_added {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.badge_deleted {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.badge_renamed {
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.badge_untracked {
+  background: var(--dsw-alias-label-dimmed);
+}
+
+.badge_conflicted {
+  background: var(--dsw-alias-state-error-secondary);
+}
+
+.rowAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  padding: 0;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.rowAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rowActionDanger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.openFile {
+  margin: 0 0 6px 46px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-link);
+  cursor: pointer;
+}
+
+.openFile:hover {
+  text-decoration: underline;
+}
+
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.12s ease;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.fileBody {
+  padding: 0 0 8px;
+}
+
+.fileNote {
+  padding: 2px 12px 2px 32px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The patch scrolls with the pane rather than inside itself: a nested vertical
+ * scrollport inside a list of files is two scrollbars for one gesture. Long
+ * lines therefore wrap. */
+.patch {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.hunk + .hunk {
+  margin-top: 2px;
+}
+
+.hunkHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 22px;
+  padding: 0 12px 0 8px;
+  border: none;
+  background: var(--dsw-alias-bg-layer-1);
+  font: inherit;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hunkHeader:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.hunkRange {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hunkCount {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding-right: 12px;
+}
+
+.lineAdd {
+  background: var(--dsw-alias-state-success-tertiary);
+}
+
+.lineDel {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+/* Two number columns: old then new. `tabular-nums` keeps them from jittering
+ * as the numbers grow digits. */
+.num {
+  flex: 0 0 auto;
+  width: 34px;
+  padding-left: 4px;
+  text-align: right;
+  color: var(--dsw-alias-label-dimmed);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.marker {
+  flex: 0 0 auto;
+  width: 14px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  user-select: none;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The commit box sits above the lists, so its divider is what separates the
+ * two fixed controls from the scrolling content. */
+.commit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 10px 12px 8px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.commitInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  resize: vertical;
+}
+
+.commitInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.commitActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.commitButton {
+  flex: 1 1 auto;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.commitButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pushButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.pushButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pushButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pushCount {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+  font-size: 10.5px;
+  text-align: center;
+}
+
+.commitError {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-error-primary);
+  word-break: break-word;
+}
+
+.history {
+  padding-top: 8px;
+}
+
+.logRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 12px;
+}
+
+.logHash {
+  flex: 0 0 auto;
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  padding-top: 1px;
+}
+
+.logBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.logSubject {
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.ref {
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  background: var(--dsw-alias-bg-mask-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.refHead {
+  background: var(--dsw-alias-button-primary-dimmed);
+  color: var(--dsw-alias-brand-text);
+}
+
+.refRemote {
+  background: var(--dsw-alias-bg-mask-3);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.refTag {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-label-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

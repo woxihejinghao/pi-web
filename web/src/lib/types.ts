@@ -253,6 +253,84 @@ export interface StartLocation {
   path: string;
 }
 
+export interface WorkspaceEntry {
+  name: string;
+  /** Path relative to the project root, always `/`-separated. */
+  path: string;
+  type: "directory" | "file" | "other";
+}
+
+/** One directory level of a project, as the right sidebar's tree reads it. */
+export interface WorkspaceListing {
+  /** The listed directory relative to the project root (`""` = the root). */
+  path: string;
+  entries: WorkspaceEntry[];
+  truncated: boolean;
+}
+
+/**
+ * One file for the Preview tab. `unsupported` is an answer, not a failure: the
+ * server reports it with a reason so the tab can say what it cannot show.
+ */
+export interface WorkspaceFileContent {
+  path: string;
+  name: string;
+  kind: "text" | "image" | "unsupported";
+  size: number;
+  truncated: boolean;
+  /** UTF-8 text for `text`, base64 for `image`, empty for `unsupported`. */
+  content: string;
+  mimeType?: string;
+  reason?: string;
+}
+
+/**
+ * One changed file on one side of the change set. `patch` is git's own unified
+ * diff for that side, parsed for drawing by `diff-parse.ts`.
+ */
+export interface GitFileEntry {
+  /** Path relative to the project root, as git reports it. */
+  path: string;
+  status: "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflicted";
+  /** True when git produced no text patch because the file is binary. */
+  binary: boolean;
+  /** `""` for an untracked or binary file. */
+  patch: string;
+  truncated: boolean;
+}
+
+export interface GitLogEntry {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  date: string;
+  /** Branch tips, remote tracking refs and tags pointing at this commit. */
+  refs: string[];
+}
+
+/** The whole changes panel state: branch, both sides of the diff, and history. */
+export interface GitStatusView {
+  /** False when the directory is not a git work tree — a normal answer. */
+  repository: boolean;
+  branch: string | null;
+  detached: boolean;
+  /** Local branch names, most recently committed first. */
+  branches: string[];
+  /** Push target, e.g. `origin/main`; null when the branch has none. */
+  upstream: string | null;
+  behind: number;
+  ahead: number;
+  /** Index against HEAD. */
+  staged: GitFileEntry[];
+  /** Work tree against index, untracked files included. */
+  unstaged: GitFileEntry[];
+  omittedFiles: number;
+  log: GitLogEntry[];
+  /** Set when git itself could not be run (missing binary, timeout, …). */
+  error?: string;
+}
+
 export type BusEvent =
   | { type: "session_event"; sessionPath: string; event: SessionEvent }
   | { type: "session_closed"; sessionPath: string; reason: string }

@@ -3,8 +3,10 @@ import { AlertIcon, RefreshIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { api } from "../../lib/api.ts";
 import { actions, appStore, isDraftSession } from "../../lib/app-state.ts";
-import type { ImageBlock } from "../../lib/types.ts";
 import { useStore } from "../../lib/store.ts";
+import { rightbarActions, rightbarStore } from "../rightbar/rightbar-state.ts";
+import { PanelRightIcon } from "../rightbar/rightbar-icons.tsx";
+import type { ImageBlock } from "../../lib/types.ts";
 import { Composer } from "./Composer.tsx";
 import { QuestionCard } from "./QuestionCard.tsx";
 import { SessionStats } from "./SessionStats.tsx";
@@ -27,6 +29,12 @@ export function ConversationPane() {
   const sessionPath = draft ? null : selected;
 
   const conversation = useConversation(sessionPath);
+  // The right sidebar's state is per session, so the header's toggle reads the
+  // same surface the panel itself does. It is drawn only while the panel is
+  // hidden — when it is open, the panel's own strip carries the collapse
+  // control, and a second one would be a second way to say the same thing.
+  const rightbarState = useStore(rightbarStore);
+  const rightbarOpen = rightbarState.surfaces[selected ?? ""]?.open === true;
   // The model picker and context ring describe the session the text goes into.
   // They read from the session file until a pi process is needed, which is only
   // when the user actually opens one of them — see `useComposerState`.
@@ -167,6 +175,17 @@ export function ConversationPane() {
             话题树
           </button>
         ) : null}
+        {sessionPath !== null && !draft && !rightbarOpen ? (
+          <button
+            type="button"
+            className={styles.headerPanelAction}
+            title="打开右侧栏"
+            aria-label="打开右侧栏"
+            onClick={() => rightbarActions.open(sessionPath)}
+          >
+            <PanelRightIcon width={14} height={14} />
+          </button>
+        ) : null}
       </header>
 
       {treeOpen && sessionPath !== null ? (
@@ -207,6 +226,14 @@ export function ConversationPane() {
         home={state.home}
         compactTranscript={state.settings.transcriptDisplay === "compact"}
         onFork={onFork}
+        {...(sessionPath === null
+          ? {}
+          : {
+              // A turn's changed files open in the sidebar, which is the same
+              // target the changes panel uses; the panel opens itself if it was
+              // collapsed, so the click always lands somewhere visible.
+              onOpenFile: (path: string) => rightbarActions.openPreviewTab(sessionPath, path),
+            })}
       />
       {/* Between transcript and composer, where dsh puts its plan strip: the
           list belongs to the input it is about to steer, not to the history. */}

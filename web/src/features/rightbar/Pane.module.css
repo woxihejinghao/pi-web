@@ -1,0 +1,87 @@
+/* Shared chrome for the right sidebar's tab bodies: the header row above the
+ * content, and the two placeholder states every tab can land in. Kept in one
+ * module because the three tabs draw the identical row — dsh notes the same
+ * duplication in its own panes and plans to hoist it once the surfaces settle. */
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  font-size: 12px;
+}
+
+/* The path's directories recede and its last segment keeps full contrast, so a
+ * long path can be read at a glance without ellipsizing away the file name. */
+.path {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--dsw-alias-label-tertiary);
+  direction: rtl;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.path > span {
+  direction: ltr;
+}
+
+.pathName {
+  color: var(--dsw-alias-label-primary);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  padding: 0;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.note {
+  padding: 20px 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.error {
+  padding: 20px 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}

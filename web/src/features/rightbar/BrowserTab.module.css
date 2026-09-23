@@ -1,0 +1,127 @@
+.addressRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.address {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.address:focus {
+  outline: none;
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.addressInvalid {
+  border-color: var(--dsw-alias-label-danger, var(--dsw-alias-border-l4));
+}
+
+.go {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.go:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  padding: 6px 12px 0;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.frameWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+
+.frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.empty code {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-mask-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.sandboxToggle {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-mask-2);
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* Turning the sandbox off is a warning state, not a setting: the toggle says so
+ * by carrying the danger colour until it is turned back on. */
+.sandboxOff {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-label-primary);
+}
+
+.hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}

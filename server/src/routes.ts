@@ -29,6 +29,17 @@ import {
   type McpServerDraft,
 } from "./mcp.ts";
 import { listDirectories, startLocations } from "./fs-browse.ts";
+import {
+  GitError,
+  gitCheckout,
+  gitCommit,
+  gitDiscard,
+  gitPush,
+  gitStage,
+  gitStageAll,
+  readGitStatus,
+} from "./git.ts";
+import { readWorkspaceFile, listWorkspaceDirectory } from "./workspace-files.ts";
 import { pendingUiRequests, type PendingUiRequests } from "./ui-requests.ts";
 import {
   readComposerFromClient,
@@ -376,6 +387,10 @@ function toHttpError(err: unknown): HttpError {
   if (err instanceof TodoConfigError) return badRequest(err.message);
   if (err instanceof UpdatesConfigError) return badRequest(err.message);
   if (err instanceof McpConfigError) return badRequest(err.message);
+  // A git write that git itself refused — nothing staged, no identity, a
+  // rejected push — is the user's action not landing, not the server breaking.
+  // Its own message ("nothing to commit, working tree clean") is the message.
+  if (err instanceof GitError) return badRequest(err.message);
   if (err instanceof ProjectError) {
     switch (err.code) {
       case "ENOENT":
@@ -1006,6 +1021,97 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       // inline instead of as an error banner.
       json(res, 200, { commands: builtin, error: (err as Error).message });
     }
+  });
+
+  /**
+   * One directory level of a project's files, for the right sidebar's tree.
+   *
+   * Paths are relative to the project root and validated against it; the
+   * sidebar addresses files this way rather than by absolute path so the route
+   * cannot be turned into a general-purpose file reader.
+   */
+  route("GET", "/api/projects/:id/files", async ({ res, params, query }) => {
+    const project = await getProject(params.id!);
+    json(res, 200, await listWorkspaceDirectory(project.path, query.get("path") ?? ""));
+  });
+
+  /**
+   * One file for the right sidebar's preview tab: text, or an image as base64.
+   *
+   * A file the UI cannot render comes back as `kind: "unsupported"` with a
+   * reason rather than as an HTTP error — "this is a .pdf" is an answer, not a
+   * failure, and the tab renders it differently from a broken read.
+   */
+  route("GET", "/api/projects/:id/file", async ({ res, params, query }) => {
+    const project = await getProject(params.id!);
+    const path = query.get("path") ?? "";
+    if (path.length === 0) throw badRequest("path is required");
+    json(res, 200, await readWorkspaceFile(project.path, path));
+  });
+
+  /**
+   * The changes panel's state: branch, staged/unstaged files with their patches,
+   * upstream drift and recent history.
+   *
+   * "Not a git repository" is a normal answer (`repository: false` on a 200):
+   * most directories this app can open are not repositories, and a 4xx would
+   * make the panel render a failure where it should simply say so.
+   */
+  route("GET", "/api/projects/:id/git", async ({ res, params }) => {
+    const project = await getProject(params.id!);
+    json(res, 200, await readGitStatus(project.path));
+  });
+
+  /**
+   * Stage or unstage paths — one file, or everything (`all: true`).
+   *
+   * Every write below answers with the re-read state rather than the bare
+   * acknowledgement, so the panel never shows a list computed from what it
+   * *expected* git to do.
+   */
+  route("POST", "/api/projects/:id/git/stage", async ({ res, params, body }) => {
+    const project = await getProject(params.id!);
+    const payload = asObject(body);
+    if (typeof payload.staged !== "boolean") throw badRequest("staged must be a boolean");
+    const view =
+      payload.all === true
+        ? await gitStageAll(project.path, payload.staged)
+        : await gitStage(project.path, payload.paths, payload.staged);
+    json(res, 200, view);
+  });
+
+  /** Commit what is staged. `-a` is deliberately not offered — see `git.ts`. */
+  route("POST", "/api/projects/:id/git/commit", async ({ res, params, body }) => {
+    const project = await getProject(params.id!);
+    const payload = asObject(body);
+    const result = await gitCommit(project.path, payload.message);
+    bus.publish({ type: "projects_changed" });
+    json(res, 200, result);
+  });
+
+  /**
+   * Push the current branch.
+   *
+   * Slow by nature (network), and the only git write here that leaves the
+   * machine. Force pushing is never offered.
+   */
+  route("POST", "/api/projects/:id/git/push", async ({ res, params }) => {
+    const project = await getProject(params.id!);
+    json(res, 200, await gitPush(project.path));
+  });
+
+  /** Throw away the work-tree changes of the given paths (the panel confirms first). */
+  route("POST", "/api/projects/:id/git/discard", async ({ res, params, body }) => {
+    const project = await getProject(params.id!);
+    const payload = asObject(body);
+    json(res, 200, await gitDiscard(project.path, payload.paths));
+  });
+
+  /** Switch to an existing local branch, then answer with the new state. */
+  route("POST", "/api/projects/:id/git/branch", async ({ res, params, body }) => {
+    const project = await getProject(params.id!);
+    const payload = asObject(body);
+    json(res, 200, await gitCheckout(project.path, payload.branch));
   });
 
   /**

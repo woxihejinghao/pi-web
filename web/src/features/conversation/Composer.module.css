@@ -1,18 +1,46 @@
+/* No top pad, the way dsh's InputBar drops it too: the room above the card
+ * belongs to the scrolling column that precedes it, not to the composer's own
+ * box. Leaving 8px here stacked on the column's own 8px and read as a white
+ * band between the last line of the transcript and the input. */
 .wrap {
   flex: 0 0 auto;
-  padding: 8px 24px 8px;
+  padding: 0 24px 8px;
 }
 
 /* Mirrors dsh's InputBar card: 22px corners, a 12px gap between the input and
  * its toolbar, and horizontal padding carried by the children rather than the
  * card so the text starts at the same offset as the toolbar icons.
  *
- * The stroke rebind is dsh's, not a local choice: `--dsw-elevation-soft`
- * carries a 0.5px hairline, and its default (`--dsw-alias-border-l4`) is a full
- * step darker than what an input surface wants. dsh's InputBar re-points it at
- * border-l2 for the card (menu surfaces rebind to l1, the workspace-trigger
- * state to transparent), so the same rebind is made here. The scrollbar pair
- * follows the same reasoning: an elevated surface uses the l2 thumb. */
+ * The edge is half a pixel of gradient, drawn as a real border with a
+ * two-layer background rather than the elevation hairline. `--dsw-elevation-soft`
+ * carries that hairline as its first layer; dsh's InputBar rebinds its colour to
+ * border-l2, which against a white page still draws a line across the top edge —
+ * exactly where the shadow cannot reach, because the soft lift blurs downward —
+ * so the stroke is pointed at `transparent` (the same move dsh makes for its
+ * workspace-trigger state) and the edge is painted instead: fully transparent at
+ * the top, border-l3 by the bottom. The bottom is the edge that sits inside the
+ * shadow and needs closing, the top is the one that only ever looked like a seam.
+ *
+ * It is a border because a masked `::after` ring cannot survive a 22px corner:
+ * subtracting a content-box mask from a border-box one leaves gaps along the
+ * arc, and the card looked cut off at all four corners. A border keeps the
+ * browser's own rounded-corner rasterisation; `box-sizing: border-box` already
+ * holds the outer size, so the half pixel costs no layout. The scrollbar pair
+ * follows the same reasoning: an elevated surface uses the l2 thumb.
+ *
+ * The lift is not `--dsw-elevation-soft`. That token blurs almost evenly and at
+ * 0.03 alpha it never separates a white card from a white page: with the top
+ * edge unstroked, the card read as cut off rather than raised, because there
+ * was nothing above it at all. Two shadow passes fix that — an all-round halo
+ * that gives the top edge its separation back, and a downward cast that does
+ * the lifting. Dark needs no counterpart: there the card is 850 on a 950 page,
+ * so it is already off the surface.
+ *
+ * Neither pass may carry a spread or a `0 0 0 Npx` ring: a ring is a real line
+ * all the way round, and the top edge is exactly where no line may appear. The
+ * halo is therefore wide and weak (32px at 0.04), which is what keeps its
+ * strongest point — the edge itself, where a blur is always at half strength —
+ * a soft gradient rather than an outline. */
 .composer {
   position: relative;
   box-sizing: border-box;
@@ -21,14 +49,17 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 8px;
+  padding-top: 0;
   border-radius: 22px;
-  border: 0;
-  background: var(--dsw-specific-input-major);
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  border: 0.5px solid transparent;
+  background:
+    linear-gradient(var(--dsw-specific-input-major), var(--dsw-specific-input-major)) padding-box,
+    linear-gradient(180deg, transparent, var(--dsw-alias-border-l3)) border-box;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-  box-shadow: var(--dsw-elevation-soft);
+  box-shadow:
+    0 0 32px rgba(0, 0, 0, 0.04),
+    0 8px 20px rgba(0, 0, 0, 0.07);
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }

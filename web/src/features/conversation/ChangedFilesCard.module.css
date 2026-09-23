@@ -1,0 +1,185 @@
+/*
+ * The changed-files card at a turn's tail: a filled header, code-font rows that
+ * open the file, and a bottom fold. Geometry and type sizes are dsh's
+ * `ChangedFiles.module.css`; the colors are this project's alias tokens, which
+ * already flip with the appearance setting (upstream keyed its two fills off a
+ * static neutral and needed a dark override to say the same thing).
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 16px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 16px;
+  border: 0;
+  background: var(--dsw-alias-bg-layer-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.header {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+button.header:hover,
+button.header:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+button.header:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-brand-primary);
+}
+
+.tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--dsw-alias-link);
+  color: var(--dsw-static-neutral-00);
+}
+
+.titles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat {
+  display: inline-flex;
+  gap: 6px;
+  overflow: hidden;
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list {
+  margin: 0;
+  padding: 4px 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+}
+
+button.row {
+  cursor: pointer;
+}
+
+button.row:hover,
+button.row:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+button.row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 8px 16px;
+  border: 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The shared chevron points right; the fold points at the rows it hides. */
+.toggle svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.toggle[aria-expanded="true"] svg {
+  transform: rotate(-90deg);
+}
+
+@media (pointer: coarse) {
+  .row,
+  .toggle {
+    min-height: 44px;
+  }
+}

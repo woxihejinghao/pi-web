@@ -20,6 +20,8 @@ import { ThinkingBlock } from "./ThinkingBlock.tsx";
 import { TodoRow } from "./TodoRow.tsx";
 import { ToolCallRow } from "./ToolCallRow.tsx";
 import { TurnProcessGroup } from "./TurnProcessGroup.tsx";
+import { ChangedFilesCard } from "./ChangedFilesCard.tsx";
+import { turnFiles, type TurnFile } from "./turn-files.ts";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { TurnStatus } from "./TurnStatus.tsx";
 import { TurnNavigator } from "./TurnNavigator.tsx";
@@ -241,6 +243,8 @@ function UserTurn({ content }: { content: string | ContentBlock[] }) {
                 (
                   <>
                     <span className={styles.skillChip} title={skill.location}>
+                      {/* dsh's own skill glyph; the chip is otherwise text-only. */}
+                      <Glyph name="skill" size={14} className={styles.skillIcon} />
                       {skillCommandLabel(skill.name)}
                     </span>
                     {skill.userMessage === undefined ? null : ` ${skill.userMessage}`}
@@ -356,12 +360,18 @@ export function MessageList({
   home,
   compactTranscript = false,
   onFork,
+  onOpenFile,
 }: {
   view: ConversationView;
   /** Collapse finished turns' process rows into one group (see settings). */
   compactTranscript?: boolean;
   /** Fork the session at a user message. Absent means the action is not shown. */
   onFork?: (entryId: string) => void;
+  /**
+   * Preview a project-relative path in the right sidebar. Absent means a turn's
+   * changed-files card lists its rows without making them clickable.
+   */
+  onOpenFile?: (path: string) => void;
 } & PathContext) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Follow new output only while the user is already at the bottom.
@@ -391,6 +401,21 @@ export function MessageList({
   const frameRef = useRef<number | null>(null);
 
   const railItems = useMemo(() => groupTurns(view.messages), [view.messages]);
+  /**
+   * Each turn's written files, keyed by turn number.
+   *
+   * Derived from the same message list the turns were cut from, so a turn's card
+   * cannot describe a different set of messages than the rows above it. Turns
+   * that wrote nothing are left out rather than mapped to an empty list.
+   */
+  const turnFilesByTurn = useMemo(() => {
+    const map = new Map<number, TurnFile[]>();
+    for (const group of railItems) {
+      const files = turnFiles(group.messages, { cwd, home });
+      if (files.length > 0) map.set(group.turn, files);
+    }
+    return map;
+  }, [railItems, cwd, home]);
   const turnMeta = useMemo(
     () => turnMetadata(railItems, view.forkPoints),
     [railItems, view.forkPoints],
@@ -629,6 +654,15 @@ export function MessageList({
                   compact={compactTranscript}
                   cwd={cwd}
                   home={home}
+                />
+              ) : null}
+              {/* The turn's own edits, between the answer and the action row —
+                  dsh's turn tail, where the card belongs to the turn that
+                  caused it rather than to the transcript as a whole. */}
+              {turnFilesByTurn.has(group.turn) ? (
+                <ChangedFilesCard
+                  files={turnFilesByTurn.get(group.turn) ?? []}
+                  {...(onOpenFile === undefined ? {} : { onOpenFile })}
                 />
               ) : null}
               {group.messages.some((message) => message.role === "assistant") ? (

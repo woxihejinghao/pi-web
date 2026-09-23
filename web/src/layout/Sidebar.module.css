@@ -47,10 +47,17 @@
 }
 
 /* Top-level primary action, mirroring dsh's full-width "新会话" pill
- * (`.hHd-Xa_newSession`): 12px corners, a 38px box, 8/16 padding, 14px text on
- * a 22px line, and the elevated/floating button fills. The 0.5px border is part
- * of dsh's original rather than a local guard, so it stays a border here (not a
- * shadow) exactly as it does upstream. */
+ * (`.hHd-Xa_newSession`): a 38px box, 8/16 padding, 14px text on a 22px line,
+ * and the elevated/floating button fills. The 0.5px border is part of dsh's
+ * original rather than a local guard, so it stays a border here (not a shadow)
+ * exactly as it does upstream.
+ *
+ * The corner is the one deliberate departure: dsh draws 12px, but this sits
+ * directly above the composer and reads as its trigger, so it takes 14px — a
+ * step rounder than upstream, short of the input card's 22px because a 38px
+ * box caps the radius at 19px and anything above that turns the button into a
+ * pill. At 14px nothing is capped, so the theme's superellipse applies and the
+ * corner keeps the same curvature as the surfaces around it. */
 .primaryAction {
   padding: 4px 14px 10px;
   flex: 0 0 auto;
@@ -65,7 +72,7 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 16px;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
@@ -252,6 +259,12 @@
   display: inline-flex;
   color: var(--dsw-alias-label-tertiary);
   flex: 0 0 auto;
+}
+
+/* The selected workspace's folder reads in the brand color, so the row matches
+ * the workspace named above the composer. */
+.projectRowCurrent .projectGlyph {
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .projectTitle {

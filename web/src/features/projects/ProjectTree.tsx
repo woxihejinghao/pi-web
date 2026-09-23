@@ -114,6 +114,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   const sessionIndent = indent + 26;
 
   const expanded = Boolean(state.expandedProjects[project.id]);
+  const current = project.id === state.selectedProjectId;
   const query = state.sessionQuery.trim().toLowerCase();
   const searching = query.length > 0;
 
@@ -155,7 +156,11 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
 
   return (
     <>
-      <div className={styles.projectRow} style={{ marginLeft: indent }} title={project.path}>
+      <div
+        className={clsx(styles.projectRow, current && styles.projectRowCurrent)}
+        style={{ marginLeft: indent }}
+        title={project.path}
+      >
         <button
           type="button"
           className={styles.projectMain}

@@ -1,0 +1,231 @@
+/* The panel is a column of the page rather than a card over it: it takes the
+ * conversation's ground colour and font sizes, and its left border is the same
+ * hairline the left sidebar uses on its own edge. */
+.panel {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--dsw-alias-bg-base);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
+  overflow: hidden;
+}
+
+/* Fullscreen keeps the columns underneath untouched and covers the viewport,
+ * so leaving it restores the previous layout without a relayout flash. */
+.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  width: auto;
+  border-left: none;
+  box-shadow: var(--dsw-elevation-float);
+}
+
+.resizeHandle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+.resizeHandle:hover {
+  background: var(--dsw-alias-border-l3);
+}
+
+/* The tab strip is the panel's whole top edge: no separate header row, exactly
+ * as dsh arranges it. It is a plain row — the scrollable part is `.chips`, so
+ * the "+" menu anchored inside the strip is not clipped by a scroll container. */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 6px 8px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.stripSpacer {
+  flex: 1 1 auto;
+  min-width: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 auto;
+  /* A floor on the chip's width keeps a title readable; past four tabs the
+   * strip scrolls rather than shrinking every title to two characters. */
+  min-width: 72px;
+  max-width: 160px;
+  height: 26px;
+  padding: 0 2px 0 8px;
+  border-radius: 13px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+}
+
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chipActive {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.chipBody {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chipTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The close control appears on the active chip and on hover: a strip of many
+ * tabs otherwise reads as a row of ✕ buttons. */
+.chipClose {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chip:hover .chipClose,
+.chipActive .chipClose {
+  display: inline-flex;
+}
+
+.chipClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-primary);
+}
+
+.addWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.addButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  padding: 0;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.addButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.menu {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 10;
+  min-width: 128px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-elevation-float);
+  display: flex;
+  flex-direction: column;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.menuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.panelControl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  padding: 0;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.panelControl:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

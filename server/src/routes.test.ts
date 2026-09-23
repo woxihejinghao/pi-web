@@ -1,4 +1,6 @@
 import { createServer, request as httpRequest, type Server } from "node:http";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { AddressInfo } from "node:net";
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -13,6 +15,7 @@ import { sessionDirFor } from "./session-path.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB_CLI = join(HERE, "testing", "stub-pi.mjs");
+const execFileAsync = promisify(execFile);
 
 let home: string;
 let projectRoot: string;
@@ -149,6 +152,118 @@ describe("projects api", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect((await api("/api/projects")).body.map((p: any) => p.id)).toEqual([b.id, a.id]);
   });
+});
+
+describe("workspace files api", () => {
+  it("lists a project directory level and reads one of its files", async () => {
+    const project = await createProject("files");
+    await mkdir(join(project.path, "src"), { recursive: true });
+    await writeFile(join(project.path, "README.md"), "# hi\n", "utf8");
+
+    const listing = await api(`/api/projects/${project.id}/files`);
+    expect(listing.status).toBe(200);
+    expect(listing.body.entries.map((entry: any) => entry.path)).toEqual([
+      "src",
+      "README.md",
+    ]);
+
+    const file = await api(`/api/projects/${project.id}/file?path=README.md`);
+    expect(file.status).toBe(200);
+    expect(file.body).toMatchObject({ kind: "text", content: "# hi\n" });
+  });
+
+  it("refuses a path that leaves the project", async () => {
+    const project = await createProject("escape");
+    const res = await api(`/api/projects/${project.id}/files?path=..`);
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects a file request without a path", async () => {
+    const project = await createProject("no-path");
+    const res = await api(`/api/projects/${project.id}/file`);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("git api", () => {
+  /** A project that is also a repository, with one commit already made. */
+  async function createRepo(name: string): Promise<{ id: string; path: string }> {
+    const project = await createProject(name);
+    const git = (...args: string[]) =>
+      execFileAsync(
+        "git",
+        ["-C", project.path, "-c", "user.email=t@e", "-c", "user.name=T", ...args],
+        { encoding: "utf8" },
+      );
+    await git("-c", "init.defaultBranch=main", "init", "-q");
+    await writeFile(join(project.path, "a.txt"), "one\n", "utf8");
+    await git("add", "-A");
+    await git("commit", "-qm", "init");
+    return project;
+  }
+
+  it("answers with the branch, both sides and the history", async () => {
+    const project = await createRepo("git-repo");
+    await writeFile(join(project.path, "a.txt"), "one changed\n", "utf8");
+
+    const res = await api(`/api/projects/${project.id}/git`);
+    expect(res.status).toBe(200);
+    expect(res.body.branch).toBe("main");
+    expect(res.body.unstaged.map((file: any) => file.path)).toEqual(["a.txt"]);
+    expect(res.body.unstaged[0].patch).toContain("+one changed");
+    expect(res.body.staged).toEqual([]);
+    expect(res.body.log[0].subject).toBe("init");
+  });
+
+  it("answers 200 with repository:false for a plain directory", async () => {
+    const project = await createProject("git-plain");
+    const res = await api(`/api/projects/${project.id}/git`);
+    expect(res.status).toBe(200);
+    expect(res.body.repository).toBe(false);
+    expect(res.body.unstaged).toEqual([]);
+  });
+
+  it("stages, commits and answers with the re-read state", async () => {
+    const project = await createRepo("git-commit");
+    await writeFile(join(project.path, "a.txt"), "one committed\n", "utf8");
+
+    const staged = await post(`/api/projects/${project.id}/git/stage`, {
+      paths: ["a.txt"],
+      staged: true,
+    });
+    expect(staged.status, JSON.stringify(staged.body)).toBe(200);
+    expect(staged.body.staged.map((file: any) => file.path)).toEqual(["a.txt"]);
+
+    const committed = await post(`/api/projects/${project.id}/git/commit`, {
+      message: "feat: commit from the api",
+    });
+    expect(committed.status, JSON.stringify(committed.body)).toBe(200);
+    expect(committed.body.view.log[0].subject).toBe("feat: commit from the api");
+    expect(committed.body.view.staged).toEqual([]);
+    expect(committed.body.hash).toBe(committed.body.view.log[0].short);
+  });
+
+  it("reports git's own refusal as a 400 with its message", async () => {
+    const project = await createRepo("git-refusal");
+    // Nothing staged, so git refuses — and its wording is what the panel shows.
+    const res = await post(`/api/projects/${project.id}/git/commit`, { message: "nothing" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("nothing to commit");
+  });
+
+  it("explains a push with no remote instead of failing as a 500", async () => {
+    const project = await createRepo("git-push");
+    const res = await post(`/api/projects/${project.id}/git/push`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("没有配置远端");
+  });
+
+  it("rejects a stage request without paths", async () => {
+    const project = await createRepo("git-no-paths");
+    const res = await post(`/api/projects/${project.id}/git/stage`, { staged: true });
+    expect(res.status).toBe(400);
+  });
+
 });
 
 describe("sessions api", () => {

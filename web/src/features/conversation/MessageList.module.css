@@ -169,6 +169,21 @@
   font-family: var(--dsw-font-markdown-code-font-family);
 }
 
+/*
+ * dsh's `refIcon`, the rule its reference chips put on their glyph: `1em` square
+ * so the icon tracks the chip's own font size, a 4px gap before the text, and
+ * the `-.125em` baseline nudge that seats it on the text's optical centre.
+ *
+ * The colour is deliberately absent — the glyph fills with `currentColor`, so it
+ * is the chip's blue by construction and the two can never drift apart.
+ */
+.skillIcon {
+  width: 1em;
+  height: 1em;
+  margin-right: 4px;
+  vertical-align: -0.125em;
+}
+
 .assistantTurn {
   display: flex;
   flex-direction: column;

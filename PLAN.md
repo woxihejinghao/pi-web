@@ -139,7 +139,7 @@ DB 只存**项目记录**，会话列表**从 pi 实时派生**——这是让�
 ### 视觉与交互（照搬 dsh）
 
 - 从 `/tmp/dsh-probe/packages/client/ui-theme/src/styles/` 移植整套 token：`design-platform.css`（static 色阶 + 83 个 alias）、`base.css`（字体/缓动）、`corner-shape.css`（超椭圆）、`scrollbar.css`、`shiki.css`。**保留 `--dsw-*` 前缀不改名**，便于后续与 dsh 对照。
-- 三栏布局对齐 dsh：左侧栏（项目 + 会话）、中间对话、右侧留空占位（第一版不实现右栏）。
+- 三栏布局对齐 dsh：左侧栏（项目 + 会话）、中间对话、右侧栏（每会话一份的面板：文件树 / 文件预览 / 内嵌浏览器；终端与 diff 视图暂不做）。
 - 对话流渲染优先级：用户消息 → assistant 文本（Markdown + shiki 高亮）→ thinking（默认折叠）→ 工具调用（折叠卡片）。工具卡片第一版做**简版**：工具名 + 关键参数 + 折叠的分节输出，不做 diff 高亮。
 
 ## Files to modify
@@ -206,6 +206,11 @@ pi-web-simple/
 - [x] **S9 对话流**：SSE 接入 + `message_update` 按 `contentIndex` 增量拼装 + Markdown/shiki 渲染 + thinking 折叠 + 工具卡片 + Composer（含 streaming 时的 steer/follow-up 行为选择）。
 - [x] **S10 兜底**：`extension_ui_request` 的 `notify` 展示；`confirm/select/input/editor` 做最小可用弹窗（避免扩展阻塞死锁）。
 - [x] **S11 文档**：README 写清启动方式与「与 CLI 并存」的行为边界。
+- [x] **S12 右侧栏（对齐 dsh）**：`workspace-files.ts`（相对路径 + realpath 包含校验的列目录 / 读文件）+ `/api/projects/:id/files|file`；前端 `features/rightbar/` —— 每会话布局持久化、标签条、宽度拖拽、`push`/`fullscreen`、文件树、预览（Markdown / 代码 / 图片）、沙箱 iframe 浏览器。测试：`workspace-files.test.ts`、`rightbar-state.test.ts`、`file-kind.test.ts`、`Rightbar.test.tsx`，并在真实浏览器里逐项点通（含拖拽与刷新恢复）。
+- [x] **S13 改动视图**：`git.ts`（`git status -z` + 逐文件 `git diff`，含未暂存/已暂存/未跟踪/二进制与单文件、文件数上限）+ `/api/projects/:id/git`；前端 `diff-parse.ts`（纯函数，含 9 个用例）与变更面板（文件列表 + 徽标 + 行号轨道 + 增删着色，未跟踪文件可跳预览）。
+- [x] **S14 变更面板（参照设计稿）**：服务端把 git 从「只读 diff」扩成全套 —— 分暂存/未暂存两份 diff、分支列表、上游与 ahead/behind、历史，加上写操作（暂存/取消暂存/全部暂存、提交、推送含无上游时 `-u` 发布、还原、切分支），写操作一律返回重读状态、git 的拒绝原样上报（`GitError` → 400）。前端 `ChangesTab`/`ChangesFile`/`ChangesFooter`：提交框固定在顶部（Ctrl+Enter 提交 + ↑推送计数）、分支下拉与上游状态、已暂存/未暂存分组与全部暂存、历史与 refs 徐章、文件默认折叠 + hunk 级折叠、还原前确认。测试：server 26 项（含真实 bare remote 的 push）、web 45 项；并在浏览器里实机跑通全部暂存→提交→推送（远端验到 commit）、还原、切分支与无上游推送。
+
+- [x] **S15 每轮末尾的改动文件卡片（对齐 dsh 的 turn tail）**：`turn-files.ts` 从一轮自己的 `write`/`edit` 调用投影出改动文件（项目内相对路径去重、工具徽章、调用次数；项目外路径列出但不可点）；`ChangedFilesCard` 画卡片（头像点击预览第一个文件、3 行折叠、行点击开右侧栏预览），位置在 `MessageList` 的答案与操作行之间，点击共用 `rightbarActions.openPreviewTab`。测试：web 19 项（`turn-files` 9 + 卡片 6 + `MessageList` 4）。
 
 ## Verification
 

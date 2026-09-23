@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import clsx from "clsx";
 import { ConversationPane } from "../features/conversation/ConversationPane.tsx";
+import { Rightbar } from "../features/rightbar/Rightbar.tsx";
 import { SettingsPage } from "../features/settings/SettingsPage.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { actions, appStore } from "../lib/app-state.ts";
@@ -8,9 +9,9 @@ import { useStore } from "../lib/store.ts";
 import styles from "./AppLayout.module.css";
 
 /**
- * Two-region shell mirroring dsh's arrangement: the project/session sidebar on
- * the left, the active conversation filling the rest. A right sidebar is
- * deliberately out of scope for this first version.
+ * Three-region shell mirroring dsh's arrangement: the project/session sidebar on
+ * the left, the active conversation in the middle, and the right sidebar — the
+ * per-session panel the conversation header's toggle opens.
  */
 export function AppLayout() {
   const state = useStore(appStore);
@@ -37,6 +38,9 @@ export function AppLayout() {
           <ConversationPane />
         )}
       </main>
+      {/* Renders nothing without an open session, and a fullscreen panel takes
+          itself out of this flow — so the shell stays a three-track flex row. */}
+      <Rightbar />
       {state.notice ? (
         <div
           className={clsx(
