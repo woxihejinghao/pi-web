@@ -107,3 +107,50 @@ describe("MessageList changed files", () => {
     expect(html).not.toContain("在右侧栏预览 a.ts");
   });
 });
+
+/**
+ * A skill sent from the web never leaves the composer's literal command behind:
+ * the optimistic turn is the only copy of a user message the transcript shows,
+ * so the bubble has to fold `/skill:<name>` itself or the chip — glyph and
+ * colour included — never appears.
+ */
+describe("MessageList skill chip", () => {
+  it("draws a shipped skill command as a chip", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("/skill:git-commit"), answered([text("好了")])])}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).toContain("/skill:git-commit");
+    expect(html).toContain("skillChip");
+    expect(html).toContain("skillIcon");
+  });
+
+  it("keeps the arguments outside the chip", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("/skill:git-commit fix the typo"), answered([text("好了")])])}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).toContain("skillChip");
+    expect(html).toContain("/skill:git-commit</span> fix the typo");
+  });
+
+  it("leaves ordinary text as text", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("解释一下 /skill:git-commit"), answered([text("这是解释")])])}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).not.toContain("skillChip");
+  });
+});

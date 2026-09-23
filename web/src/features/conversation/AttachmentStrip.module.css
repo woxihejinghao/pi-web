@@ -82,30 +82,34 @@
 }
 
 /*
- * The attach button: a toolbar glyph, so it takes the toolbar's muted tone
- * rather than the send disc's fill — it is an offer, not the action.
+ * The attach button: dsh's attach circle (figma "+ control") — a 28px selector
+ * disc with the glyph at 14px. A step under the 34px send disc, so the action
+ * stays the biggest thing in the row, and filled rather than bare because the
+ * disc is what makes it one target to hit beside the mode chips.
  */
 .attach {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
   cursor: pointer;
-  flex: 0 0 auto;
 }
 
 .attach:hover:not(:disabled) {
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
 }
 
+/* dsh fades the attach circle to 0.5 rather than the send disc's 0.4: the
+   selector fill is already quiet, and a lighter disc reads as disabled. */
 .attach:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: default;
 }
 

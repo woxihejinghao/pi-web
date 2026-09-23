@@ -244,27 +244,52 @@
   color: inherit;
 }
 
-.projectChevron {
+/*
+ * The workspace's leading slot. It is one 16px square holding two marks, because
+ * dsh never shows both at once: the folder states whether the workspace is open,
+ * and the caret takes its place under the pointer.
+ */
+.projectGlyph {
+  position: relative;
   display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.projectFolder,
+.projectCaret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The caret is pointer chrome, not a state mark, so it keeps a grey even on the
+ * selected workspace — the folder is what carries the tint. It rides dsh's
+ * caption grey, which is one step lighter than the folder's tertiary.
+ */
+.projectCaret {
+  display: none;
+  color: var(--dsw-alias-label-caption);
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
-.projectChevronOpen {
+.projectCaretOpen {
   transform: rotate(90deg);
 }
 
-.projectGlyph {
-  display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
-  flex: 0 0 auto;
+/* The pointer trades the folder for the disclosure mark, so a resting row is a
+ * mark and a name without a second column of chrome. */
+.projectRow:hover .projectFolder {
+  display: none;
 }
 
-/* The selected workspace's folder reads in the brand color, so the row matches
- * the workspace named above the composer. */
-.projectRowCurrent .projectGlyph {
-  color: var(--dsw-alias-state-business-primary);
+.projectRow:hover .projectCaret {
+  display: inline-flex;
 }
 
 .projectTitle {
@@ -275,6 +300,59 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--dsw-alias-label-primary);
+}
+
+/* The selected workspace's mark reads in the brand color, so the row matches the
+ * workspace named above the composer — but only while it is open. A collapsed
+ * workspace is not the one the transcript is showing, and tinting it would claim
+ * otherwise. The name stays the ordinary label color: the mark is the state, the
+ * name is just what the workspace is called. */
+.projectGlyphAccent {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/*
+ * The workspace row's overflow menu.
+ *
+ * It is portalled into `document.body` (see `ProjectRowMenu`), so it is placed
+ * in viewport coordinates and cannot be clipped by the sidebar's scroll
+ * container. dsh's float menu: layer-1 surface, hairline border, float shadow.
+ */
+.projectMenu {
+  position: fixed;
+  z-index: 40;
+  min-width: 168px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-elevation-float);
+  display: flex;
+  flex-direction: column;
+}
+
+.projectMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.projectMenuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The one entry that can take the workspace away, so it reads as the risk. */
+.projectMenuItemDanger {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* --- session row --- */

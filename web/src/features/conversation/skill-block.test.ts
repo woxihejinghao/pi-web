@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayUserText, parseSkillBlock, skillCommandLabel } from "./skill-block.ts";
+import { displayUserText, parseSkillBlock, parseSkillCall, skillCommandLabel } from "./skill-block.ts";
 
 /** Exactly the shape pi writes: `_expandSkillCommand` in `dist/core/agent-session.js`. */
 function block(name: string, body: string, args?: string): string {
@@ -39,6 +39,35 @@ describe("parseSkillBlock", () => {
 
   it("returns null when the block is not the whole message", () => {
     expect(parseSkillBlock(`look at this:\n\n${block("git-commit", "body")}`)).toBeNull();
+  });
+});
+
+describe("parseSkillCall", () => {
+  it("folds the literal command a freshly sent turn still holds", () => {
+    expect(parseSkillCall("/skill:git-commit")).toEqual({ name: "git-commit" });
+  });
+
+  it("keeps the arguments beside the literal command", () => {
+    expect(parseSkillCall("/skill:git-commit fix the typo")).toEqual({
+      name: "git-commit",
+      userMessage: "fix the typo",
+    });
+  });
+
+  it("still folds the expanded block, location and all", () => {
+    expect(parseSkillCall(block("git-commit", "# Git Commit", "fix the typo"))).toEqual({
+      name: "git-commit",
+      location: "/home/user/.agents/skills/git-commit/SKILL.md",
+      userMessage: "fix the typo",
+    });
+  });
+
+  it("leaves anything that is not a whole command alone", () => {
+    expect(parseSkillCall("hello")).toBeNull();
+    expect(parseSkillCall("run /skill:git-commit")).toBeNull();
+    // pi finds no skill under an empty name and never expands this one.
+    expect(parseSkillCall("/skill:")).toBeNull();
+    expect(parseSkillCall("/skill: git-commit")).toBeNull();
   });
 });
 

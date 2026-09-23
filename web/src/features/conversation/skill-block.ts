@@ -16,6 +16,13 @@
  * (`parseSkillBlock`, `dist/core/agent-session.js`) so the two never disagree
  * about what a skill block is, plus the label to show instead of a two-kilobyte
  * file dump.
+ *
+ * A bubble, though, does not always hold that block. `useConversation` renders a
+ * user turn from what the composer held and drops pi's `message_end` for user
+ * messages, so a command sent from the web keeps the literal `/skill:<name>` it
+ * was typed as until the session is reloaded from disk. `parseSkillCall` is the
+ * one entry point that folds either shape, which is what keeps the chip — and
+ * with it the icon and the colour — on a freshly sent skill.
  */
 
 /** A parsed skill block: what pi inlined, and what the user typed around it. */
@@ -47,6 +54,53 @@ export function parseSkillBlock(text: string): SkillBlock | null {
     name: match[1] as string,
     location: match[2] as string,
     content: match[3] as string,
+    ...(userMessage ? { userMessage } : {}),
+  };
+}
+
+/**
+ * pi's own command split, `_expandSkillCommand`: the name runs to the first
+ * space and everything after it is the user's own text. Matching that exactly
+ * matters only for the literal form — a command the local fold recognises but pi
+ * does not would draw a chip for something pi never expanded.
+ */
+const SKILL_COMMAND = /^\/skill:([^ \t\n\r]+)(?: +([\s\S]*))?$/;
+
+/** A skill call as a bubble draws it, expanded or not. */
+export interface SkillCall {
+  /** Skill name, e.g. `git-commit`. */
+  name: string;
+  /** Text the user appended after the command, when there was any. */
+  userMessage?: string;
+  /**
+   * The SKILL.md the body was read from. Absent while the message is still the
+   * literal command — pi has not expanded it, so there is nothing to point at.
+   */
+  location?: string;
+}
+
+/**
+ * Fold either shape of a skill call down to what the chip shows.
+ *
+ * The expanded block is pi's record; the literal command is what the optimistic
+ * turn holds before (and, for the life of the session, instead of) it. Both have
+ * to reach the same chip, or a skill sent from the web would lose its glyph and
+ * its colour and read as ordinary text.
+ */
+export function parseSkillCall(text: string): SkillCall | null {
+  const block = parseSkillBlock(text);
+  if (block !== null) {
+    return {
+      name: block.name,
+      location: block.location,
+      ...(block.userMessage === undefined ? {} : { userMessage: block.userMessage }),
+    };
+  }
+  const match = SKILL_COMMAND.exec(text.trim());
+  if (match === null) return null;
+  const userMessage = match[2]?.trim();
+  return {
+    name: match[1] as string,
     ...(userMessage ? { userMessage } : {}),
   };
 }

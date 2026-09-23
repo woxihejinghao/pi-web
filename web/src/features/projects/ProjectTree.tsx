@@ -1,12 +1,14 @@
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import {
-  ChevronIcon,
   EyeOffIcon,
-  FolderIcon,
   PencilIcon,
+  PlusIcon,
   TrashIcon,
 } from "../../components/icons.tsx";
 import { actions, appStore, isDraftSession } from "../../lib/app-state.ts";
+import { Glyph } from "../../components/dsh-icons.tsx";
 import { formatRelativeTime } from "../../lib/format.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
 import { useStore } from "../../lib/store.ts";
@@ -14,6 +16,99 @@ import styles from "../../layout/Sidebar.module.css";
 
 /** dsh shows five sessions per workspace before folding the rest. */
 const PAGE_SIZE = 5;
+
+/** Where a workspace's overflow menu is anchored, in viewport coordinates. */
+interface MenuAnchor {
+  top: number;
+  right: number;
+}
+
+/**
+ * The workspace row's overflow menu: rename and remove, folded behind the `...`
+ * that dsh puts there.
+ *
+ * Rendered into `document.body` because the sidebar's list is a scroll
+ * container — an absolutely positioned menu would be clipped by it. `fixed`
+ * coordinates come from the trigger and the menu is right-aligned to it, which
+ * is the direction dsh opens it in.
+ */
+function ProjectRowMenu({
+  anchor,
+  triggerRef,
+  onClose,
+  onRename,
+  onRemove,
+}: {
+  anchor: MenuAnchor;
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  onRename: () => void;
+  onRemove: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // The trigger is part of the menu for dismissal purposes: clicking `...`
+    // again has to toggle, not close-then-reopen from the pointerdown below.
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (menuRef.current?.contains(target) === true) return;
+      if (triggerRef.current?.contains(target) === true) return;
+      onClose();
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") onClose();
+    };
+    // Scrolling moves the trigger but not the menu, so dismiss rather than
+    // leave the menu pinned to nothing.
+    const onScroll = (): void => onClose();
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [onClose, triggerRef]);
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className={styles.projectMenu}
+      role="menu"
+      aria-label="工作区操作"
+      style={{ top: anchor.top, right: anchor.right }}
+    >
+      <button
+        type="button"
+        className={styles.projectMenuItem}
+        role="menuitem"
+        onClick={() => {
+          onClose();
+          onRename();
+        }}
+      >
+        <PencilIcon width={14} height={14} />
+        重命名
+      </button>
+      <button
+        type="button"
+        className={clsx(styles.projectMenuItem, styles.projectMenuItemDanger)}
+        role="menuitem"
+        onClick={() => {
+          onClose();
+          onRemove();
+        }}
+      >
+        <TrashIcon width={14} height={14} />
+        删除工作区
+      </button>
+    </div>,
+    document.body,
+  );
+}
 
 interface RowProps {
   indent: number;
@@ -141,17 +236,47 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   }
 
   const renameProject = async (): Promise<void> => {
-    const next = window.prompt("项目名称", project.title);
+    const next = window.prompt("工作区名称", project.title);
     if (next === null) return;
     await actions.renameProject(project.id, next);
   };
 
   const removeProject = async (): Promise<void> => {
     const confirmed = window.confirm(
-      `移除项目「${project.title}」？\n\n目录和会话历史都不会被删除。`,
+      `删除工作区「${project.title}」？\n\n只会把它从列表里移除，目录和会话历史都不会被删除。`,
     );
     if (!confirmed) return;
     await actions.removeProject(project.id);
+  };
+
+  const [menuAt, setMenuAt] = useState<MenuAnchor | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => {
+    setMenuAt(null);
+  }, []);
+
+  /**
+   * The selected workspace's mark only reads in the brand color while it is open:
+   * a collapsed workspace is not the one the transcript is showing, and tinting
+   * it would claim otherwise. The name keeps the ordinary label color.
+   */
+  const accented = current && expanded;
+
+  /**
+   * Open the overflow menu under its own trigger.
+   *
+   * Viewport coordinates, because the menu is portalled out of the scrolling
+   * list; `right` is measured from the viewport edge so the menu grows leftward
+   * from the trigger instead of off the sidebar.
+   */
+  const toggleMenu = (): void => {
+    if (menuAt !== null) {
+      setMenuAt(null);
+      return;
+    }
+    const rect = menuButtonRef.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    setMenuAt({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
   };
 
   return (
@@ -170,11 +295,16 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
             actions.toggleProjectExpanded(project.id);
           }}
         >
-          <span className={clsx(styles.projectChevron, expanded && styles.projectChevronOpen)}>
-            <ChevronIcon />
-          </span>
-          <span className={styles.projectGlyph}>
-            <FolderIcon />
+          <span className={clsx(styles.projectGlyph, accented && styles.projectGlyphAccent)}>
+            {/* dsh's rule: the marker states whether the workspace is open — a
+                closed folder or an open one — and the caret replaces it under
+                the pointer. */}
+            <span className={styles.projectFolder}>
+              <Glyph name={expanded ? "folderOpen" : "folderClose"} size={16} />
+            </span>
+            <span className={clsx(styles.projectCaret, expanded && styles.projectCaretOpen)}>
+              <Glyph name="caretRight" size={14} />
+            </span>
           </span>
           <span className={styles.projectTitle}>{project.title}</span>
           {project.exists ? null : <span className={styles.missing}>缺失</span>}
@@ -182,24 +312,43 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
         <div className={styles.rowActions}>
           <button
             type="button"
+            ref={menuButtonRef}
             className={styles.iconButton}
-            aria-label={`重命名 ${project.title}`}
-            title="重命名"
-            onClick={() => void renameProject()}
+            aria-label={`更多操作 ${project.title}`}
+            aria-haspopup="menu"
+            aria-expanded={menuAt !== null}
+            title="更多操作"
+            onClick={toggleMenu}
           >
-            <PencilIcon />
+            <Glyph name="ellipsis" size={16} />
           </button>
           <button
             type="button"
             className={styles.iconButton}
-            aria-label={`移除 ${project.title}`}
-            title="移除项目"
-            onClick={() => void removeProject()}
+            aria-label={`在 ${project.title} 中新建会话`}
+            title="新建会话"
+            onClick={() => {
+              setMenuAt(null);
+              // Selecting the workspace first is what points the hero (and the
+              // pi process it warms) at this project rather than the current one.
+              void actions.selectProject(project.id);
+              actions.enterNewSession();
+            }}
           >
-            <TrashIcon />
+            <PlusIcon />
           </button>
         </div>
       </div>
+
+      {menuAt === null ? null : (
+        <ProjectRowMenu
+          anchor={menuAt}
+          triggerRef={menuButtonRef}
+          onClose={closeMenu}
+          onRename={() => void renameProject()}
+          onRemove={() => void removeProject()}
+        />
+      )}
 
       {expanded ? (
         <>

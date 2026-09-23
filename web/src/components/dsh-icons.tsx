@@ -1,7 +1,7 @@
 /**
- * Figma glyphs copied verbatim from dsh: the tool and reasoning row icons, plus
- * the settings chrome (`settings`, the three appearance cubes, and the icons the
- * model provider rows use).
+ * Figma glyphs copied verbatim from dsh: the tool and reasoning row icons, the
+ * settings chrome (`settings`, the three appearance cubes, and the icons the
+ * model provider rows use), and the workspace browser's row marks.
  *
  * dsh ships these as filled path sets (`fill: "currentColor"`) rather than the
  * stroked outlines the rest of `icons.tsx` uses, so they live in their own
@@ -13,6 +13,24 @@
  * them in a 16x16 `clipPath` that clips nothing; that is dropped here.
  */
 import type { SVGProps } from "react";
+
+/**
+ * One path inside a glyph.
+ *
+ * Mostly a bare `d`. The Figma extracts that were exported with a layer
+ * transform (the folder, the add-workspace mark) or as a duotone keep theirs,
+ * because flattening either into the geometry would stop the data being
+ * verbatim — and these marks are meant to *be* dsh's, not to resemble them.
+ */
+type GlyphPath = string | { d: string; transform?: string; opacity?: number };
+
+interface GlyphDef {
+  viewBox: string;
+  paths: readonly GlyphPath[];
+  /** Set for the few glyphs dsh draws as an outline instead of a fill. */
+  strokeWidth?: number;
+  evenOdd?: boolean;
+}
 
 const GLYPHS = {
   chevronDown: {
@@ -229,9 +247,89 @@ const GLYPHS = {
       "M4.64531 3.6123C4.6453 2.90382 4.07098 2.32949 3.3625 2.32949C2.65403 2.32951 2.0797 2.90383 2.07969 3.6123C2.07969 4.32079 2.65402 4.8951 3.3625 4.89512C4.07099 4.89512 4.64531 4.3208 4.64531 3.6123ZM5.925 3.6123C5.925 5.02772 4.77792 6.1748 3.3625 6.1748C1.9471 6.17479 0.8 5.02771 0.8 3.6123C0.800013 2.19691 1.9471 1.04982 3.3625 1.0498C4.77791 1.0498 5.92499 2.1969 5.925 3.6123Z",
     ],
   },
-} as const;
+
+  /**
+   * dsh's sidebar folder, closed — `IconFolderClose16` (figma extract). Its geometry
+   * is translated at the layer level, which is why a path may carry a transform:
+   * flattening it into the coordinates would stop the data being verbatim.
+   */
+  folderClose: {
+    viewBox: "0 0 16 16",
+    paths: [
+      { d: "M5.05582 0.518756L4.50669 0.86654L5.05582 0.518756ZM13 9.4837L13.65 9.4837L13.65 3.53962L13 3.53962L12.35 3.53962L12.35 9.4837L13 9.4837ZM11.3264 1.86603L11.3264 1.21603L6.52313 1.21603L6.52313 1.86603L6.52313 2.51603L11.3264 2.51603L11.3264 1.86603ZM5.58054 1.34727L6.12968 0.999489L5.60495 0.170972L5.05582 0.518756L4.50669 0.86654L5.03141 1.69506L5.58054 1.34727ZM4.11323 1.23058e-13L4.11323 -0.65L1.67359 -0.65L1.67359 5.00699e-14L1.67359 0.65L4.11323 0.65L4.11323 1.23058e-13ZM0 1.67359L-0.65 1.67359L-0.65 9.4837L0 9.4837L0.65 9.4837L0.65 1.67359L0 1.67359ZM11.3264 11.1573L11.3264 10.5073L1.67359 10.5073L1.67359 11.1573L1.67359 11.8073L11.3264 11.8073L11.3264 11.1573ZM0 9.4837L-0.65 9.4837C-0.65 10.767 0.390308 11.8073 1.67359 11.8073L1.67359 11.1573L1.67359 10.5073C1.10828 10.5073 0.65 10.049 0.65 9.4837L0 9.4837ZM1.67359 5.00699e-14L1.67359 -0.65C0.390307 -0.65 -0.65 0.390309 -0.65 1.67359L0 1.67359L0.65 1.67359C0.65 1.10828 1.10828 0.65 1.67359 0.65L1.67359 5.00699e-14ZM5.05582 0.518756L5.60495 0.170972C5.28121 -0.340193 4.71829 -0.65 4.11323 -0.65L4.11323 1.23058e-13L4.11323 0.65C4.27282 0.65 4.4213 0.731715 4.50669 0.86654L5.05582 0.518756ZM6.52313 1.86603L6.52313 1.21603C6.36354 1.21603 6.21507 1.13431 6.12968 0.999489L5.58054 1.34727L5.03141 1.69506C5.35515 2.20622 5.91808 2.51603 6.52313 2.51603L6.52313 1.86603ZM13 3.53962L13.65 3.53962C13.65 2.25634 12.6097 1.21603 11.3264 1.21603L11.3264 1.86603L11.3264 2.51603C11.8917 2.51603 12.35 2.97431 12.35 3.53962L13 3.53962ZM13 9.4837L12.35 9.4837C12.35 10.049 11.8917 10.5073 11.3264 10.5073L11.3264 11.1573L11.3264 11.8073C12.6097 11.8073 13.65 10.767 13.65 9.4837L13 9.4837Z", transform: "translate(1.5 2.429)" },
+    ],
+  },
+
+  /**
+   * …and open — `IconFolderOpen16`: the same outline with a 20%-opacity inner fill,
+   * so an expanded workspace reads as a different mark rather than a tinted one.
+   */
+  folderOpen: {
+    viewBox: "0 0 16 16",
+    paths: [
+      { d: "M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V6.62671C15.2694 7.02689 15.6605 7.85012 15.4385 8.68726L14.3848 12.658C14.1037 13.7164 13.1449 14.4527 12.0498 14.4529H2.91699C1.51651 14.4529 0.451662 13.2814 0.501954 11.9519V3.98706C0.501954 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM3.7793 7.75562C3.30994 7.75562 2.89883 8.07153 2.77832 8.52515L1.91602 11.7722C1.74167 12.4291 2.23734 13.073 2.91699 13.073H12.0498C12.5191 13.0728 12.9304 12.757 13.0508 12.3035L14.1045 8.33374C14.1819 8.04202 13.9619 7.756 13.6602 7.75562H3.7793ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V7.2937C2.33068 6.7269 3.02249 6.37476 3.7793 6.37476H13.2051V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z" },
+      { d: "M13.6602 7.75525C13.9618 7.7556 14.1815 8.04179 14.1045 8.33337L13.0508 12.3031C12.9304 12.7567 12.5191 13.0725 12.0498 13.0726H2.91701C2.23744 13.0725 1.7417 12.4287 1.91603 11.7719L2.77834 8.52478C2.89898 8.07146 3.31018 7.75532 3.77931 7.75525H13.6602ZM5.1963 2.95154C5.34985 2.95159 5.49377 3.02803 5.57912 3.15564L6.0508 3.86365C6.39205 4.37553 6.96685 4.68385 7.58205 4.68396H12.1699C12.7416 4.68396 13.2049 5.14754 13.2051 5.71912V6.37439H3.77931C3.02267 6.37444 2.33067 6.72671 1.88283 7.29333V3.98669C1.88299 3.4152 2.34649 2.95168 2.91798 2.95154H5.1963Z", opacity: 0.2 },
+    ],
+  },
+
+  /**
+   * `IconProjectAddOutline16` — the add-workspace control in the section header.
+   */
+  projectAdd: {
+    viewBox: "0 0 16 16",
+    paths: [
+      { d: "M3.55246 0L3.55246 2.44252L6 2.44252L6 3.55748L3.55246 3.55748L3.55246 6L2.43834 6L2.43834 3.55748L0 3.55748L0 2.44252L2.43834 2.44252L2.43834 0L3.55246 0Z", transform: "translate(9.52 2.52)" },
+      { d: "M4.76367 0C5.36861 1.80598e-05 5.93113 0.310294 6.25488 0.821289L6.78027 1.64941C6.79685 1.67558 6.81791 1.69775 6.83887 1.71973C6.72186 2.15521 6.65702 2.61192 6.65137 3.08301C6.25601 2.96045 5.90909 2.70478 5.68164 2.3457L5.15723 1.5166C5.07183 1.38189 4.92318 1.3008 4.76367 1.30078L2.32422 1.30078C1.7589 1.30078 1.30078 1.7589 1.30078 2.32422L1.30078 10.1338C1.30078 10.6991 1.7589 11.1572 2.32422 11.1572L11.9766 11.1572C12.5419 11.1572 13 10.6991 13 10.1338L13 8.58398C13.4545 8.5135 13.8903 8.38748 14.3008 8.21289L14.3008 10.1338C14.3008 11.4171 13.2598 12.458 11.9766 12.458L2.32422 12.458C1.04093 12.458 0 11.4171 0 10.1338L0 2.32422C0 1.04093 1.04093 0 2.32422 0L4.76367 0Z", transform: "translate(0.3496 2.35)" },
+    ],
+  },
+
+  /**
+   * `IconTriangleRightFill14` — the workspace disclosure mark, rotated to point down
+   * while the workspace is open.
+   */
+  caretRight: {
+    viewBox: "0 0 14 14",
+    paths: [
+      { d: "M4.25 2.82782L4.25 11.1722C4.25 11.6622 4.84243 11.9076 5.18891 11.5611L9.36109 7.38891C9.57588 7.17412 9.57588 6.82588 9.36109 6.61109L5.18891 2.43891C4.84243 2.09243 4.25 2.33782 4.25 2.82782Z" },
+    ],
+  },
+
+  /**
+   * `IconEllipsisOutline16` — a row's overflow trigger.
+   */
+  ellipsis: {
+    viewBox: "0 0 16 16",
+    paths: [
+      { d: "M4.55146 8.00001C4.55146 8.63513 4.03659 9.15001 3.40146 9.15001C2.76634 9.15001 2.25146 8.63513 2.25146 8.00001C2.25146 7.36488 2.76634 6.85001 3.40146 6.85001C4.03659 6.85001 4.55146 7.36488 4.55146 8.00001Z" },
+      { d: "M9.1476 8.00001C9.1476 8.63513 8.63273 9.15001 7.9976 9.15001C7.36248 9.15001 6.8476 8.63513 6.8476 8.00001C6.8476 7.36488 7.36248 6.85001 7.9976 6.85001C8.63273 6.85001 9.1476 7.36488 9.1476 8.00001Z" },
+      { d: "M13.7486 8.00001C13.7486 8.63513 13.2338 9.15001 12.5986 9.15001C11.9635 9.15001 11.4486 8.63513 11.4486 8.00001C11.4486 7.36488 11.9635 6.85001 12.5986 6.85001C13.2338 6.85001 13.7486 7.36488 13.7486 8.00001Z" },
+    ],
+  },
+
+  /**
+   * `IconPaperclipOutline16` — the glyph on the composer's attach circle.
+   */
+  paperclip: {
+    viewBox: "0 0 16 16",
+    paths: [
+      { d: "M5.5498 9.75V5H6.9502V9.75C6.9502 10.3299 7.4201 10.7998 8 10.7998C8.5799 10.7998 9.0498 10.3299 9.0498 9.75V4.5C9.0498 2.9536 7.7964 1.7002 6.25 1.7002C4.7036 1.7002 3.4502 2.9536 3.4502 4.5V9.75C3.4502 12.2629 5.4871 14.2998 8 14.2998C10.5129 14.2998 12.5498 12.2629 12.5498 9.75V4H13.9502V9.75C13.9502 13.0361 11.2861 15.7002 8 15.7002C4.71391 15.7002 2.0498 13.0361 2.0498 9.75V4.5C2.04981 2.1804 3.9304 0.299806 6.25 0.299805C8.5696 0.299805 10.4502 2.1804 10.4502 4.5V9.75C10.4502 11.1031 9.3531 12.2002 8 12.2002C6.6469 12.2002 5.5498 11.1031 5.5498 9.75Z" },
+    ],
+  },
+} as const satisfies Record<string, GlyphDef>;
 
 export type GlyphName = keyof typeof GLYPHS;
+
+/**
+ * The SVG attributes of one path, however the table stored it — a bare string or
+ * an entry carrying its own transform and opacity.
+ */
+function pathAttributes(entry: GlyphPath): { d: string; transform?: string; opacity?: number } {
+  if (typeof entry === "string") return { d: entry };
+  const attributes: { d: string; transform?: string; opacity?: number } = { d: entry.d };
+  if (entry.transform !== undefined) attributes.transform = entry.transform;
+  if (entry.opacity !== undefined) attributes.opacity = entry.opacity;
+  return attributes;
+}
 
 /**
  * One glyph at its natural size. dsh renders every row glyph at 14 inside a 16px
@@ -256,22 +354,35 @@ export function Glyph({
       viewBox={glyph.viewBox}
       fill="none"
       aria-hidden
+      // The glyph's own name, so a test can name the mark it expects instead of
+      // matching path data it should never have to know about.
+      data-glyph={name}
       {...props}
     >
-      {glyph.paths.map((d) =>
-        strokeWidth === null ? (
-          <path key={d} d={d} fill="currentColor" fillRule={evenOdd ? "evenodd" : undefined} />
+      {glyph.paths.map((entry, index) => {
+        const { d, transform, opacity } = pathAttributes(entry);
+        return strokeWidth === null ? (
+          <path
+            key={index}
+            d={d}
+            transform={transform}
+            opacity={opacity}
+            fill="currentColor"
+            fillRule={evenOdd ? "evenodd" : undefined}
+          />
         ) : (
           <path
-            key={d}
+            key={index}
             d={d}
+            transform={transform}
+            opacity={opacity}
             fill="none"
             stroke="currentColor"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
-        ),
-      )}
+        );
+      })}
     </svg>
   );
 }

@@ -64,7 +64,7 @@ export function Sidebar() {
             title="添加工作区"
             onClick={() => setPickerOpen(true)}
           >
-            <PlusIcon />
+            <Glyph name="projectAdd" size={16} />
           </button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
-import { CloseIcon, ImageIcon } from "../../components/icons.tsx";
+import { Glyph } from "../../components/dsh-icons.tsx";
+import { CloseIcon } from "../../components/icons.tsx";
 import { ACCEPTED_IMAGE_MIME_TYPES, imageDataUrl } from "../../lib/image-attachments.ts";
 import type { ImageBlock } from "../../lib/types.ts";
 import styles from "./AttachmentStrip.module.css";
@@ -51,10 +52,12 @@ export function AttachmentStrip({
 }
 
 /**
- * The visible half of the file picker.
+ * The visible half of the file picker: dsh's attach circle — a 28px selector
+ * disc with the paperclip on it.
  *
- * A toolbar glyph rather than a filled disc: attaching is an offer, the send
- * button is the action.
+ * The paperclip is dsh's own glyph (`IconPaperclipOutline16`) rather than the
+ * picture frame this used to draw: the button attaches files, and a mark that
+ * names the act is what dsh puts on the circle.
  */
 export function AttachButton({ disabled, onClick }: { disabled?: boolean; onClick(): void }) {
   return (
@@ -66,7 +69,7 @@ export function AttachButton({ disabled, onClick }: { disabled?: boolean; onClic
       aria-label="添加图片"
       title="添加图片（也可粘贴或拖入）"
     >
-      <ImageIcon />
+      <Glyph name="paperclip" />
     </button>
   );
 }

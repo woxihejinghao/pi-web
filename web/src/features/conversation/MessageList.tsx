@@ -26,7 +26,7 @@ import { RetryNotice } from "./RetryNotice.tsx";
 import { TurnStatus } from "./TurnStatus.tsx";
 import { TurnNavigator } from "./TurnNavigator.tsx";
 import { splitForCompact } from "./row-model.ts";
-import { displayUserText, parseSkillBlock, skillCommandLabel } from "./skill-block.ts";
+import { displayUserText, parseSkillCall, skillCommandLabel } from "./skill-block.ts";
 import { groupTurns } from "./turn-rail.ts";
 import { textFromContent, type ConversationView, type ToolExecution } from "./useConversation.ts";
 import { useDelayedFlag } from "../../lib/use-delayed-flag.ts";
@@ -214,7 +214,7 @@ function assistantTextOf(messages: AgentMessage[]): string {
 function UserTurn({ content }: { content: string | ContentBlock[] }) {
   const text = textFromContent(content);
   const images = imageBlocksOf(content);
-  const skill = parseSkillBlock(text);
+  const skill = parseSkillCall(text);
   return (
     <div className={styles.userTurn}>
       <div className={styles.userBubble} data-images={images.length > 0 || undefined}>
@@ -239,7 +239,8 @@ function UserTurn({ content }: { content: string | ContentBlock[] }) {
               ? text
               : // The chip is inline so a command with arguments still reads as one
                 // line, the way dsh draws it. `title` carries where the body came
-                // from, which is the only thing the folded text no longer shows.
+                // from — on an expanded call only; a command the optimistic turn
+                // still holds has no location to show yet.
                 (
                   <>
                     <span className={styles.skillChip} title={skill.location}>
