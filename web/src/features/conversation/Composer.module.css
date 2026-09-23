@@ -124,3 +124,13 @@
   opacity: 0.4;
   cursor: default;
 }
+
+/*
+ * A file drag is over the card. The ring is drawn inside the existing 22px
+ * rounding rather than on a new box, so the card does not move while the file
+ * is in the air — the same reason dsh tints instead of resizing.
+ */
+.composer[data-dragging] {
+  outline: 1.5px dashed var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}

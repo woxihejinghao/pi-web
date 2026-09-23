@@ -4,6 +4,7 @@ import type {
   AssistantMessage,
   ContentBlock,
   ForkPoint,
+  ImageBlock,
   MessageUsage,
   TextBlock,
   ThinkingBlock as ThinkingBlockType,
@@ -11,6 +12,8 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from "../../lib/types.ts";
+import { ImageThumb } from "../../components/ImageLightbox.tsx";
+import { imageBlocksOf } from "../../lib/image-attachments.ts";
 import { Markdown } from "./Markdown.tsx";
 import { MessageActions } from "./MessageActions.tsx";
 import { ThinkingBlock } from "./ThinkingBlock.tsx";
@@ -94,6 +97,9 @@ function BlockView({
     // gets a list instead of the generic parameters-and-output card.
     if (call.name === "todo") return <TodoRow call={call} execution={execution} />;
     return <ToolCallRow call={call} execution={execution} cwd={cwd} home={home} />;
+  }
+  if (block.type === "image") {
+    return <ImageThumb image={block as ImageBlock} />;
   }
   return null;
 }
@@ -195,24 +201,53 @@ function assistantTextOf(messages: AgentMessage[]): string {
     .join("\n\n");
 }
 
-function UserTurn({ text }: { text: string }) {
+/**
+ * One user turn: its pictures first, then its text.
+ *
+ * The content arrives exactly as pi stored it — a plain string for an ordinary
+ * message, a block array once something was attached to it. The text is still
+ * pulled back out of the blocks, because a bubble is one paragraph plus whatever
+ * was pasted into it, and the skill-command fold only ever applies to the text.
+ */
+function UserTurn({ content }: { content: string | ContentBlock[] }) {
+  const text = textFromContent(content);
+  const images = imageBlocksOf(content);
   const skill = parseSkillBlock(text);
   return (
     <div className={styles.userTurn}>
-      <div className={styles.userBubble}>
-        {skill === null ? (
-          text
-        ) : (
-          // The chip is inline so a command with arguments still reads as one
-          // line, the way dsh draws it. `title` carries where the body came
-          // from, which is the only thing the folded text no longer shows.
-          <>
-            <span className={styles.skillChip} title={skill.location}>
-              {skillCommandLabel(skill.name)}
-            </span>
-            {skill.userMessage === undefined ? null : ` ${skill.userMessage}`}
-          </>
-        )}
+      <div className={styles.userBubble} data-images={images.length > 0 || undefined}>
+        {images.length > 0 ? (
+          <div className={styles.userImages}>
+            {/* Index keys: the list is append-only and never reordered, so the
+                position *is* the identity — and two identical screenshots of
+                two different states must both stay rendered. */}
+            {images.map((image, index) => (
+              <ImageThumb
+                key={index}
+                image={image}
+                variant="user"
+                alt={`附件 ${String(index + 1)}`}
+              />
+            ))}
+          </div>
+        ) : null}
+        {text.length > 0 ? (
+          <div className={styles.userText}>
+            {skill === null
+              ? text
+              : // The chip is inline so a command with arguments still reads as one
+                // line, the way dsh draws it. `title` carries where the body came
+                // from, which is the only thing the folded text no longer shows.
+                (
+                  <>
+                    <span className={styles.skillChip} title={skill.location}>
+                      {skillCommandLabel(skill.name)}
+                    </span>
+                    {skill.userMessage === undefined ? null : ` ${skill.userMessage}`}
+                  </>
+                )}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -569,11 +604,12 @@ export function MessageList({
                 // in a fast exchange, so the position inside the turn is the key.
                 const key = `${String(group.turn)}-${String(index)}`;
                 if (message.role !== "user") return null;
-                const text = textFromContent((message as UserMessage).content);
+                const content = (message as UserMessage).content;
+                const text = textFromContent(content);
                 const meta = turnMeta.get(group.turn);
                 return (
                   <div key={key}>
-                    <UserTurn text={text} />
+                    <UserTurn content={content} />
                     <MessageActions
                       align="end"
                       text={displayUserText(text)}

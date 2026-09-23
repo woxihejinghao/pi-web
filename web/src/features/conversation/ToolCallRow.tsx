@@ -3,6 +3,8 @@ import { Glyph, type GlyphName } from "../../components/dsh-icons.tsx";
 import { StateDot } from "../../components/StateDot.tsx";
 import type { ContentBlock, TextBlock, ToolCallBlock } from "../../lib/types.ts";
 import { DisclosureRow } from "./DisclosureRow.tsx";
+import { ImageThumb } from "../../components/ImageLightbox.tsx";
+import { imageBlocksOf } from "../../lib/image-attachments.ts";
 import { VARIANT_TITLES, classify, deriveSummary, shortenPath, type Variant } from "./row-model.ts";
 import type { ToolExecution } from "./useConversation.ts";
 import styles from "./ToolCallRow.module.css";
@@ -18,9 +20,17 @@ const VARIANT_GLYPHS: Record<Variant, GlyphName> = {
   others: "sparkle",
 };
 
+/**
+ * The textual half of a tool's answer.
+ *
+ * Images are left out rather than rendered as `[image]`: they are shown as
+ * pictures below this text (see `ioImages`), and a marker next to the picture
+ * that stands for it is noise.
+ */
 function blocksToText(blocks: ContentBlock[] | null): string {
   if (!blocks) return "";
   return blocks
+    .filter((block) => block.type !== "image")
     .map((block) => (block.type === "text" ? (block as TextBlock).text : `[${block.type}]`))
     .join("\n");
 }
@@ -63,6 +73,7 @@ export function ToolCallRow({
   // gets the same workspace-then-home treatment dsh applies.
   const summary = shortenPath(deriveSummary(variant, call.arguments ?? execution?.args), cwd, home);
   const output = execution?.output || blocksToText(execution?.result ?? null);
+  const images = imageBlocksOf(execution?.result ?? []);
   const input = useMemo(() => inputText(variant, call), [variant, call]);
   const showInput = input.length > 0 || running;
 
@@ -112,9 +123,25 @@ export function ToolCallRow({
             ) : null}
             <div className={styles.ioSection}>
               <span className={styles.ioLabel}>输出</span>
-              <span className={styles.ioText} data-error={execution?.isError || undefined}>
-                {output.length > 0 ? output : running ? "运行中…" : "(无输出)"}
-              </span>
+              {output.length > 0 || running || images.length === 0 ? (
+                <span className={styles.ioText} data-error={execution?.isError || undefined}>
+                  {output.length > 0 ? output : running ? "运行中…" : "(无输出)"}
+                </span>
+              ) : null}
+              {/* A picture from `read` is the answer itself, not a value for the
+                  label beside it, so it spans the section's two columns. */}
+              {images.length > 0 ? (
+                <div className={styles.ioImages}>
+                  {images.map((image, index) => (
+                    <ImageThumb
+                      key={index}
+                      image={image}
+                      variant="tool"
+                      alt={`结果图片 ${String(index + 1)}`}
+                    />
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

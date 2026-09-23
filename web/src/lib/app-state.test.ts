@@ -421,7 +421,9 @@ describe("new session hero", () => {
 
     // The UI switches to the draft before pi has even been asked for a session.
     expect(isDraftSession(appStore.get().selectedSessionPath)).toBe(true);
-    expect(mocked.createSession).toHaveBeenCalledWith("project-1");
+    // No model chosen means "start on pi's default", which is not the same
+    // request as naming the model pi would have picked anyway.
+    expect(mocked.createSession).toHaveBeenCalledWith("project-1", null);
 
     create.resolve({ sessionPath: REAL_PATH, sessionId: "s1", projectPath: "/home/me/proj", prewarmed: false });
 
@@ -441,6 +443,49 @@ describe("new session hero", () => {
       expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
     });
     expect(appStore.get().pendingPrompt).toBeNull();
+  });
+
+  it("hands the picked model to the session being created, once", async () => {
+    const create = deferredCreate();
+    const picked = { provider: "cz", id: "glm", name: "GLM 5.3", contextWindow: 64000, reasoning: true };
+    actions.setNewSessionModel(picked);
+
+    // The hero reads the choice off the store and passes it along, which is
+    // what this mirrors.
+    actions.startDraftSession("project-1", "hello", [], appStore.get().newSessionModel);
+
+    expect(mocked.createSession).toHaveBeenCalledWith("project-1", picked);
+    // Consumed by the session it was chosen for: the next new session starts
+    // from pi's default again.
+    expect(appStore.get().newSessionModel).toBeNull();
+
+    create.resolve({ sessionPath: REAL_PATH, sessionId: "s1", projectPath: "/home/me/proj", prewarmed: false });
+    await vi.waitFor(() => {
+      expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
+    });
+  });
+
+  it("reports a model the session could not be started on, and keeps the session", async () => {
+    const create = deferredCreate();
+    actions.startDraftSession("project-1", "hello");
+    create.resolve({
+      sessionPath: REAL_PATH,
+      sessionId: "s1",
+      projectPath: "/home/me/proj",
+      prewarmed: false,
+      modelError: "无法切换到 cz/gone：Model not found",
+    });
+
+    await vi.waitFor(() => {
+      expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
+    });
+    expect(appStore.get().notice).toBe("无法切换到 cz/gone：Model not found");
+  });
+
+  it("drops the picked model when the user leaves the new-session flow", () => {
+    actions.setNewSessionModel({ provider: "cz", id: "glm", name: null, contextWindow: 0, reasoning: false });
+    actions.selectSession(REAL_PATH);
+    expect(appStore.get().newSessionModel).toBeNull();
   });
 });
 

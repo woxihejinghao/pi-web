@@ -32,6 +32,7 @@ import { listDirectories, startLocations } from "./fs-browse.ts";
 import { pendingUiRequests, type PendingUiRequests } from "./ui-requests.ts";
 import {
   readComposerFromClient,
+  readComposerFromDefaults,
   readComposerFromDisk,
   type ComposerState,
 } from "./composer.ts";
@@ -178,6 +179,105 @@ function requireString(body: Record<string, unknown>, key: string): string {
     throw badRequest(`${key} is required`);
   }
   return value;
+}
+
+/**
+ * The model a new session should start on, as the hero's picker sends it.
+ *
+ * Absent means "whatever pi starts on" — the field is only sent when the user
+ * picked something other than the default, and a missing one must not be read
+ * as a request for the first available model. A present but malformed value is
+ * a caller mistake and is rejected rather than silently ignored.
+ */
+function optionalModel(body: Record<string, unknown>): { provider: string; id: string } | null {
+  const value = body.model;
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) throw badRequest("model must be an object");
+  const { provider, id } = value;
+  if (typeof provider !== "string" || provider.length === 0) {
+    throw badRequest("model.provider is required");
+  }
+  if (typeof id !== "string" || id.length === 0) {
+    throw badRequest("model.id is required");
+  }
+  return { provider, id };
+}
+
+/**
+ * The formats a provider will actually decode. The same list the composer
+ * enforces, repeated here because the two ends are separately reachable: a
+ * curl or an extension can post a prompt without going through the input bar.
+ */
+const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/** Ceiling per image, in encoded characters: 4/3 of 5MB plus padding. */
+const MAX_IMAGE_CHARS = Math.ceil((5 * 1024 * 1024 * 4) / 3);
+
+/** How many images one message may carry. Mirrors the composer's own limit. */
+const MAX_IMAGES_PER_MESSAGE = 8;
+
+/**
+ * pi's `ImageContent`, spelled out: `@earendil-works/pi-coding-agent` does not
+ * re-export the type, and the RPC client takes it structurally anyway.
+ */
+interface ImageAttachment {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+/**
+ * The images riding along with a message, or undefined when there are none.
+ *
+ * This is the only place the shape is checked before it is forwarded verbatim to
+ * a running pi. A malformed block would otherwise fail somewhere inside a
+ * provider request — after a spawn, with an error that names the model rather
+ * than the request — and the limits are the ones the composer already holds the
+ * user to, so a rejection here is always something the UI could not have sent.
+ */
+function parseImages(body: Record<string, unknown>): ImageAttachment[] | undefined {
+  const value = body.images;
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw badRequest("images must be an array");
+  if (value.length === 0) return undefined;
+  if (value.length > MAX_IMAGES_PER_MESSAGE) {
+    throw badRequest(`最多 ${String(MAX_IMAGES_PER_MESSAGE)} 张图片`);
+  }
+  return value.map((entry, index) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw badRequest(`images[${String(index)}] must be an object`);
+    }
+    const { data, mimeType } = entry as { data?: unknown; mimeType?: unknown };
+    if (typeof data !== "string" || data.length === 0) {
+      throw badRequest(`images[${String(index)}].data is required`);
+    }
+    if (data.length > MAX_IMAGE_CHARS) {
+      throw badRequest(`images[${String(index)}] 超过 5MB`);
+    }
+    if (typeof mimeType !== "string" || !ACCEPTED_IMAGE_TYPES.has(mimeType)) {
+      throw badRequest(`images[${String(index)}].mimeType 不受支持`);
+    }
+    return { type: "image", data, mimeType };
+  });
+}
+
+/**
+ * A message that is allowed to be empty — as long as a picture came with it.
+ *
+ * pi writes the same `[{ type: "text", text }, ...images]` content either way,
+ * so a screenshot with no caption is a complete message; requiring text would
+ * turn a legitimate turn into a 400 the composer cannot explain.
+ */
+function messageWithImages(body: Record<string, unknown>): {
+  message: string;
+  images: ImageAttachment[] | undefined;
+} {
+  const message = optionalString(body, "message") ?? "";
+  const images = parseImages(body);
+  if (message.length === 0 && images === undefined) {
+    throw badRequest("message or images is required");
+  }
+  return { message, images };
 }
 
 /**
@@ -402,6 +502,31 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       return await readComposerFromDisk(sessionPath, catalog);
     } catch (err) {
       throw notFound(`无法读取会话：${(err as Error).message}`);
+    }
+  };
+
+  /**
+   * Apply the hero's model choice to a session that was just created.
+   *
+   * A failure is reported in the response rather than thrown: the session
+   * already exists, and discarding it because one id had gone stale would cost
+   * the user the draft they were about to type into. The picker only offers ids
+   * pi listed a moment ago, so the failing path is "the model was removed
+   * between the two reads", not "the client sent something wrong".
+   */
+  const applyModel = async (
+    handle: SessionHandle,
+    model: { provider: string; id: string } | null,
+  ): Promise<{ modelError?: string }> => {
+    if (model === null) return {};
+    try {
+      await handle.client.setModel(model.provider, model.id);
+      registry.touch(handle.sessionPath);
+      return {};
+    } catch (err) {
+      return {
+        modelError: `无法切换到 ${model.provider}/${model.id}：${(err as Error).message}`,
+      };
     }
   };
 
@@ -883,14 +1008,30 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     }
   });
 
+  /**
+   * The model a not-yet-created session in this project would start on, plus
+   * every model it could switch to — what the new-session page's picker shows.
+   *
+   * Resolved from pi's own config files rather than from a prewarm process: the
+   * list is ready in ~15ms with no spawn and no network (see
+   * `readComposerFromDefaults`), so offering the choice before a session exists
+   * costs nothing like opening one does.
+   */
+  route("GET", "/api/projects/:id/composer", async ({ res, params }) => {
+    const project = await getProject(params.id!);
+    json(res, 200, await readComposerFromDefaults(project.path));
+  });
+
   // --- sessions -------------------------------------------------------------
 
   route("POST", "/api/sessions", async ({ res, body }) => {
-    const { projectId } = asObject(body);
+    const payload = asObject(body);
+    const { projectId } = payload;
     if (typeof projectId !== "string" || projectId.length === 0) {
       throw badRequest("projectId is required");
     }
     const project = await getProject(projectId);
+    const model = optionalModel(payload);
 
     // A prewarmed process has already paid pi's cold start, so it can be
     // handed over without waiting. Claiming it also frees the slot, so warm
@@ -903,6 +1044,7 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
         sessionId: claimed.sessionId,
         projectPath: project.path,
         prewarmed: true,
+        ...(await applyModel(claimed, model)),
       });
       return;
     }
@@ -913,6 +1055,7 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       sessionId: handle.sessionId,
       projectPath: project.path,
       prewarmed: false,
+      ...(await applyModel(handle, model)),
     });
   });
 
@@ -1086,28 +1229,25 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
 
   route("POST", "/api/sessions/:id/prompt", async ({ res, params, body }) => {
     const sessionPath = allowedPath(params.id!);
-    const payload = asObject(body);
-    const message = requireString(payload, "message");
+    const { message, images } = messageWithImages(asObject(body));
     const handle = await openSession(sessionPath);
-    await callClient(handle, () => handle.client.prompt(message, payload.images as never));
+    await callClient(handle, () => handle.client.prompt(message, images));
     json(res, 200, { ok: true, sessionPath: handle.sessionPath });
   });
 
   route("POST", "/api/sessions/:id/steer", async ({ res, params, body }) => {
     const sessionPath = allowedPath(params.id!);
-    const payload = asObject(body);
-    const message = requireString(payload, "message");
+    const { message, images } = messageWithImages(asObject(body));
     const handle = await openSession(sessionPath);
-    await callClient(handle, () => handle.client.steer(message, payload.images as never));
+    await callClient(handle, () => handle.client.steer(message, images));
     json(res, 200, { ok: true });
   });
 
   route("POST", "/api/sessions/:id/follow-up", async ({ res, params, body }) => {
     const sessionPath = allowedPath(params.id!);
-    const payload = asObject(body);
-    const message = requireString(payload, "message");
+    const { message, images } = messageWithImages(asObject(body));
     const handle = await openSession(sessionPath);
-    await callClient(handle, () => handle.client.followUp(message, payload.images as never));
+    await callClient(handle, () => handle.client.followUp(message, images));
     json(res, 200, { ok: true });
   });
 

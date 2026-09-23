@@ -7,7 +7,9 @@ import {
   contextUsageFromDisk,
   estimateContextTokens,
   readComposerFromClient,
+  readComposerFromDefaults,
   readComposerFromDisk,
+  resetDefaultComposerCache,
 } from "./composer.ts";
 import { modelsPath } from "./models.ts";
 
@@ -278,5 +280,68 @@ describe("readComposerFromClient", () => {
       client({ getSessionStats: () => Promise.resolve({ contextUsage: undefined }) }),
     );
     expect(state.context).toBeNull();
+  });
+});
+
+describe("readComposerFromDefaults", () => {
+  const providers = {
+    cz: {
+      name: "cz",
+      baseUrl: "https://example.invalid",
+      api: "anthropic-messages",
+      apiKey: "sk-cz",
+      models: [
+        { id: "deepseek-flash", name: "DeepSeek Flash", contextWindow: 128000 },
+        { id: "glm", name: "GLM 5.3", contextWindow: 64000, reasoning: true },
+      ],
+    },
+    unauthed: {
+      name: "unauthed",
+      baseUrl: "https://example.invalid",
+      api: "openai-completions",
+      models: [{ id: "ghost" }],
+    },
+  };
+
+  const seed = async (settings: unknown): Promise<void> => {
+    await writeFile(modelsPath(), JSON.stringify({ providers }), "utf8");
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify(settings), "utf8");
+  };
+
+  beforeEach(() => {
+    // The resolver behind this read is reused for a few seconds, and every test
+    // here points it at a fresh agent directory.
+    resetDefaultComposerCache();
+  });
+
+  it("lists what pi would list, and the model pi would start on", async () => {
+    await seed({ defaultProvider: "cz", defaultModel: "glm" });
+
+    const state = await readComposerFromDefaults(dir);
+    expect(state.live).toBe(false);
+    expect(state.context).toBeNull();
+    expect(state.models?.map((m) => `${m.provider}/${m.id}`)).toEqual([
+      "cz/deepseek-flash",
+      "cz/glm",
+    ]);
+    expect(state.model).toMatchObject({ provider: "cz", id: "glm", name: "GLM 5.3" });
+  });
+
+  it("leaves out a provider with no credential", async () => {
+    await seed({});
+    const state = await readComposerFromDefaults(dir);
+    expect(state.models?.some((m) => m.provider === "unauthed")).toBe(false);
+  });
+
+  it("falls back to the first available model when settings name none", async () => {
+    await seed({});
+    const state = await readComposerFromDefaults(dir);
+    expect(state.model?.id).toBe("deepseek-flash");
+  });
+
+  it("falls back when the saved default is no longer available", async () => {
+    await seed({ defaultProvider: "cz", defaultModel: "removed" });
+    const state = await readComposerFromDefaults(dir);
+    expect(state.model?.id).toBe("deepseek-flash");
   });
 });

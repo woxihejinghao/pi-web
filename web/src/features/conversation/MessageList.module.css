@@ -116,6 +116,45 @@
 }
 
 /*
+ * With a picture inside, the bubble trades its 16px side padding for 8px: the
+ * thumbnail is meant to read edge to edge, and text below it keeps the same
+ * visual margin because the bubble is a box the text starts inside of. The
+ * padding is the only thing that changes — the rounding does not, so an
+ * attached image still belongs to the bubble.
+ */
+.userBubble[data-images] {
+  padding: 8px;
+  max-width: min(86%, 420px);
+}
+
+/*
+ * Attachments stack rather than tile. A pasted screenshot is usually full of
+ * text, and two of them side by side would each be too narrow to read at the
+ * size they render here.
+ */
+.userImages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  line-height: 0;
+}
+
+/*
+ * Text that shares the bubble with a picture. It keeps the bubble's old
+ * horizontal inset so the first line still lines up with the message's edge
+ * rather than with the picture's, and it is a block of its own so a picture
+ * below it starts on a new line.
+ */
+.userText {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.userBubble[data-images] .userText {
+  padding: 6px 8px 4px;
+}
+
+/*
  * A `/command` chip — what a skill call folds down to. Ported from dsh's
  * `refChip` + `slashChip` pair: inline, 2px of side margin, brand blue, medium
  * weight, code font. It carries no background of its own; the pill behind it is

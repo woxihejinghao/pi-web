@@ -7,6 +7,7 @@ import type {
   AssistantStreamEvent,
   ContentBlock,
   ForkPoint,
+  ImageBlock,
   SessionEvent,
   TextBlock,
   ThinkingBlock,
@@ -218,8 +219,24 @@ function textFromContent(content: string | ContentBlock[]): string {
     .join("");
 }
 
+/**
+ * A user message's content, in pi's own shape.
+ *
+ * pi stores a plain string for a text-only message and a block array once
+ * anything is attached, so the optimistic turn has to match: otherwise the
+ * transcript would change shape under the reader the moment it reloaded from
+ * disk. The empty text block for a caption-less picture is not an invention —
+ * pi writes one for every prompt, and `messageText` on the server flattens it
+ * back to "", which is what keeps fork points lined up.
+ */
+function userContent(message: string, images: ImageBlock[]): string | ContentBlock[] {
+  if (images.length === 0) return message;
+  return [{ type: "text", text: message }, ...images];
+}
+
 export interface ConversationApi extends ConversationView {
-  send(text: string, mode: "prompt" | "steer" | "followUp"): Promise<boolean>;
+  /** `images` ride along with the text; pi accepts either one without the other. */
+  send(text: string, mode: "prompt" | "steer" | "followUp", images?: ImageBlock[]): Promise<boolean>;
   abort(): Promise<void>;
   reload(): Promise<void>;
   /**
@@ -522,24 +539,24 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   }, [sessionPath, load, handleEvent, publish]);
 
   const send = useCallback<ConversationApi["send"]>(
-    async (text, mode) => {
+    async (text, mode, images = []) => {
       if (!sessionPath) return false;
       const message = text.trim();
-      if (message.length === 0) return false;
+      if (message.length === 0 && images.length === 0) return false;
 
       // Show the user's turn immediately; `message_end` for user messages is
       // deliberately ignored above, so this stays the single source.
       messagesRef.current = [
         ...messagesRef.current,
-        { role: "user", content: message, timestamp: Date.now() },
+        { role: "user", content: userContent(message, images), timestamp: Date.now() },
       ];
       if (mode === "prompt") streamingRef.current = true;
       publish();
 
       try {
-        if (mode === "steer") await api.steer(sessionPath, message);
-        else if (mode === "followUp") await api.followUp(sessionPath, message);
-        else await api.prompt(sessionPath, message);
+        if (mode === "steer") await api.steer(sessionPath, message, images);
+        else if (mode === "followUp") await api.followUp(sessionPath, message, images);
+        else await api.prompt(sessionPath, message, images);
         return true;
       } catch (err) {
         // Roll the optimistic turn back so the failure is visible, not implied.
@@ -577,7 +594,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   useEffect(() => {
     if (!sessionPath || loadedPath !== sessionPath) return;
     const pending = actions.takePendingPrompt(sessionPath);
-    if (pending) void send(pending.text, pending.mode);
+    if (pending) void send(pending.text, pending.mode, pending.images);
   }, [sessionPath, loadedPath, send]);
 
   const fork = useCallback(

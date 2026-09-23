@@ -152,3 +152,17 @@
 .ioText[data-error] {
   color: var(--dsw-alias-state-error-primary);
 }
+
+/*
+ * Images a tool produced — `read` on a screenshot is the common one. They span
+ * both grid columns of the I/O section: a picture is not a value for the label
+ * beside it, it is the answer itself. Wrapping rather than stacking, because a
+ * tool that returns several pictures tends to return them as one set.
+ */
+.ioImages {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}

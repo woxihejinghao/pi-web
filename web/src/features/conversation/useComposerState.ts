@@ -1,7 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { actions, sessionEvents } from "../../lib/app-state.ts";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { actions, appStore, sessionEvents } from "../../lib/app-state.ts";
 import { api } from "../../lib/api.ts";
 import type { ComposerState } from "../../lib/types.ts";
+
+/**
+ * Where the composer's figures come from.
+ *
+ * A session and a project are two cases rather than a pair to fall back
+ * through: a session answers for itself (its file first, a live process only
+ * when asked), while a project answers for the session that does not exist yet
+ * — the new-session page, where the first message has not created one.
+ */
+export interface ComposerSource {
+  /** The open session; null on the new-session path. */
+  sessionPath: string | null;
+  /** The project whose defaults describe a not-yet-created session. */
+  projectId: string | null;
+}
 
 export interface ComposerApi {
   /** null until the first read lands. Cheap: it comes from the session file. */
@@ -21,7 +36,8 @@ export interface ComposerApi {
 }
 
 /**
- * The composer's model and context figures for one session.
+ * The composer's model and context figures for one session — or, before that
+ * session exists, for the project it will be created in.
  *
  * Reads are split by cost on purpose. The first read comes from the session
  * file, because the session is usually not resident and spawning pi to fill in
@@ -29,22 +45,39 @@ export interface ComposerApi {
  * fast. A live read happens when the user opens the model menu (the list of
  * models cannot be known otherwise) and once per settled turn, when the process
  * is necessarily running and the context figure has just changed.
+ *
+ * The project path needs neither. pi's own resolver answers from `models.json`,
+ * its built-in catalog and `auth.json` in about 15ms, so the new-session page
+ * can offer exactly the list a running session would, without spawning one.
  */
-export function useComposerState(sessionPath: string | null): ComposerApi {
+export function useComposerState({ sessionPath, projectId }: ComposerSource): ComposerApi {
   const [state, setState] = useState<ComposerState | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
-  /** Guards every async write: a reply for a session we left must be dropped. */
-  const pathRef = useRef<string | null>(sessionPath);
+  /**
+   * The new-session page's own choice, which overrides the project default
+   * until the session exists. Read from the app store rather than kept here
+   * because the picker is the page's, and the choice has to outlive a re-render
+   * of it.
+   */
+  const newSessionModel = useSyncExternalStore(
+    appStore.subscribe,
+    () => appStore.get().newSessionModel,
+    () => appStore.get().newSessionModel,
+  );
+  /** What the current state belongs to: a session path, or `project:<id>`. */
+  const sourceKey = sessionPath ?? (projectId === null ? null : `project:${projectId}`);
+  /** Guards every async write: a reply for a source we left must be dropped. */
+  const sourceRef = useRef<string | null>(sourceKey);
   const stateRef = useRef<ComposerState | null>(null);
   const inflightRef = useRef<Promise<void> | null>(null);
 
-  const apply = useCallback((path: string, next: ComposerState): void => {
-    if (pathRef.current !== path) return;
+  const apply = useCallback((key: string, next: ComposerState): void => {
+    if (sourceRef.current !== key) return;
     stateRef.current = next;
     setState(next);
   }, []);
 
-  const load = useCallback(
+  const loadSession = useCallback(
     async (path: string, spawn: boolean): Promise<void> => {
       try {
         apply(path, await api.getComposerState(path, { spawn }));
@@ -57,15 +90,36 @@ export function useComposerState(sessionPath: string | null): ComposerApi {
     [apply],
   );
 
+  const loadProject = useCallback(
+    async (id: string): Promise<void> => {
+      try {
+        apply(`project:${id}`, await api.getProjectComposer(id));
+      } catch (err) {
+        actions.setNotice((err as Error).message);
+      }
+    },
+    [apply],
+  );
+
   useEffect(() => {
-    pathRef.current = sessionPath;
+    sourceRef.current = sourceKey;
     stateRef.current = null;
     inflightRef.current = null;
     setState(null);
     setModelsLoading(false);
-    if (sessionPath === null) return;
-    void load(sessionPath, false);
-  }, [sessionPath, load]);
+    if (sessionPath !== null) {
+      void loadSession(sessionPath, false);
+      return;
+    }
+    if (projectId !== null) {
+      // This read also learns the model list, so the picker can say "loading"
+      // rather than "unavailable" while it lands.
+      setModelsLoading(true);
+      void loadProject(projectId).finally(() => {
+        if (sourceRef.current === `project:${projectId}`) setModelsLoading(false);
+      });
+    }
+  }, [sessionPath, projectId, sourceKey, loadSession, loadProject]);
 
   // The context figure changes while the agent runs and settles at the end of a
   // turn. `agent_settled` is the moment it stops moving, and the one moment the
@@ -76,29 +130,53 @@ export function useComposerState(sessionPath: string | null): ComposerApi {
     return sessionEvents.subscribe((payload) => {
       if (payload.sessionPath !== sessionPath) return;
       if (payload.event.type !== "agent_settled") return;
-      void load(sessionPath, false);
+      void loadSession(sessionPath, false);
     });
-  }, [sessionPath, load]);
+  }, [sessionPath, loadSession]);
 
   const ensureLive = useCallback(async (): Promise<void> => {
+    if (sessionPath === null) {
+      // The project read has no live variant — it already answers from pi's own
+      // resolver — so asking again means re-reading, for the case where the
+      // first attempt failed or the model files changed since.
+      const id = projectId;
+      if (id === null || sourceRef.current !== `project:${id}`) return;
+      const pending = inflightRef.current;
+      if (pending !== null) return pending;
+      setModelsLoading(true);
+      const request = loadProject(id).finally(() => {
+        if (sourceRef.current === `project:${id}`) setModelsLoading(false);
+        inflightRef.current = null;
+      });
+      inflightRef.current = request;
+      return request;
+    }
+
     const path = sessionPath;
-    if (path === null) return;
     if (stateRef.current?.live === true) return;
-    if (inflightRef.current !== null) return inflightRef.current;
+    const pending = inflightRef.current;
+    if (pending !== null) return pending;
 
     setModelsLoading(true);
-    const request = load(path, true).finally(() => {
-      if (pathRef.current === path) setModelsLoading(false);
+    const request = loadSession(path, true).finally(() => {
+      if (sourceRef.current === path) setModelsLoading(false);
       inflightRef.current = null;
     });
     inflightRef.current = request;
     return request;
-  }, [sessionPath, load]);
+  }, [sessionPath, projectId, loadProject, loadSession]);
 
   const selectModel = useCallback(
     async (provider: string, id: string): Promise<void> => {
       const path = sessionPath;
-      if (path === null) return;
+      if (path === null) {
+        // Nothing to switch yet: the choice is remembered instead, and
+        // `createSession` applies it when the first message creates the session.
+        const models = stateRef.current?.models ?? [];
+        const chosen = models.find((entry) => entry.provider === provider && entry.id === id);
+        actions.setNewSessionModel(chosen ?? null);
+        return;
+      }
       try {
         apply(path, await api.setSessionModel(path, provider, id));
       } catch (err) {
@@ -108,5 +186,11 @@ export function useComposerState(sessionPath: string | null): ComposerApi {
     [sessionPath, apply],
   );
 
-  return { state, modelsLoading, ensureLive, selectModel };
+  /** The user's pick wins over pi's default until the session exists. */
+  const overridden =
+    sessionPath === null && state !== null && newSessionModel !== null
+      ? { ...state, model: newSessionModel }
+      : state;
+
+  return { state: overridden, modelsLoading, ensureLive, selectModel };
 }

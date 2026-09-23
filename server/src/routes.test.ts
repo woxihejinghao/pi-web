@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventBus } from "./bus.ts";
+import { resetDefaultComposerCache } from "./composer.ts";
 import { SessionRegistry } from "./registry.ts";
 import { createRequestHandler } from "./routes.ts";
 import { sessionDirFor } from "./session-path.ts";
@@ -381,6 +382,68 @@ describe("sessions api", () => {
   });
 });
 
+describe("prompt attachments", () => {
+  /** A session whose stub pi is already spawned and can be prompted. */
+  async function openSession(name: string): Promise<string> {
+    const project = await createProject(name);
+    const sessionPath = join(sessionRoot, `--${name}--`, "session.jsonl");
+    process.env.STUB_SESSION_FILE = sessionPath;
+    const created = await post("/api/sessions", { projectId: project.id });
+    expect(created.status).toBe(201);
+    return sessionPath;
+  }
+
+  const prompt = (sessionPath: string, body: unknown) =>
+    post(`/api/sessions/${encodeURIComponent(sessionPath)}/prompt`, body);
+
+  it("forwards an image to pi untouched", async () => {
+    const sessionPath = await openSession("images-forward");
+    const res = await prompt(sessionPath, {
+      message: "看这张",
+      images: [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }],
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts a picture with no caption", async () => {
+    // pi writes `[{type:"text",text:""}, ...images]` either way, so a screenshot
+    // with nothing typed under it is a complete turn — and one the composer is
+    // able to produce, so it must not be the one case the server refuses.
+    const sessionPath = await openSession("images-captionless");
+    const res = await prompt(sessionPath, {
+      message: "",
+      images: [{ type: "image", data: "UklGRg==", mimeType: "image/webp" }],
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a format no provider decodes", async () => {
+    const sessionPath = await openSession("images-svg");
+    const res = await prompt(sessionPath, {
+      message: "看这张",
+      images: [{ type: "image", data: "PHN2Zz4=", mimeType: "image/svg+xml" }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/mimeType/);
+  });
+
+  it("rejects an image over the size ceiling", async () => {
+    const sessionPath = await openSession("images-huge");
+    const res = await prompt(sessionPath, {
+      images: [{ type: "image", data: "A".repeat(8 * 1024 * 1024), mimeType: "image/png" }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/5MB/);
+  });
+
+  it("rejects a message with neither text nor pictures", async () => {
+    const sessionPath = await openSession("images-empty");
+    const res = await prompt(sessionPath, { message: "" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/message or images/);
+  });
+});
+
 describe("composer api", () => {
   // The disk path resolves the session's `model_change` against
   // `models.json`, so these tests point pi at a scratch agent directory for the
@@ -403,6 +466,9 @@ describe("composer api", () => {
   beforeEach(async () => {
     agentDir = await mkdtemp(join(tmpdir(), "piws-api-agent-"));
     process.env.PI_CODING_AGENT_DIR = agentDir;
+    // The project composer read reuses pi's model resolver for a few seconds;
+    // a fresh agent directory per test has to invalidate it.
+    resetDefaultComposerCache();
     delete process.env.STUB_MODEL;
     delete process.env.STUB_MODELS;
     delete process.env.STUB_CONTEXT_USAGE;
@@ -502,6 +568,101 @@ describe("composer api", () => {
     // The runtime knows the window; `models.json` supplies the display name.
     expect(res.body.models[1]).toMatchObject({ id: "glm", name: "GLM 5.3" });
     expect(res.body.context).toEqual({ tokens: 64000, contextWindow: 128000, percent: 50 });
+  });
+
+  it("offers the model list and startup default before a session exists", async () => {
+    const project = await createProject("hero-models");
+    await writeFile(
+      join(agentDir, "models.json"),
+      JSON.stringify({
+        providers: {
+          cz: {
+            name: "cz",
+            baseUrl: "https://example.invalid",
+            api: "anthropic-messages",
+            apiKey: "sk-cz",
+            models: [
+              { id: "deepseek-flash", name: "DeepSeek Flash", contextWindow: 128000 },
+              { id: "glm", name: "GLM 5.3", contextWindow: 64000, reasoning: true },
+            ],
+          },
+          unauthed: {
+            name: "unauthed",
+            baseUrl: "https://example.invalid",
+            api: "openai-completions",
+            models: [{ id: "ghost" }],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ defaultProvider: "cz", defaultModel: "glm" }),
+      "utf8",
+    );
+
+    const resident = registry.list().length;
+    const res = await api(`/api/projects/${project.id}/composer`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.live).toBe(false);
+    // No session, so no window to report — not a measured 0%.
+    expect(res.body.context).toBeNull();
+    // The list is pi's own: configured *and* authenticated, which is what
+    // `/model` offers inside a running session.
+    expect(
+      res.body.models.map((m: { provider: string; id: string }) => `${m.provider}/${m.id}`),
+    ).toEqual(["cz/deepseek-flash", "cz/glm"]);
+    expect(res.body.model).toMatchObject({ provider: "cz", id: "glm", name: "GLM 5.3" });
+    // Answering it must not have spawned anything.
+    expect(registry.list().length).toBe(resident);
+  });
+
+  it("starts a new session on the model the hero picked", async () => {
+    const project = await createProject("hero-pick");
+    const sessionPath = join(sessionRoot, "--hero-pick--", "pick.jsonl");
+    process.env.STUB_SESSION_FILE = sessionPath;
+    process.env.STUB_MODEL = JSON.stringify({ provider: "cz", id: "deepseek-flash", name: "DeepSeek Flash", contextWindow: 128000, reasoning: true });
+    process.env.STUB_MODELS = JSON.stringify([
+      { provider: "cz", id: "deepseek-flash", contextWindow: 128000, reasoning: true },
+      { provider: "cz", id: "glm", contextWindow: 64000, reasoning: false },
+    ]);
+
+    const created = await post("/api/sessions", {
+      projectId: project.id,
+      model: { provider: "cz", id: "glm" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.modelError).toBeUndefined();
+
+    const composer = await api(`/api/sessions/${encodeURIComponent(sessionPath)}/composer`);
+    expect(composer.body.model).toMatchObject({ provider: "cz", id: "glm" });
+  });
+
+  it("creates the session anyway when the picked model is gone", async () => {
+    // The session exists the moment pi reports its path; refusing the whole
+    // request over a stale id would throw away the draft the user was about to
+    // type into.
+    const project = await createProject("hero-stale");
+    process.env.STUB_SESSION_FILE = join(sessionRoot, "--hero-stale--", "stale.jsonl");
+    process.env.STUB_MODELS = JSON.stringify([
+      { provider: "cz", id: "deepseek-flash", contextWindow: 128000, reasoning: true },
+    ]);
+
+    const created = await post("/api/sessions", {
+      projectId: project.id,
+      model: { provider: "cz", id: "removed" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.modelError).toMatch(/removed/);
+  });
+
+  it("rejects a malformed model selection", async () => {
+    const project = await createProject("hero-bad");
+    const res = await post("/api/sessions", { projectId: project.id, model: { provider: "cz" } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/model\.id/);
   });
 
   it("switches the model over rpc and answers with the new one", async () => {

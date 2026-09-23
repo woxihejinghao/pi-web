@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { SendIcon, StopIcon } from "../../components/icons.tsx";
-import type { BusySendBehavior, ComposerContext, ComposerModel, SlashCommand } from "../../lib/types.ts";
+import type {
+  BusySendBehavior,
+  ComposerContext,
+  ComposerModel,
+  ImageBlock,
+  SlashCommand,
+} from "../../lib/types.ts";
+import { AttachmentInput, AttachmentStrip, AttachButton } from "./AttachmentStrip.tsx";
+import { useImageDraft } from "./useImageDraft.ts";
 import { ContextMeter } from "./ContextMeter.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SlashMenu } from "./SlashMenu.tsx";
@@ -32,7 +40,8 @@ export interface ComposerProps {
   busySendBehavior?: BusySendBehavior;
   /** Model and context controls; omitted when no session can be asked. */
   session?: ComposerSession;
-  onSend(text: string, mode: "prompt" | "steer" | "followUp"): Promise<boolean>;
+  /** `images` are the pictures going with the message; empty for a text-only turn. */
+  onSend(text: string, mode: "prompt" | "steer" | "followUp", images: ImageBlock[]): Promise<boolean>;
   onAbort(): void;
 }
 
@@ -54,6 +63,12 @@ function deliveryOf(behavior: BusySendBehavior): "steer" | "followUp" {
  * Typing `/` opens a completion menu. Skill commands and prompt templates are
  * expanded by pi itself, so a completed command is sent as plain text.
  *
+ * Pictures go in three ways — pasted, dropped, or picked with the attach
+ * button — and all three end in the same draft strip above the input. The
+ * attachments are held as pi's own `ImageBlock` (bare base64), so sending them
+ * is not a conversion: the same objects go out over the API and come back from
+ * the session file after a reload.
+ *
  * To the right of the input sit the session's model picker and context ring.
  * Both describe the session the text is about to be sent into, so they belong
  * to the input rather than to the transcript above it.
@@ -68,6 +83,8 @@ export function Composer({
   onAbort,
 }: ComposerProps) {
   const [text, setText] = useState("");
+  /** The pictures going with the text; see `useImageDraft` for why they are a hook. */
+  const draft = useImageDraft();
   const [busyMode, setBusyMode] = useState<BusySendBehavior>(busySendBehavior);
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -92,12 +109,19 @@ export function Composer({
 
   const submit = async (override?: BusySendBehavior): Promise<void> => {
     const message = text.trim();
-    if (message.length === 0 || sending || disabled) return;
+    const attachments = draft.images;
+    // A picture with no caption is a legitimate message, so emptiness is the
+    // question rather than the text alone being empty.
+    if ((message.length === 0 && attachments.length === 0) || sending || disabled) return;
     setSending(true);
     setText("");
+    draft.clear();
     const choice = override ?? busyMode;
-    const ok = await onSend(message, isStreaming ? deliveryOf(choice) : "prompt");
-    if (!ok) setText(message);
+    const ok = await onSend(message, isStreaming ? deliveryOf(choice) : "prompt", attachments);
+    if (!ok) {
+      setText(message);
+      draft.restore(attachments);
+    }
     setSending(false);
     textareaRef.current?.focus();
   };
@@ -118,7 +142,11 @@ export function Composer({
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.composer}>
+      <div
+        className={styles.composer}
+        data-dragging={draft.dragging || undefined}
+        {...draft.dragProps}
+      >
         {completion.open ? (
           <SlashMenu
             matches={completion.matches}
@@ -128,6 +156,12 @@ export function Composer({
           />
         ) : null}
 
+        <AttachmentStrip
+          images={draft.images}
+          refusal={draft.refusal}
+          onRemove={draft.remove}
+        />
+
         <textarea
           ref={textareaRef}
           className={styles.input}
@@ -135,7 +169,9 @@ export function Composer({
           rows={1}
           spellCheck={false}
           disabled={disabled}
-          placeholder={disabled ? "选择或新建一个会话" : "输入消息，/ 调用命令，Enter 发送"}
+          placeholder={
+            disabled ? "选择或新建一个会话" : "输入消息，可粘贴或拖入图片，/ 调用命令，Enter 发送"
+          }
           aria-label="消息输入"
           onChange={(event) => {
             setText(event.target.value);
@@ -144,6 +180,7 @@ export function Composer({
           onKeyUp={() => completion.sync()}
           onClick={() => completion.sync()}
           onKeyDown={onKeyDown}
+          onPaste={draft.onPaste}
         />
 
         <div className={styles.toolbar}>
@@ -171,6 +208,18 @@ export function Composer({
               </button>
             </div>
           ) : null}
+
+          {/*
+           * The attach button and its picker, in the toolbar where the other
+           * input-level controls live. `accept` is the same list the reader
+           * enforces, so the dialog cannot offer something the send path would
+           * refuse afterwards.
+           */}
+          <AttachButton disabled={disabled} onClick={draft.openPicker} />
+          <AttachmentInput
+            inputRef={draft.fileInputRef}
+            onFiles={(files) => void draft.attach(files)}
+          />
 
           <span className={styles.spacer} />
 
@@ -208,7 +257,7 @@ export function Composer({
             <button
               type="button"
               className={styles.send}
-              disabled={disabled || sending || text.trim().length === 0}
+              disabled={disabled || sending || (text.trim().length === 0 && draft.images.length === 0)}
               onClick={() => void submit()}
               aria-label="发送"
               title="发送"

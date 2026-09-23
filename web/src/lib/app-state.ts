@@ -3,7 +3,9 @@ import { createEmitter, createStore, type Emitter, type Store } from "./store.ts
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
   AgentSettings,
+  ComposerModel,
   ExtensionsView,
+  ImageBlock,
   McpProbeResult,
   McpServerDraft,
   McpView,
@@ -52,6 +54,8 @@ export interface PendingPrompt {
   sessionPath: string;
   text: string;
   mode: "prompt" | "steer" | "followUp";
+  /** Pictures pasted while the draft was open. They are part of the message. */
+  images?: ImageBlock[];
 }
 
 export interface AppState {
@@ -77,6 +81,12 @@ export interface AppState {
   pendingUiRequests: PendingUiRequest[];
   /** Text submitted before its session finished spawning. */
   pendingPrompt: PendingPrompt | null;
+  /**
+   * The model the next new session starts on, chosen on the hero before that
+   * session exists. Null means "whatever pi starts on", which is also the state
+   * a fresh app is in — so this is deliberately not persisted anywhere.
+   */
+  newSessionModel: ComposerModel | null;
   /** Projects whose session list is expanded in the sidebar. */
   expandedProjects: Record<string, true>;
   /** Extra session rows revealed per project beyond the default page. */
@@ -137,6 +147,7 @@ const initialState: AppState = {
   externalChanged: {},
   pendingUiRequests: [],
   pendingPrompt: null,
+  newSessionModel: null,
   expandedProjects: {},
   revealedSessions: {},
   sessionQuery: "",
@@ -562,6 +573,9 @@ export const actions = {
       // The open conversation is deliberately left alone: expanding a
       // workspace in the sidebar should not close what you are reading.
       pendingPrompt: null,
+      // Same reasoning for the model: the available list is per project, so a
+      // choice made in one could name a model the next one cannot reach.
+      newSessionModel: null,
     }));
     await actions.refreshSessions(projectId);
     // Warm a session while the user is deciding what to do, so the next "+"
@@ -668,6 +682,9 @@ export const actions = {
       // Dropping the queued prompt here is what stops it from being delivered
       // to whatever session the user opens next.
       pendingPrompt: null,
+      // Leaving the new-session flow also drops the model chosen for it: the
+      // session it was meant for is not the one being opened.
+      newSessionModel: null,
     }));
   },
 
@@ -718,23 +735,38 @@ export const actions = {
    * Adopt a fresh session locally, then spawn its pi process in the background.
    * Returns as soon as the UI has something to render.
    */
-  startDraftSession(projectId: string, initialPrompt?: string): void {
+  startDraftSession(
+    projectId: string,
+    initialPrompt?: string,
+    images: ImageBlock[] = [],
+    model: { provider: string; id: string } | null = null,
+  ): void {
     const localId = `${DRAFT_PREFIX}${Math.random().toString(36).slice(2, 10)}`;
     appStore.update((state) => ({
       ...state,
       selectedProjectId: projectId,
       selectedSessionPath: localId,
       pendingPrompt: null,
+      // Consumed here: the choice belongs to the session being created, not to
+      // whatever the user does after it exists.
+      newSessionModel: null,
       expandedProjects: { ...state.expandedProjects, [projectId]: true },
     }));
 
     draftRequest = api
-      .createSession(projectId)
+      .createSession(projectId, model)
       .then((created) => {
+        // The session exists either way; a stale model id only costs the
+        // choice, so it is reported without abandoning the draft.
+        if (created.modelError !== undefined) actions.setNotice(created.modelError);
         // Queue before swapping the path in: the conversation instance that
         // mounts for the real session consumes it after its history load.
-        if (initialPrompt && initialPrompt.trim().length > 0) {
-          actions.queuePendingPrompt(created.sessionPath, initialPrompt, "prompt");
+        // A first message can be a screenshot with nothing typed under it, so
+        // the condition is "anything to send" rather than "text" — the same
+        // rule the composer's own submit uses.
+        const prompt = initialPrompt?.trim() ?? "";
+        if (prompt.length > 0 || images.length > 0) {
+          actions.queuePendingPrompt(created.sessionPath, prompt, "prompt", images);
         }
         // Swap in the real path only if the user is still on this draft.
         if (appStore.get().selectedSessionPath === localId) {
@@ -760,8 +792,23 @@ export const actions = {
    * Hand a message to the session that a draft is becoming. The new
    * conversation instance picks it up after its history load completes.
    */
-  queuePendingPrompt(sessionPath: string, text: string, mode: PendingPrompt["mode"]): void {
-    appStore.update((state) => ({ ...state, pendingPrompt: { sessionPath, text, mode } }));
+  queuePendingPrompt(
+    sessionPath: string,
+    text: string,
+    mode: PendingPrompt["mode"],
+    images: ImageBlock[] = [],
+  ): void {
+    appStore.update((state) => ({
+      ...state,
+      // `images` is present only when there are any: a text-only handoff stays
+      // the same three-field object it has always been.
+      pendingPrompt: {
+        sessionPath,
+        text,
+        mode,
+        ...(images.length > 0 ? { images } : {}),
+      },
+    }));
   },
 
   /** Consume the queued message if it belongs to this session. */
@@ -798,7 +845,18 @@ export const actions = {
       ...state,
       selectedSessionPath: null,
       pendingPrompt: null,
+      // Back to pi's own default: the hero is the place the choice is made, so
+      // opening it shows what pi would pick rather than the last pick.
+      newSessionModel: null,
     }));
+  },
+
+  /**
+   * Remember the hero's model choice. Held in memory only, and consumed by the
+   * next `startDraftSession` — see `newSessionModel` for why it is not saved.
+   */
+  setNewSessionModel(model: ComposerModel | null): void {
+    appStore.update((state) => ({ ...state, newSessionModel: model }));
   },
 
   toggleProjectExpanded(projectId: string): void {

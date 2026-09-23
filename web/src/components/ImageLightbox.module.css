@@ -1,0 +1,110 @@
+/*
+ * A thumbnail in the transcript. Block-level so it never picks up the baseline
+ * gap an inline image would add under itself, and rounded to match whatever
+ * surface it sits in (`data-variant`).
+ */
+.thumb {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.thumb img {
+  display: block;
+  max-width: 100%;
+  /*
+   * A ceiling rather than a width: a tall screenshot must not push the rest of
+   * the turn off screen, but a small one must not be stretched either. The
+   * lightbox is where the whole picture lives.
+   */
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.thumb:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+/* Inside a user bubble: follows the bubble's own 22px rounding a step in. */
+.thumb[data-variant="user"] {
+  border-radius: 14px;
+}
+
+.thumb[data-variant="user"] img {
+  max-height: 260px;
+}
+
+/* Inside a tool row's I/O card, which is the tightest of the three surfaces. */
+.thumb[data-variant="tool"] {
+  border-radius: 8px;
+}
+
+.thumb[data-variant="tool"] img {
+  max-height: 240px;
+}
+
+/*
+ * The photo mask, not the dialog mask: a picture needs the page behind it gone,
+ * and dsh has a separate token saying exactly that. `zoom-out` on the mask and
+ * `default` on the picture are the hint that clicking beside it closes.
+ */
+.mask {
+  position: fixed;
+  inset: 0;
+  /* Above the dialog layer (60) — a picture opened from anywhere wins. */
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: var(--dsw-alias-bg-mask-photo);
+  cursor: zoom-out;
+}
+
+.full {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  cursor: default;
+}
+
+/*
+ * The same 36px disc the transcript's jump button uses, in the one corner that
+ * is never over the picture's centre. Opaque, because it floats over whatever
+ * the photo happens to be.
+ */
+.close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-soft);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.close:hover {
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.close:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}

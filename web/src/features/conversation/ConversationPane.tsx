@@ -3,6 +3,7 @@ import { AlertIcon, RefreshIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { api } from "../../lib/api.ts";
 import { actions, appStore, isDraftSession } from "../../lib/app-state.ts";
+import type { ImageBlock } from "../../lib/types.ts";
 import { useStore } from "../../lib/store.ts";
 import { Composer } from "./Composer.tsx";
 import { QuestionCard } from "./QuestionCard.tsx";
@@ -29,7 +30,7 @@ export function ConversationPane() {
   // The model picker and context ring describe the session the text goes into.
   // They read from the session file until a pi process is needed, which is only
   // when the user actually opens one of them — see `useComposerState`.
-  const composer = useComposerState(sessionPath);
+  const composer = useComposerState({ sessionPath, projectId: null });
 
   const project = state.projects.find((candidate) => candidate.id === state.selectedProjectId);
   const sessions = state.selectedProjectId ? (state.sessions[state.selectedProjectId] ?? []) : [];
@@ -42,7 +43,7 @@ export function ConversationPane() {
    * and delivered by the conversation instance that mounts for it.
    */
   const sendMessage = useCallback(
-    async (text: string, mode: "prompt" | "steer" | "followUp"): Promise<boolean> => {
+    async (text: string, mode: "prompt" | "steer" | "followUp", images: ImageBlock[] = []): Promise<boolean> => {
       // A built-in command is not a message. It maps to its own RPC method, so
       // it runs here and never reaches the model.
       const builtin = parseBuiltinCommand(text, commands);
@@ -60,11 +61,11 @@ export function ConversationPane() {
         return true;
       }
 
-      if (sessionPath) return conversation.send(text, mode);
+      if (sessionPath) return conversation.send(text, mode, images);
       if (!draft) return false;
       const realPath = await actions.resolveDraftSession();
       if (!realPath) return false;
-      actions.queuePendingPrompt(realPath, text, mode);
+      actions.queuePendingPrompt(realPath, text, mode, images);
       return true;
     },
     [sessionPath, draft, conversation, commands],

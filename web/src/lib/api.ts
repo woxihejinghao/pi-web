@@ -6,6 +6,7 @@ import type {
   ExtensionsView,
   ForkPoint,
   ForkResult,
+  ImageBlock,
   McpProbeResult,
   McpServerDraft,
   McpView,
@@ -60,6 +61,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const sessionId = (sessionPath: string) => encodeURIComponent(sessionPath);
 
+/**
+ * The image half of a prompt body, or nothing at all.
+ *
+ * Absent rather than empty on purpose: the server treats a missing `images` as
+ * "this turn has no attachments", and sending `[]` on every text-only message
+ * would make the two indistinguishable on the wire (and in the request log)
+ * for no gain.
+ */
+function imageField(images: ImageBlock[]): { images: ImageBlock[] } | Record<string, never> {
+  return images.length > 0 ? { images } : {};
+}
+
 export const api = {
   /** Convenience roots for the directory picker. */
   startLocations: () => request<StartLocation[]>("/api/fs/locations"),
@@ -111,15 +124,18 @@ export const api = {
       `/api/projects/${encodeURIComponent(projectId)}/sessions${includeHidden ? "?includeHidden=true" : ""}`,
     ),
 
-  createSession: (projectId: string) =>
+  createSession: (projectId: string, model?: { provider: string; id: string } | null) =>
     request<{
       sessionPath: string;
       sessionId: string;
       projectPath: string;
       prewarmed: boolean;
+      /** Set when the hero's model choice could not be applied; the session
+       * itself was created either way. */
+      modelError?: string;
     }>("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ projectId }),
+      body: JSON.stringify({ projectId, ...(model ? { model } : {}) }),
     }),
 
   /** Best-effort: starts a pi process ahead of the next "new session". */
@@ -366,6 +382,17 @@ export const api = {
       `/api/sessions/${sessionId(sessionPath)}/composer${options.spawn === true ? "?spawn=true" : ""}`,
     ),
 
+  /**
+   * The same figures for a session that does not exist yet: what a new session
+   * in this project would start on, and what it could switch to.
+   *
+   * No `spawn` option on purpose — the answer is resolved from pi's config
+   * files server-side, so the new-session page can offer a model picker without
+   * paying a cold start.
+   */
+  getProjectComposer: (projectId: string) =>
+    request<ComposerState>(`/api/projects/${encodeURIComponent(projectId)}/composer`),
+
   /** Switch the model a session talks to; pi records it as a `model_change`. */
   setSessionModel: (sessionPath: string, provider: string, id: string) =>
     request<ComposerState>(`/api/sessions/${sessionId(sessionPath)}/model`, {
@@ -373,22 +400,22 @@ export const api = {
       body: JSON.stringify({ provider, id }),
     }),
 
-  prompt: (sessionPath: string, message: string) =>
+  prompt: (sessionPath: string, message: string, images: ImageBlock[] = []) =>
     request<{ ok: true }>(`/api/sessions/${sessionId(sessionPath)}/prompt`, {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, ...imageField(images) }),
     }),
 
-  steer: (sessionPath: string, message: string) =>
+  steer: (sessionPath: string, message: string, images: ImageBlock[] = []) =>
     request<{ ok: true }>(`/api/sessions/${sessionId(sessionPath)}/steer`, {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, ...imageField(images) }),
     }),
 
-  followUp: (sessionPath: string, message: string) =>
+  followUp: (sessionPath: string, message: string, images: ImageBlock[] = []) =>
     request<{ ok: true }>(`/api/sessions/${sessionId(sessionPath)}/follow-up`, {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, ...imageField(images) }),
     }),
 
   abort: (sessionPath: string) =>

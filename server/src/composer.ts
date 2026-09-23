@@ -24,7 +24,9 @@
  */
 
 import {
+  ModelRuntime,
   SessionManager,
+  SettingsManager,
   calculateContextTokens,
   estimateTokens,
   getLastAssistantUsage,
@@ -243,4 +245,76 @@ export async function readComposerFromClient(
         };
 
   return { live: true, model, models, context };
+}
+
+/**
+ * Composer state for a session that does not exist yet — the hero's picker.
+ *
+ * Both answers come from files, not from a process:
+ *
+ * - the list is pi's own `ModelRuntime`, the very object a running session
+ *   answers `get_available_models` from (`getAvailableSnapshot`). It resolves
+ *   the built-in provider catalog, `models.json` and the credentials in
+ *   `auth.json` in ~15ms and never touches the network, so "available" means
+ *   here exactly what it means inside pi: configured *and* authenticated;
+ * - the current model is the startup default pi itself reads from settings
+ *   (`defaultProvider`/`defaultModel`), with the same fallback pi applies when
+ *   that default is missing or no longer usable — the first available model.
+ *
+ * `context` is null by construction rather than unknown: a session with no
+ * turns has no window to report, and showing 0% would read as a measurement.
+ */
+export async function readComposerFromDefaults(projectPath: string): Promise<ComposerState> {
+  const runtime = await sharedModelRuntime();
+  const models = runtime.getAvailableSnapshot().map((entry) =>
+    toComposerModel(entry.provider, entry.id, {
+      name: entry.name,
+      contextWindow: entry.contextWindow,
+      reasoning: entry.reasoning,
+    }),
+  );
+
+  const settings = SettingsManager.create(projectPath);
+  const provider = settings.getDefaultProvider();
+  const id = settings.getDefaultModel();
+  const preferred =
+    provider !== undefined && id !== undefined
+      ? models.find((entry) => entry.provider === provider && entry.id === id)
+      : undefined;
+
+  return { live: false, model: preferred ?? models[0] ?? null, models, context: null };
+}
+
+/**
+ * How long the runtime behind `readComposerFromDefaults` is reused.
+ *
+ * Building one re-reads the model files and rewrites pi's own
+ * `models-store.json`, and React's StrictMode mounts the hero twice in
+ * development — so both the double mount and a quick project switch land on one
+ * build instead of three. Short enough that a settings change shows up on the
+ * next visit rather than after a restart.
+ */
+const MODEL_RUNTIME_TTL_MS = 5_000;
+
+let modelRuntimeCache: { at: number; promise: Promise<ModelRuntime> } | null = null;
+
+async function sharedModelRuntime(): Promise<ModelRuntime> {
+  const cached = modelRuntimeCache;
+  if (cached !== null && Date.now() - cached.at < MODEL_RUNTIME_TTL_MS) {
+    return await cached.promise;
+  }
+
+  let promise: Promise<ModelRuntime>;
+  promise = ModelRuntime.create().catch((err: unknown) => {
+    // A failed build must not be served from the cache for the rest of the TTL.
+    if (modelRuntimeCache?.promise === promise) modelRuntimeCache = null;
+    throw err;
+  });
+  modelRuntimeCache = { at: Date.now(), promise };
+  return await promise;
+}
+
+/** Test seam: forget the cached runtime so the next read re-resolves the files. */
+export function resetDefaultComposerCache(): void {
+  modelRuntimeCache = null;
 }

@@ -118,6 +118,20 @@ export const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/**
+ * The attach button on the composer. A picture frame with a horizon — the same
+ * glyph every messaging app uses for it, drawn on this file's 16px / 1.4
+ * baseline. The dot is filled because at 16px an outlined sun disappears.
+ */
+export const ImageIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base(props)}>
+    <rect x="2" y="3" width="12" height="10" rx="2" />
+    <path d="M2.4 11.2 6 7.6l2.6 2.6" />
+    <path d="M8.6 10.2 11 7.8l2.6 2.6" />
+    <circle cx="10.6" cy="5.9" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 /** The tick on the model menu's current row. dsh has no stroked check glyph to
  * copy (its menus use a different marker), so this follows `icons.tsx`'s own
  * 16px / 1.4 stroke baseline. */
