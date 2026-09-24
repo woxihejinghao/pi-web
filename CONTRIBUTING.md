@@ -67,7 +67,7 @@ bench/     基准脚本（进程开销、流式、前端渲染成本），不随
 scripts/   发布前的仓库级闸门
 ```
 
-更细的架构说明与设计取舍见 [README](./README.md) 与 [PLAN.md](./PLAN.md)。
+更细的架构说明与设计取舍见 [设计说明](./docs/design-notes.md) 与 [PLAN.md](./PLAN.md)。
 
 ## 许可证
 
