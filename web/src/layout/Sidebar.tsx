@@ -4,7 +4,7 @@ import { Glyph } from "../components/dsh-icons.tsx";
 import { PlusIcon, SearchIcon } from "../components/icons.tsx";
 import { DirectoryPicker } from "../features/projects/DirectoryPicker.tsx";
 import { ProjectTreeItem } from "../features/projects/ProjectTree.tsx";
-import { actions, appStore } from "../lib/app-state.ts";
+import { actions, appStore, useT } from "../lib/app-state.ts";
 import { buildProjectTree } from "../lib/project-tree.ts";
 import { hasAnyUpdate } from "../lib/updates.ts";
 import { useStore } from "../lib/store.ts";
@@ -12,6 +12,7 @@ import styles from "./Sidebar.module.css";
 
 export function Sidebar() {
   const state = useStore(appStore);
+  const t = useT();
   const [pickerOpen, setPickerOpen] = useState(false);
   const tree = buildProjectTree(state.projects);
   const currentProject = state.projects.find((project) => project.id === state.selectedProjectId);
@@ -35,24 +36,24 @@ export function Sidebar() {
           disabled={!currentProject}
           title={
             currentProject
-              ? `在「${currentProject.title}」中新建会话`
-              : "先添加一个工作区"
+              ? t("sidebar.newSessionIn", { title: currentProject.title })
+              : t("sidebar.newSessionNoProject")
           }
           onClick={() => actions.enterNewSession()}
         >
           <PlusIcon />
-          新会话
+          {t("sidebar.newSession")}
         </button>
       </div>
 
       <div className={styles.sectionHeader}>
-        <span className={styles.sectionLabel}>工作区</span>
+        <span className={styles.sectionLabel}>{t("sidebar.workspaces")}</span>
         <div className={styles.sectionActions}>
           <button
             type="button"
             className={clsx(styles.iconButton, state.searchOpen && styles.iconButtonActive)}
-            aria-label="搜索"
-            title="搜索工作区和会话"
+            aria-label={t("sidebar.search")}
+            title={t("sidebar.searchPlaceholder")}
             onClick={() => actions.toggleSearch()}
           >
             <SearchIcon />
@@ -60,8 +61,8 @@ export function Sidebar() {
           <button
             type="button"
             className={styles.iconButton}
-            aria-label="添加工作区"
-            title="添加工作区"
+            aria-label={t("sidebar.addWorkspace")}
+            title={t("sidebar.addWorkspace")}
             onClick={() => setPickerOpen(true)}
           >
             <Glyph name="projectAdd" size={16} />
@@ -76,8 +77,8 @@ export function Sidebar() {
             autoFocus
             spellCheck={false}
             value={state.sessionQuery}
-            placeholder="搜索工作区和会话"
-            aria-label="搜索工作区和会话"
+            placeholder={t("sidebar.searchPlaceholder")}
+            aria-label={t("sidebar.searchPlaceholder")}
             onChange={(event) => actions.setSessionQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") actions.toggleSearch();
@@ -88,7 +89,7 @@ export function Sidebar() {
 
       <div className={styles.scroll}>
         {tree.length === 0 ? (
-          <p className={styles.emptyList}>还没有工作区。点击 + 选择一个本地目录。</p>
+          <p className={styles.emptyList}>{t("sidebar.empty")}</p>
         ) : (
           tree.map((node) => <ProjectTreeItem key={node.project.id} node={node} />)
         )}
@@ -100,11 +101,13 @@ export function Sidebar() {
         <button
           type="button"
           className={styles.settingsTrigger}
-          title={updateAvailable ? "设置 · 有可用更新" : "设置"}
+          title={
+            updateAvailable ? t("sidebar.settingsWithUpdate") : t("sidebar.settings")
+          }
           onClick={actions.openSettings}
         >
           <Glyph name="settings" size={16} />
-          设置
+          {t("sidebar.settings")}
           {updateAvailable ? <span className={styles.updateDot} aria-hidden /> : null}
         </button>
       </div>

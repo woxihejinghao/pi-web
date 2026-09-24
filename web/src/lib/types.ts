@@ -342,6 +342,13 @@ export type BusEvent =
 export type AppearancePreference = "light" | "dark" | "system";
 
 /**
+ * UI language. `system` resolves against the host locale — Chinese hosts get
+ * Chinese, everything else English — so a fresh install matches the machine it
+ * runs on while an explicit choice always wins over it.
+ */
+export type LanguagePreference = "system" | "zh-CN" | "en";
+
+/**
  * How completed turns present their process content (thinking + tool calls).
  * `normal` keeps every process row in place; `compact` gathers a finished
  * turn's process rows into one collapsible group so the answers stay readable.
@@ -361,6 +368,8 @@ export type BusySendBehavior = "queue" | "steer";
  */
 export interface WebSettings {
   appearance: AppearancePreference;
+  /** English or Chinese for the interface itself; `system` follows the host. */
+  language: LanguagePreference;
   /** Conversation content font size in px. */
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;

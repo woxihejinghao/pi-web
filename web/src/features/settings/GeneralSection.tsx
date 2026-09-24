@@ -1,7 +1,15 @@
 import { useEffect } from "react";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 import { useStore } from "../../lib/store.ts";
-import { FONT_SIZE_MAX, FONT_SIZE_MIN } from "../../lib/types.ts";
+import {
+  FONT_SIZE_MAX,
+  FONT_SIZE_MIN,
+  type AppearancePreference,
+  type BusySendBehavior,
+  type LanguagePreference,
+  type TranscriptDisplay,
+} from "../../lib/types.ts";
 import {
   SettingsCubes,
   SettingsGroup,
@@ -12,31 +20,63 @@ import {
 import { UpdateSection } from "./UpdateSection.tsx";
 
 /**
- * Labels are dsh's zh dictionary, verbatim (`appearance.*`, `fontSize.*`,
- * `settings.transcript.*`, `settings.enter.*`), so the wording matches the UI
- * this page is ported from.
+ * These labels were dsh's zh dictionary verbatim (`appearance.*`, `fontSize.*`,
+ * `settings.transcript.*`, `settings.enter.*`), so the wording matched the UI
+ * this page is ported from; they now live in `lib/i18n`, with that same Chinese
+ * wording kept as the source table.
+ *
+ * The option lists are built per render from `t` instead of being module
+ * constants, because their labels are language-dependent while their values are
+ * not. The union types in the signatures are what keeps a typo from compiling.
  */
-const APPEARANCE_OPTIONS = [
-  { value: "light", label: "浅色", glyph: "light" },
-  { value: "dark", label: "深色", glyph: "dark" },
-  { value: "system", label: "跟随系统", glyph: "system" },
-] as const;
+type CubeOption = {
+  value: AppearancePreference;
+  label: string;
+  glyph: "light" | "dark" | "system";
+};
 
-const TRANSCRIPT_OPTIONS = [
-  { value: "normal", label: "标准" },
-  { value: "compact", label: "紧凑" },
-] as const;
+function appearanceOptions(t: Translate): readonly CubeOption[] {
+  return [
+    { value: "light", label: t("settings.appearance.light"), glyph: "light" },
+    { value: "dark", label: t("settings.appearance.dark"), glyph: "dark" },
+    { value: "system", label: t("settings.appearance.system"), glyph: "system" },
+  ];
+}
 
-const BUSY_SEND_OPTIONS = [
-  { value: "queue", label: "排队发送" },
-  { value: "steer", label: "插话发送" },
-] as const;
+/**
+ * Language choices, each written in its own language: someone who switched to
+ * the wrong one still recognises "简体中文", which is why that entry is the
+ * same string in both tables.
+ */
+function languageOptions(t: Translate): readonly { value: LanguagePreference; label: string }[] {
+  return [
+    { value: "system", label: t("settings.language.system") },
+    { value: "zh-CN", label: t("settings.language.zh") },
+    { value: "en", label: t("settings.language.en") },
+  ];
+}
+
+function transcriptOptions(t: Translate): readonly { value: TranscriptDisplay; label: string }[] {
+  return [
+    { value: "normal", label: t("settings.transcript.normal") },
+    { value: "compact", label: t("settings.transcript.compact") },
+  ];
+}
+
+function busySendOptions(t: Translate): readonly { value: BusySendBehavior; label: string }[] {
+  return [
+    { value: "queue", label: t("settings.busySend.queue") },
+    { value: "steer", label: t("settings.busySend.steer") },
+  ];
+}
 
 /** pi's `autoCompactionEnabled` is a boolean; the select speaks in labels. */
-const AUTO_COMPACTION_OPTIONS = [
-  { value: "on", label: "开启" },
-  { value: "off", label: "关闭" },
-] as const;
+function autoCompactionOptions(t: Translate): readonly { value: "on" | "off"; label: string }[] {
+  return [
+    { value: "on", label: t("settings.autoCompaction.on") },
+    { value: "off", label: t("settings.autoCompaction.off") },
+  ];
+}
 
 /**
  * Preferences owned by this UI, plus the two agent settings that belong to pi.
@@ -52,6 +92,7 @@ export function GeneralSection({
   onOpenPlugins?: () => void;
 }) {
   const state = useStore(appStore);
+  const t = useT();
   const projectPath =
     state.projects.find((project) => project.id === state.selectedProjectId)?.path ??
     state.projects[0]?.path ??
@@ -66,35 +107,61 @@ export function GeneralSection({
 
   return (
     <div className={className}>
-        <SettingsGroup title="外观">
+        <SettingsGroup title={t("settings.appearance.title")}>
           <SettingsCubes
             value={state.settings.appearance}
-            options={APPEARANCE_OPTIONS}
+            options={appearanceOptions(t)}
             onChange={(appearance) => {
               void actions.updateSettings({ appearance });
             }}
           />
         </SettingsGroup>
 
-        <SettingsRow title="字号大小" description="仅影响会话内容的字号">
+        {/*
+          Next to appearance because they are the same kind of preference: a
+          shell-wide choice that changes how this page looks, not how the agent
+          behaves. Both write through `updateSettings`, so both survive a reload
+          in the server's store file rather than in the browser.
+        */}
+        <SettingsRow
+          title={t("settings.language.title")}
+          description={t("settings.language.description")}
+        >
+          <SettingsSelect
+            label={t("settings.language.title")}
+            value={state.settings.language}
+            options={languageOptions(t)}
+            onChange={(language) => {
+              void actions.updateSettings({ language });
+            }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={t("settings.fontSize.title")}
+          description={t("settings.fontSize.description")}
+        >
           <SettingsStepper
             value={state.settings.contentFontSize}
             min={FONT_SIZE_MIN}
             max={FONT_SIZE_MAX}
             unit="px"
-            decreaseLabel="减小字号"
-            increaseLabel="增大字号"
+            decreaseLabel={t("settings.fontSize.decrease")}
+            increaseLabel={t("settings.fontSize.increase")}
             onChange={(contentFontSize) => {
               void actions.updateSettings({ contentFontSize });
             }}
           />
         </SettingsRow>
 
-        <SettingsRow title="对话显示" description="控制已完成轮次的过程内容">
+        <SettingsRow
+          title={t("settings.transcript.title")}
+          description={t("settings.transcript.description")}
+        >
           <SettingsSelect
-            label="对话显示"
+            label={t("settings.transcript.title")}
             value={state.settings.transcriptDisplay}
-            options={TRANSCRIPT_OPTIONS}
+            options={transcriptOptions(t)}
             onChange={(transcriptDisplay) => {
               void actions.updateSettings({ transcriptDisplay });
             }}
@@ -102,13 +169,13 @@ export function GeneralSection({
         </SettingsRow>
 
         <SettingsRow
-          title="繁忙时的发送行为"
-          description="智能体运行时 Enter 键和发送按钮的行为；Cmd/Ctrl+Enter 使用另一行为"
+          title={t("settings.busySend.title")}
+          description={t("settings.busySend.description")}
         >
           <SettingsSelect
-            label="繁忙时的发送行为"
+            label={t("settings.busySend.title")}
             value={state.settings.busySendBehavior}
-            options={BUSY_SEND_OPTIONS}
+            options={busySendOptions(t)}
             onChange={(busySendBehavior) => {
               void actions.updateSettings({ busySendBehavior });
             }}
@@ -121,11 +188,14 @@ export function GeneralSection({
           rather than showing a guessed value the user would then "change" to
           what it already appeared to be.
         */}
-        <SettingsRow title="自动压缩" description="上下文接近上限时自动压缩较早的对话">
+        <SettingsRow
+          title={t("settings.autoCompaction.title")}
+          description={t("settings.autoCompaction.description")}
+        >
           <SettingsSelect
-            label="自动压缩"
+            label={t("settings.autoCompaction.title")}
             value={agent?.available === true && agent.autoCompaction ? "on" : "off"}
-            options={AUTO_COMPACTION_OPTIONS}
+            options={autoCompactionOptions(t)}
             disabled={agent?.available !== true}
             onChange={(choice) => {
               if (projectPath === null) return;

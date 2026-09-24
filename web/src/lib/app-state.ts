@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { api } from "./api.ts";
-import { createEmitter, createStore, type Emitter, type Store } from "./store.ts";
+import { resolveLanguage, translator, type Translate } from "./i18n/index.ts";
+import { createEmitter, createStore, useStore, type Emitter, type Store } from "./store.ts";
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
   AgentSettings,
@@ -28,6 +30,7 @@ import type {
  */
 const DEFAULT_SETTINGS: WebSettings = {
   appearance: "system",
+  language: "system",
   contentFontSize: 15,
   transcriptDisplay: "normal",
   busySendBehavior: "queue",
@@ -171,6 +174,18 @@ let draftRequest: Promise<string | null> | null = null;
 const commandsRequests = new Map<string, Promise<void>>();
 
 export const appStore: Store<AppState> = createStore(initialState);
+
+/**
+ * The `t()` for whichever language the current settings resolve to.
+ *
+ * Reading through the store instead of caching one translator at module load is
+ * what makes a language switch repaint: every component that renders copy
+ * subscribes, so it re-renders exactly like it does for an appearance change.
+ */
+export function useT(): Translate {
+  const preference = useStore(appStore).settings.language;
+  return useMemo(() => translator(resolveLanguage(preference)), [preference]);
+}
 
 /** High-frequency session events, delivered outside React state. */
 export const sessionEvents: Emitter<{ sessionPath: string; event: SessionEvent }> =

@@ -41,6 +41,13 @@ export interface StoreData {
 export type AppearancePreference = "light" | "dark" | "system";
 
 /**
+ * UI language. `system` follows the host locale: a Chinese host gets Chinese
+ * and everything else English, so the default never fights the machine the UI
+ * is running on.
+ */
+export type LanguagePreference = "system" | "zh-CN" | "en";
+
+/**
  * How completed turns present their process content (thinking + tool calls).
  * Ported from dsh's `ui-chat` transcript-mode setting: `normal` lays every
  * process row out in place, `compact` gathers a finished turn's process rows
@@ -58,6 +65,7 @@ export type BusySendBehavior = "queue" | "steer";
 
 const APPEARANCE_VALUES: readonly AppearancePreference[] = ["light", "dark", "system"];
 const TRANSCRIPT_VALUES: readonly TranscriptDisplay[] = ["normal", "compact"];
+const LANGUAGE_VALUES: readonly LanguagePreference[] = ["system", "zh-CN", "en"];
 const BUSY_SEND_VALUES: readonly BusySendBehavior[] = ["queue", "steer"];
 
 /**
@@ -80,6 +88,11 @@ export const FONT_SIZE_DEFAULT = 15;
  */
 export interface WebSettings {
   appearance: AppearancePreference;
+  /**
+   * Interface language. Unlike the appearance cubes this is not a look-only
+   * preference: it decides which message table the front end renders from.
+   */
+  language: LanguagePreference;
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
@@ -94,6 +107,9 @@ export interface WebSettings {
 export function defaultSettings(): WebSettings {
   return {
     appearance: "system",
+    // Following the host avoids surprising anyone who was using the Chinese UI
+    // before this setting existed; English is what other locales resolve to.
+    language: "system",
     contentFontSize: FONT_SIZE_DEFAULT,
     transcriptDisplay: "normal",
     // Queueing is the safe default: steering interrupts an in-flight run, so it
@@ -163,6 +179,12 @@ function normalizeSettings(raw: unknown): WebSettings {
     raw.contentFontSize <= FONT_SIZE_MAX
   ) {
     settings.contentFontSize = raw.contentFontSize;
+  }
+  if (
+    typeof raw.language === "string" &&
+    (LANGUAGE_VALUES as readonly string[]).includes(raw.language)
+  ) {
+    settings.language = raw.language as LanguagePreference;
   }
   if (
     typeof raw.transcriptDisplay === "string" &&

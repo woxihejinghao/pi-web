@@ -1063,6 +1063,7 @@ describe("settings", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       appearance: "system",
+      language: "system",
       contentFontSize: 15,
       transcriptDisplay: "normal",
       busySendBehavior: "queue",
@@ -1079,6 +1080,7 @@ describe("settings", () => {
     // Untouched fields keep their previous values rather than resetting.
     expect(patched.body).toEqual({
       appearance: "dark",
+      language: "system",
       contentFontSize: 15,
       transcriptDisplay: "normal",
       busySendBehavior: "queue",
@@ -1100,6 +1102,28 @@ describe("settings", () => {
     // The whole point of storing it here: closing the notice must survive a
     // reload, or the panel would ask again on every visit.
     expect((await api("/api/settings")).body.todoNoticeDismissed).toBe(true);
+  });
+
+  it("round-trips the interface language", async () => {
+    const patched = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ language: "en" }),
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.language).toBe("en");
+    expect((await api("/api/settings")).body.language).toBe("en");
+  });
+
+  it("rejects an unknown language instead of falling back", async () => {
+    for (const language of ["fr", "zh", "en-US"]) {
+      const res = await api("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({ language }),
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("language");
+    }
+    expect((await api("/api/settings")).body.language).toBe("system");
   });
 
   it("rejects an unknown appearance instead of falling back", async () => {

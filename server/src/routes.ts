@@ -84,6 +84,7 @@ import {
   readStore,
   type AppearancePreference,
   type BusySendBehavior,
+  type LanguagePreference,
   type TranscriptDisplay,
 } from "./store.ts";
 
@@ -579,6 +580,13 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
           patch.appearance,
           ["light", "dark", "system"],
           "appearance",
+        );
+      }
+      if (patch.language !== undefined) {
+        next.language = requireChoice<LanguagePreference>(
+          patch.language,
+          ["system", "zh-CN", "en"],
+          "language",
         );
       }
       if (patch.contentFontSize !== undefined) {
