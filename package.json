@@ -1,6 +1,6 @@
 {
   "name": "pi-web-simple",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local web UI for the pi coding agent — one directory per workspace, in the shell of deepseek-harness",
   "license": "MIT",
   "type": "module",
@@ -13,6 +13,7 @@
   },
   "files": [
     "bin",
+    "extensions",
     "server/build",
     "web/dist",
     "LICENSE",
@@ -22,8 +23,15 @@
     "CONTRIBUTING.md",
     "README.md"
   ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "image": "https://raw.githubusercontent.com/woxihejinghao/pi-web/main/docs/images/overview-dark.png"
+  },
   "keywords": [
     "pi",
+    "pi-package",
     "pi-coding-agent",
     "coding-agent",
     "web",

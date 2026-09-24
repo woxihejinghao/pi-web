@@ -3,6 +3,17 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-09-24
+
+### 新增
+
+- **包本身成了 pi 包**：加上 `pi-package` 关键词与 `pi.extensions` 清单，`pi install npm:pi-web-simple` 就能装进 pi 会话，同时包会被 [pi.dev/packages](https://pi.dev/packages) 画廊自动收录（那里没有提交入口，只按关键词索引 npm）。
+- **`/web` 命令**：`/web [端口] [--no-open]` 启动界面（默认沿用 5319，自动开浏览器）、`/web status` 看状态、`/web stop` 关闭。子进程由 pi 管理，`session_shutdown` 时一并结束，不留孤儿进程；端口被占用之类的启动失败会带上服务端最后几行日志报回 pi 界面。
+
+### 工程
+
+- **`scripts/verify-dist.mjs` 多两道发布闸门**：`extensions/index.js` 是否随包发出，以及 `package.json` 是否还带着 `pi-package` 关键词。后者是又一种静默失败——少了它 `npm publish` 照样成功，只是画廊永远不收录。
+
 ## [0.1.1] - 2026-09-24
 
 ### 改进

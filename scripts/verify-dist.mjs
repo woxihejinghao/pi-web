@@ -10,13 +10,20 @@
  * 顺带校验：`server/src` 里每个非测试的 .ts 都应有对应的 build 产物，
  * 防止 tsc 中途失败留下「入口在、依赖模块缺」的半成品。
  */
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 
 const problems = [];
 
-const mustExist = ["bin/pi-web-simple.js", "server/build/index.js", "web/dist/index.html"];
+const mustExist = ["bin/pi-web-simple.js", "extensions/index.js", "server/build/index.js", "web/dist/index.html"];
 for (const p of mustExist) {
   if (!existsSync(p)) problems.push(`缺少 ${p}`);
+}
+
+// 画廊收录的硬条件，也是另一处静默失败：npm 上少了这个关键词，包照样发得出去，
+// 只是 pi.dev/packages 永远不会收录它（那里没有提交入口，只有自动索引）。
+const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+if (!pkg.keywords?.includes("pi-package")) {
+  problems.push('package.json 缺少 "pi-package" 关键词，pi.dev/packages 不会收录');
 }
 
 // server 的编译产物逐个对齐源文件（tsconfig.build.json 排除 *.test.ts 与 src/testing）。
