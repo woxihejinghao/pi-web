@@ -1055,6 +1055,129 @@ describe("event stream", () => {
 
     controller.abort();
   });
+
+  it("filters other sessions' streaming frames once a session is declared", async () => {
+    const controller = new AbortController();
+    const res = await fetch(`${baseUrl}/api/events`, { signal: controller.signal });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const nextFrame = async (): Promise<{ event: string; data: any } | null> => {
+      while (true) {
+        const boundary = buffer.indexOf("\n\n");
+        if (boundary >= 0) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const eventLine = frame.split("\n").find((l) => l.startsWith("event: "));
+          const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
+          if (eventLine && dataLine) {
+            return { event: eventLine.slice(7), data: JSON.parse(dataLine.slice(6)) };
+          }
+          continue;
+        }
+        const { value, done } = await reader.read();
+        if (done) return null;
+        buffer += decoder.decode(value, { stream: true });
+      }
+    };
+
+    const sessionFrame = (sessionPath: string, type: string) =>
+      ({ type: "session_event", sessionPath, event: { type } }) as Parameters<
+        EventBus["publish"]
+      >[0];
+
+    const hello = await nextFrame();
+    expect(hello?.event).toBe("hello");
+    const connectionId = hello!.data.connectionId;
+    expect(typeof connectionId).toBe("string");
+
+    const subscription = await post("/api/events/subscription", {
+      connectionId,
+      sessionPath: "/wanted",
+    });
+    expect(subscription.status).toBe(200);
+
+    // The declared session's streaming frame comes through...
+    bus.publish(sessionFrame("/wanted", "message_update"));
+    const own = await nextFrame();
+    expect(own?.data.sessionPath).toBe("/wanted");
+    expect(own?.data.event.type).toBe("message_update");
+
+    // ...another session's is dropped, and a low-volume frame for that same
+    // session arriving right behind it proves the drop was a filter and not a
+    // dead connection.
+    bus.publish(sessionFrame("/other", "message_update"));
+    bus.publish(sessionFrame("/other", "agent_start"));
+    const otherStart = await nextFrame();
+    expect(otherStart?.data.sessionPath).toBe("/other");
+    expect(otherStart?.data.event.type).toBe("agent_start");
+
+    controller.abort();
+  });
+
+  it("404s a subscription for a stream that is gone", async () => {
+    const res = await post("/api/events/subscription", {
+      connectionId: "00000000-0000-4000-8000-000000000000",
+      sessionPath: "/x",
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("sheds a stream that cannot keep up instead of buffering without bound", async () => {
+    // A cap of its own, tiny enough to reach in a few writes. Going through the
+    // real 4MB would mean pushing hundreds of megabytes at a loopback socket.
+    const tinyBus = new EventBus();
+    const tinyRegistry = new SessionRegistry({ cliPath: STUB_CLI });
+    tinyRegistry.onEvent((handle, event) => {
+      tinyBus.publish({ type: "session_event", sessionPath: handle.sessionPath, event });
+    });
+    const tinyHandler = createRequestHandler({
+      registry: tinyRegistry,
+      bus: tinyBus,
+      sessionRoot,
+      sseMaxBufferedBytes: 1,
+    });
+    const tinyServer = createServer((req, res) => {
+      void tinyHandler(req, res);
+    });
+    await new Promise<void>((resolve) => tinyServer.listen(0, "127.0.0.1", resolve));
+    const tinyBase = `http://127.0.0.1:${(tinyServer.address() as AddressInfo).port}`;
+
+    try {
+      const controller = new AbortController();
+      const res = await fetch(`${tinyBase}/api/events`, { signal: controller.signal });
+      // The body is deliberately not read: the socket backs up, which is the
+      // whole scenario. Enough volume to fill the kernel and Node buffers.
+      const big = "x".repeat(512 * 1024);
+      const frame = {
+        type: "session_event",
+        sessionPath: "/slow",
+        event: { type: "tool_execution_update", output: big },
+      } as unknown as Parameters<EventBus["publish"]>[0];
+      for (let i = 0; i < 8; i += 1) tinyBus.publish(frame);
+
+      // The server must end the connection rather than queue forever. A
+      // destroyed socket surfaces as either a clean end or a read error.
+      const reader = res.body!.getReader();
+      await expect(
+        (async () => {
+          try {
+            for (;;) {
+              const { done } = await reader.read();
+              if (done) return "closed";
+            }
+          } catch {
+            return "closed";
+          }
+        })(),
+      ).resolves.toBe("closed");
+      controller.abort();
+    } finally {
+      await tinyRegistry.closeAll("test-cleanup");
+      await new Promise<void>((resolve) => tinyServer.close(() => resolve()));
+    }
+  });
 });
 
 describe("settings", () => {

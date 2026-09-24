@@ -61,6 +61,41 @@ export const ACCEPTED_IMAGE_MIME_TYPES = [
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /**
+ * Longest edge an image keeps before it is scaled down.
+ *
+ * 1568px is what the major providers downsample to anyway, so anything larger
+ * is bytes spent on detail the model never sees. It is also the right ceiling
+ * for what a session file has to carry: images live inline in the JSONL as
+ * base64, and every later read of that session drags them along.
+ */
+export const MAX_IMAGE_DIMENSION = 1568;
+
+/**
+ * Quality for the lossy re-encode. High enough that UI text in a screenshot
+ * stays crisp, low enough to undo the bloat of an untended phone photo.
+ */
+export const IMAGE_QUALITY = 0.82;
+
+/**
+ * Under this size, and already inside `MAX_IMAGE_DIMENSION`, an image is left
+ * alone — re-encoding a small file only trades quality for noise.
+ */
+export const REENCODE_THRESHOLD_BYTES = 512 * 1024;
+
+/**
+ * How much an image has to shrink so its longest edge fits `max`.
+ *
+ * Never enlarges — an image already inside the bound keeps scale 1 — and treats
+ * a zero dimension as nothing to do, so a decoded frame without a size cannot
+ * produce a divide-by-zero canvas.
+ */
+export function fitScale(width: number, height: number, max = MAX_IMAGE_DIMENSION): number {
+  const longest = Math.max(width, height);
+  if (longest <= max || longest === 0) return 1;
+  return max / longest;
+}
+
+/**
  * How many images one message may carry.
  *
  * The ceiling is what keeps a paste of a whole folder from becoming a request
@@ -119,9 +154,12 @@ export async function readImageFile(file: File, t: Translate): Promise<ImageRead
   }
   try {
     const url = await readAsDataUrl(file);
-    const comma = url.indexOf(",");
-    if (comma < 0) return { image: null, refusal: { name, reason: t("attach.readFailed") } };
-    return { image: { type: "image", data: url.slice(comma + 1), mimeType: file.type }, refusal: null };
+    const data = dataUrlPayload(url);
+    if (data === null) return { image: null, refusal: { name, reason: t("attach.readFailed") } };
+    const original: ImageBlock = { type: "image", data, mimeType: file.type };
+    // Best-effort: `compressImage` answers null for anything it cannot improve,
+    // and the original is what goes out then.
+    return { image: (await compressImage(file)) ?? original, refusal: null };
   } catch {
     return { image: null, refusal: { name, reason: t("attach.readFailed") } };
   }
@@ -184,7 +222,7 @@ function megabytes(bytes: number): number {
   return Math.round(bytes / (1024 * 1024));
 }
 
-function readAsDataUrl(file: File): Promise<string> {
+function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -193,6 +231,85 @@ function readAsDataUrl(file: File): Promise<string> {
     reader.onerror = () => {
       reject(reader.error ?? new Error("read failed"));
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** The base64 after `data:<type>;base64,`, or null when there is no payload. */
+function dataUrlPayload(url: string): string | null {
+  const comma = url.indexOf(",");
+  return comma < 0 ? null : url.slice(comma + 1);
+}
+
+/** Formats a canvas can re-encode. GIF is out: redrawing one keeps a single frame. */
+function isCompressibleImageType(mimeType: string): boolean {
+  return mimeType === "image/png" || mimeType === "image/jpeg" || mimeType === "image/webp";
+}
+
+/**
+ * Shrink an image before it joins the session.
+ *
+ * Session files hold images as inline base64 with no separate blob store, so a
+ * 5MB screenshot costs ~6.7MB of JSONL that every later read of the session
+ * carries. Scaling to `MAX_IMAGE_DIMENSION` and re-encoding is what keeps that
+ * bounded.
+ *
+ * Returns null whenever the original is at least as good — a format a canvas
+ * cannot re-encode, a decode that failed, an environment without canvases, a
+ * re-encode that came out larger, or an image already small and already inside
+ * the bound. The caller falls back to the original, so this can never lose one.
+ */
+async function compressImage(file: File): Promise<ImageBlock | null> {
+  if (!isCompressibleImageType(file.type)) return null;
+  const bitmap = await decodeImage(file);
+  if (bitmap === null) return null;
+  try {
+    const scale = fitScale(bitmap.width, bitmap.height);
+    if (scale >= 1 && file.size <= REENCODE_THRESHOLD_BYTES) return null;
+    if (typeof document === "undefined") return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (context === null) return null;
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await canvasToBlob(canvas, file.type, IMAGE_QUALITY);
+    if (blob === null || blob.size >= file.size) return null;
+    // The browser may answer with a different type than the one asked for
+    // (Safari encodes WebP as PNG), so what it reports is what the block says.
+    const mimeType = blob.type.length > 0 ? blob.type : file.type;
+    if (!isAcceptedImageType(mimeType)) return null;
+    const data = dataUrlPayload(await readAsDataUrl(blob));
+    if (data === null) return null;
+    return { type: "image", data, mimeType };
+  } catch {
+    return null;
+  } finally {
+    bitmap.close();
+  }
+}
+
+async function decodeImage(file: File): Promise<ImageBitmap | null> {
+  if (typeof createImageBitmap !== "function") return null;
+  try {
+    // `from-image` keeps a phone photo upright: without it the EXIF rotation is
+    // dropped and the copy the model sees comes out sideways.
+    return await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality: number,
+): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), type, quality);
   });
 }

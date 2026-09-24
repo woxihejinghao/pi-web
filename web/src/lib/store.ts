@@ -42,6 +42,23 @@ export function useStore<T>(store: Store<T>): T {
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
+/**
+ * Subscribe to one slice of a store.
+ *
+ * `useStore` returns the whole state, so a write to any field re-renders the
+ * component. That is what a shell wants and what a leaf reading one primitive
+ * does not: this narrows the subscription to whatever `select` returns, and
+ * React skips the render when it is unchanged (`Object.is`). `select` must
+ * therefore return a primitive or a stable reference, never a fresh object.
+ */
+export function useStoreSelector<T, S>(store: Store<T>, select: (state: T) => S): S {
+  return useSyncExternalStore(
+    store.subscribe,
+    () => select(store.get()),
+    () => select(store.get()),
+  );
+}
+
 export interface Emitter<T> {
   emit(value: T): void;
   subscribe(listener: (value: T) => void): () => void;

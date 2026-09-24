@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { actions, sessionEvents } from "../../lib/app-state.ts";
+import { actions, sessionEvents, streamRestored } from "../../lib/app-state.ts";
 import { api } from "../../lib/api.ts";
 import type {
   AgentMessage,
@@ -252,6 +252,22 @@ export interface ConversationApi extends ConversationView {
 }
 
 /**
+ * Minimum wall-clock gap between two streaming repaints.
+ *
+ * `requestAnimationFrame` already caps this at one per frame, but a frame is
+ * 16ms and every one of them re-parses the whole partial Markdown — a cost that
+ * grows with the partial's length. On a long response that is what turns a fast
+ * stream into dropped frames: the parse is linear in the text, the frame rate
+ * is fixed. 50ms of batching keeps the text advancing smoothly to the eye while
+ * cutting the render count per second by about three.
+ *
+ * Only token deltas wait. A non-streaming event (`message_end`,
+ * `agent_settled`, a tool result) publishes immediately — it is the arrival
+ * that must not be late.
+ */
+const STREAM_REPAINT_MS = 50;
+
+/**
  * Loads a session's history once, then keeps it current from the event stream.
  * Streaming assistant content lives outside `messages` until `message_end`,
  * which is authoritative.
@@ -299,6 +315,10 @@ export function useConversation(sessionPath: string | null): ConversationApi {
    * does run carries every delta that arrived since the last one.
    */
   const frameRef = useRef<number | null>(null);
+  /** Wall-clock time of the last publish, for the streaming repaint floor. */
+  const lastPublishRef = useRef(0);
+  /** True while a delta has arrived that no publish has carried yet. */
+  const dirtyRef = useRef(false);
 
   const publish = useCallback(() => {
     // This publish supersedes any frame that was waiting to do the same thing.
@@ -306,6 +326,8 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
+    lastPublishRef.current = Date.now();
+    dirtyRef.current = false;
     const slot = slotRef.current;
     setView({
       messages: messagesRef.current,
@@ -327,7 +349,8 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   }, []);
 
   /**
-   * Republish on the next frame, at most once per frame.
+   * Repaint streaming output on the next frame, but no more often than
+   * `STREAM_REPAINT_MS`.
    *
    * `requestAnimationFrame` is absent in test environments; publishing inline
    * there keeps the observable behaviour the same.
@@ -337,11 +360,25 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       publish();
       return;
     }
+    dirtyRef.current = true;
     if (frameRef.current !== null) return;
-    frameRef.current = requestAnimationFrame(() => {
+
+    // Keeps re-arming until the floor has passed and something is pending, so
+    // the last delta of a burst is always painted — a dropped tail would leave
+    // the transcript a few tokens short until the next event.
+    const tick = (): void => {
+      if (!dirtyRef.current) {
+        frameRef.current = null;
+        return;
+      }
+      if (Date.now() - lastPublishRef.current < STREAM_REPAINT_MS) {
+        frameRef.current = requestAnimationFrame(tick);
+        return;
+      }
       frameRef.current = null;
       publish();
-    });
+    };
+    frameRef.current = requestAnimationFrame(tick);
   }, [publish]);
 
   const handleEvent = useCallback(
@@ -575,8 +612,16 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       if (payload.sessionPath !== sessionPath) return;
       handleEvent(payload.event);
     });
+    // A reconnect means the stream may have missed frames that will never be
+    // replayed (the server sheds a client that falls too far behind). The file
+    // is authoritative for everything already written; a message still being
+    // streamed heals when its `message_end` arrives with the whole message.
+    const unsubscribeRestored = streamRestored.subscribe(() => {
+      void load(sessionPath);
+    });
     return () => {
       unsubscribe();
+      unsubscribeRestored();
       // A frame queued by this session must not repaint the next one.
       if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
         cancelAnimationFrame(frameRef.current);

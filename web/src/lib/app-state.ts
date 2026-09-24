@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { api } from "./api.ts";
 import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
 import { showNotification } from "./notifications.ts";
-import { createEmitter, createStore, useStore, type Emitter, type Store } from "./store.ts";
+import { createEmitter, createStore, useStoreSelector, type Emitter, type Store } from "./store.ts";
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
   AgentSettings,
@@ -236,7 +236,7 @@ function findSessionTitle(state: AppState, sessionPath: string): string | null {
 }
 
 export function useT(): Translate {
-  const preference = useStore(appStore).settings.language;
+  const preference = useStoreSelector(appStore, (state) => state.settings.language);
   return useMemo(() => translator(resolveLanguage(preference)), [preference]);
 }
 
@@ -245,12 +245,30 @@ export function useT(): Translate {
  * a format rather than a message (a date reading `9月17日` or `Sep 17`).
  */
 export function useLanguage(): UiLanguage {
-  return resolveLanguage(useStore(appStore).settings.language);
+  return resolveLanguage(useStoreSelector(appStore, (state) => state.settings.language));
 }
 
 /** High-frequency session events, delivered outside React state. */
 export const sessionEvents: Emitter<{ sessionPath: string; event: SessionEvent }> =
   createEmitter();
+
+/**
+ * Fires when the event stream reconnects after a drop.
+ *
+ * A dropped socket means the transcript missed frames while it was away, and
+ * stream deltas cannot be recovered from the next one — the frames carry the
+ * delta, not a snapshot. Whoever is reading has to re-read the snapshot rather
+ * than keep appending to a stream with a hole in it.
+ */
+export const streamRestored: Emitter<void> = createEmitter();
+
+/**
+ * Reports that files under a project's working tree changed outside this app.
+ *
+ * The changes panel listens so it can follow an editor save, a formatter, or a
+ * terminal `git` command without a manual refresh. Nothing else consumes it.
+ */
+export const workspaceChanged: Emitter<{ projectPath: string }> = createEmitter();
 
 /** Test seam: restore the initial state. */
 export function resetAppState(): void {

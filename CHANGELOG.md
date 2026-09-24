@@ -3,6 +3,20 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 改进
+
+- **变更面板自动跟随工作区变化**：服务端递归监听每个项目的工作树（`node_modules` 的路径段在回调里滤掉），400ms debounce 后推一个 `workspace_changed`；面板开着且没有写操作在跑时自动重读 `git status` —— 编辑器保存、格式化、终端里的 `git` 命令都会反映进来，不必再点刷新。
+
+### 性能
+
+- **SSE 按会话订阅**：切会话时 `POST /api/events/subscription` 声明正在读哪个会话，服务端只推该会话的 token 流；侧栏状态点、扩展对话框、项目/会话列表这些低频帧照旧发给所有连接。实测 8 会话 × 4 客户端从 P50 1203ms / RSS +688MB 降到 P50 0ms / +8MB（[bench](./bench/README.md)）。
+- **SSE 背压与缓冲上限**：`res.write` 返回 false 时暂停投递、排队等 `drain`；队列超过 `SSE_MAX_BUFFERED_BYTES`（默认 4MB）断开该连接，前端 `EventSource` 重连后重读一份快照（断线期间漏掉的增量不可能被下一条补上）。
+- **图片上传前在浏览器里压缩**：长边缩到 1568px 并重新编码，截图/照片通常小一个数量级，不再让一张 5MB 截图把会话 JSONL 撑到 ~6.7MB；GIF 与小图原样放行，压缩失败或结果反而更大时回退原文件。
+- **`useT()` / `useLanguage()` 改为字段级订阅**：不再因为设置里任何一处变化而重渲整条消息列表。
+- **流式输出加 50ms 发布地板**：`message_update` 原本每帧重解析整段 partial Markdown，长回复下成本随文本增长（压测：当前会话占主线程 58%，8 会话并发直接打满）。现在最多每 50ms 发布一次，主线程占用减半以上，观感仍是连续吐字；`message_end`、`agent_settled`、工具结果仍立即发布。
+
 ## [0.4.1] - 2026-09-24
 
 ### 文档

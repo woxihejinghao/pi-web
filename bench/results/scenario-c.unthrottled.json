@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-24T10:24:15.528Z",
+  "at": "2026-09-24T10:21:08.247Z",
   "sessions": 8,
   "turns": 40,
   "eventsPerSession": 4000,
@@ -20,39 +20,31 @@
       "longTaskCount": 0,
       "longTaskTotalMs": 0,
       "longTaskMaxMs": 0,
-      "frames": 151,
+      "frames": 152,
       "jankyFrames": 0,
       "jankyPercent": 0,
-      "busyMs": 42,
-      "idleMs": 2488,
-      "taskMs": 50,
-      "scriptMs": 1,
+      "busyMs": 61,
+      "idleMs": 2473,
+      "taskMs": 68,
+      "scriptMs": 3,
       "layoutMs": 0,
       "styleMs": 0,
       "busyMsPerEvent": 0,
-      "benchCpuMs": 11.589,
+      "benchCpuMs": 7.312,
       "appStoreUpdates": null,
       "renderedStreamingText": false,
       "topFunctions": [
         {
           "key": "(program) @ (vm):0",
-          "ms": 40
+          "ms": 59
         },
         {
           "key": "requestAnimationFrame @ (vm):0",
-          "ms": 1
-        },
-        {
-          "key": "window.__benchSnapshot @ (vm):124",
-          "ms": 0
+          "ms": 2
         },
         {
           "key": "tick @ (vm):101",
-          "ms": 0
-        },
-        {
-          "key": "(anonymous) @ (vm):0",
-          "ms": 0
+          "ms": 1
         }
       ]
     },
@@ -62,52 +54,52 @@
       "currentSessionStreaming": true,
       "messageUpdates": 4000,
       "agentSettled": 1,
-      "reactCommits": 675,
-      "commitsPerEvent": 0.16875,
-      "spanMs": 17568,
-      "gapP50": 5,
-      "gapP95": 11,
-      "gapMax": 22,
+      "reactCommits": 1528,
+      "commitsPerEvent": 0.382,
+      "spanMs": 17626,
+      "gapP50": 4,
+      "gapP95": 16,
+      "gapMax": 27,
       "longTaskCount": 0,
       "longTaskTotalMs": 0,
       "longTaskMaxMs": 0,
-      "frames": 1156,
+      "frames": 1150,
       "jankyFrames": 0,
       "jankyPercent": 0,
-      "busyMs": 3871,
-      "idleMs": 15398,
-      "taskMs": 3933,
-      "scriptMs": 2539,
-      "layoutMs": 627,
-      "styleMs": 49,
-      "busyMsPerEvent": 0.96775,
-      "benchCpuMs": 367.166,
+      "busyMs": 10203,
+      "idleMs": 8973,
+      "taskMs": 10254,
+      "scriptMs": 7175,
+      "layoutMs": 1885,
+      "styleMs": 67,
+      "busyMsPerEvent": 2.55075,
+      "benchCpuMs": 329.935,
       "appStoreUpdates": null,
       "renderedStreamingText": true,
       "topFunctions": [
         {
-          "key": "(anonymous) @ index-C4XB3mcb.js:247",
-          "ms": 649
+          "key": "(anonymous) @ index-CipNOHVj.js:247",
+          "ms": 1926
+        },
+        {
+          "key": "b @ index-CipNOHVj.js:59",
+          "ms": 1132
         },
         {
           "key": "(program) @ (vm):0",
-          "ms": 644
+          "ms": 1046
         },
         {
-          "key": "b @ index-C4XB3mcb.js:59",
-          "ms": 364
+          "key": "E @ index-CipNOHVj.js:59",
+          "ms": 806
         },
         {
-          "key": "E @ index-C4XB3mcb.js:59",
-          "ms": 252
+          "key": "R @ index-CipNOHVj.js:59",
+          "ms": 717
         },
         {
-          "key": "R @ index-C4XB3mcb.js:59",
-          "ms": 239
-        },
-        {
-          "key": "n @ index-C4XB3mcb.js:59",
-          "ms": 216
+          "key": "n @ index-CipNOHVj.js:59",
+          "ms": 662
         }
       ]
     },
@@ -117,52 +109,52 @@
       "currentSessionStreaming": true,
       "messageUpdates": 4000,
       "agentSettled": 8,
-      "reactCommits": 525,
-      "commitsPerEvent": 0.13125,
-      "spanMs": 17407,
-      "gapP50": 4,
-      "gapP95": 25,
-      "gapMax": 40,
+      "reactCommits": 836,
+      "commitsPerEvent": 0.209,
+      "spanMs": 17740,
+      "gapP50": 0,
+      "gapP95": 28,
+      "gapMax": 52,
       "longTaskCount": 1,
-      "longTaskTotalMs": 181,
-      "longTaskMaxMs": 181,
-      "frames": 1129,
-      "jankyFrames": 1,
-      "jankyPercent": 0.08857395925597875,
-      "busyMs": 8967,
-      "idleMs": 10059,
-      "taskMs": 9019,
-      "scriptMs": 6333,
-      "layoutMs": 1712,
-      "styleMs": 108,
-      "busyMsPerEvent": 2.24175,
-      "benchCpuMs": 461.358,
+      "longTaskTotalMs": 185,
+      "longTaskMaxMs": 185,
+      "frames": 1003,
+      "jankyFrames": 2,
+      "jankyPercent": 0.19940179461615154,
+      "busyMs": 17713,
+      "idleMs": 1663,
+      "taskMs": 17735,
+      "scriptMs": 12928,
+      "layoutMs": 3529,
+      "styleMs": 121,
+      "busyMsPerEvent": 4.42825,
+      "benchCpuMs": 560.891,
       "appStoreUpdates": null,
       "renderedStreamingText": true,
       "topFunctions": [
         {
-          "key": "(anonymous) @ index-C4XB3mcb.js:247",
-          "ms": 1729
+          "key": "(anonymous) @ index-CipNOHVj.js:247",
+          "ms": 3547
         },
         {
-          "key": "b @ index-C4XB3mcb.js:59",
-          "ms": 1115
+          "key": "b @ index-CipNOHVj.js:59",
+          "ms": 2273
+        },
+        {
+          "key": "E @ index-CipNOHVj.js:59",
+          "ms": 1534
+        },
+        {
+          "key": "n @ index-CipNOHVj.js:59",
+          "ms": 1364
+        },
+        {
+          "key": "R @ index-CipNOHVj.js:59",
+          "ms": 1350
         },
         {
           "key": "(program) @ (vm):0",
-          "ms": 844
-        },
-        {
-          "key": "E @ index-C4XB3mcb.js:59",
-          "ms": 764
-        },
-        {
-          "key": "R @ index-C4XB3mcb.js:59",
-          "ms": 710
-        },
-        {
-          "key": "n @ index-C4XB3mcb.js:59",
-          "ms": 660
+          "ms": 1257
         }
       ]
     },
@@ -181,39 +173,39 @@
       "longTaskCount": 0,
       "longTaskTotalMs": 0,
       "longTaskMaxMs": 0,
-      "frames": 1142,
+      "frames": 1143,
       "jankyFrames": 0,
       "jankyPercent": 0,
-      "busyMs": 490,
-      "idleMs": 18556,
-      "taskMs": 507,
-      "scriptMs": 38,
-      "layoutMs": 1,
-      "styleMs": 129,
+      "busyMs": 494,
+      "idleMs": 18555,
+      "taskMs": 521,
+      "scriptMs": 40,
+      "layoutMs": 0,
+      "styleMs": 138,
       "busyMsPerEvent": 0,
-      "benchCpuMs": 623.247,
+      "benchCpuMs": 597.732,
       "appStoreUpdates": null,
       "renderedStreamingText": true,
       "topFunctions": [
         {
           "key": "(program) @ (vm):0",
-          "ms": 425
+          "ms": 431
         },
         {
           "key": "(garbage collector) @ (vm):0",
-          "ms": 28
+          "ms": 21
         },
         {
           "key": "requestAnimationFrame @ (vm):0",
-          "ms": 6
+          "ms": 7
         },
         {
           "key": "(anonymous) @ (vm):0",
-          "ms": 4
+          "ms": 5
         },
         {
-          "key": "tf @ index-C4XB3mcb.js:49",
-          "ms": 2
+          "key": "tf @ index-CipNOHVj.js:49",
+          "ms": 3
         },
         {
           "key": "tick @ (vm):101",

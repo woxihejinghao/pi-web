@@ -27,6 +27,19 @@ export const IDLE_TIMEOUT_MS = Number(process.env.PI_WEB_SIMPLE_IDLE_MS ?? 10 * 
 export const MAX_ACTIVE_SESSIONS = Number(process.env.PI_WEB_SIMPLE_MAX_SESSIONS ?? 8);
 
 /**
+ * How much one SSE connection may buffer while its socket is backed up.
+ *
+ * `res.write` returning false means Node's own buffer is full — the client is
+ * not draining fast enough. Writing anyway is what lets a stalled stream grow
+ * without bound (the benchmark held ~690MB across four slow readers). Past this
+ * many bytes the connection is dropped instead; the browser reconnects and
+ * re-reads an authoritative snapshot.
+ */
+export const SSE_MAX_BUFFERED_BYTES = Number(
+  process.env.PI_WEB_SIMPLE_SSE_BUFFER ?? 4 * 1024 * 1024,
+);
+
+/**
  * When set, both session lookup and every spawned pi process use this session
  * root instead of pi's default. Keeps the app (and its verification runs) from
  * touching the user's real session history.

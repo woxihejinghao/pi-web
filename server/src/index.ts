@@ -6,6 +6,7 @@ import { registry } from "./registry.ts";
 import { createRequestHandler } from "./routes.ts";
 import { createStaticHandler } from "./static.ts";
 import { SessionWatcher } from "./watch.ts";
+import { WorkspaceWatcher } from "./workspace-watch.ts";
 import { pendingUiRequests } from "./ui-requests.ts";
 
 // Single bridge from process-level session activity to the browser stream.
@@ -50,6 +51,11 @@ const stopSweeper = registry.startSweeper();
 const watcher = new SessionWatcher({ registry, bus });
 await watcher.start();
 
+// Notices working-tree edits so the changes panel does not need a manual
+// refresh after an editor save, a formatter, or a terminal `git` command.
+const workspaceWatcher = new WorkspaceWatcher({ bus });
+await workspaceWatcher.start();
+
 server.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EADDRINUSE") {
     console.error(`[pi-web-simple] port ${PORT} is already in use`);
@@ -79,6 +85,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`[pi-web-simple] ${signal} received, stopping sessions`);
   stopSweeper();
   watcher.stop();
+  workspaceWatcher.stop();
   server.close();
   await registry.closeAll(`shutdown:${signal}`);
   process.exit(0);

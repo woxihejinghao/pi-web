@@ -43,20 +43,34 @@ interface ClientStats {
   messageUpdates: number;
   settled: number;
   latencies: number[];
+  /** 从 hello 帧拿到的流 id，用于后续订阅一个会话。 */
+  connectionId: string | null;
 }
 
-const newClientStats = (): ClientStats => ({ messageUpdates: 0, settled: 0, latencies: [] });
+const newClientStats = (): ClientStats => ({
+  messageUpdates: 0,
+  settled: 0,
+  latencies: [],
+  connectionId: null,
+});
 
 function handleSseBlock(block: string, stats: ClientStats): void {
+  let eventLine: string | null = null;
   let dataLine: string | null = null;
   for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) eventLine = line.slice(6).trim();
     if (line.startsWith("data:")) dataLine = line.slice(5).trim();
   }
   if (!dataLine) return;
-  let payload: { type?: string; event?: { type?: string; _t?: number } };
+  let payload: { type?: string; connectionId?: string; event?: { type?: string; _t?: number } };
   try {
     payload = JSON.parse(dataLine);
   } catch {
+    return;
+  }
+  // hello 是订阅的入口：拿到 connectionId 才能把这条流指到一个会话上。
+  if (eventLine === "hello") {
+    if (typeof payload.connectionId === "string") stats.connectionId = payload.connectionId;
     return;
   }
   if (payload.type !== "session_event" || !payload.event) return;
@@ -161,6 +175,23 @@ async function runScenario(n: number, clientCount: number): Promise<ScenarioReco
     ),
   );
 
+  // 模拟真实前端：每个标签页只订阅它正在看的那个会话。这里全部指向会话 0，
+  // 于是服务端的扇出倍率从 N×M 降到 M —— 其余 N-1 个会话的 token 流一个客户端都不发。
+  const subscribedTo = handles[0]!.sessionPath;
+  await waitFor(() => stats.every((clientStats) => clientStats.connectionId !== null), 5_000);
+  await Promise.all(
+    stats.map((clientStats) =>
+      fetch(`http://127.0.0.1:${port}/api/events/subscription`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          connectionId: clientStats.connectionId,
+          sessionPath: subscribedTo,
+        }),
+      }),
+    ),
+  );
+
   const cpuBefore = process.cpuUsage();
   const rssBeforeMb = process.memoryUsage().rss / 1024 ** 2;
   const startedAt = Date.now();
@@ -177,9 +208,8 @@ async function runScenario(n: number, clientCount: number): Promise<ScenarioReco
 
   const latencies = stats.flatMap((clientStats) => clientStats.latencies).sort((a, b) => a - b);
   const receivedEvents = stats.reduce((sum, clientStats) => sum + clientStats.messageUpdates, 0);
-  // 每个客户端都应看到全部事件；没有客户端时无接收方，不计入丢失。
-  const expectedPerClient = n * EVENTS;
-  const expectedEvents = clientCount === 0 ? 0 : expectedPerClient * clientCount;
+  // 每个客户端只订阅了会话 0，所以它应看到该会话的 EVENTS 个事件，不是全部会话的。
+  const expectedEvents = clientCount === 0 ? 0 : EVENTS * clientCount;
 
   const record: ScenarioRecord = {
     n,

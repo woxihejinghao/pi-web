@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import type { EventBus } from "./bus.ts";
+import { wantsFrame, type EventBus } from "./bus.ts";
 import { BUILTIN_COMMANDS, runBuiltinCommand } from "./commands.ts";
 import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
 import type { StaticHandler } from "./static.ts";
@@ -87,6 +88,7 @@ import {
   type LanguagePreference,
   type TranscriptDisplay,
 } from "./store.ts";
+import { SSE_MAX_BUFFERED_BYTES } from "./config.ts";
 
 export interface RequestContext {
   req: IncomingMessage;
@@ -117,6 +119,11 @@ export interface RouteDeps {
    * Vite owns the browser-facing port there and proxies `/api` here.
    */
   staticHandler?: StaticHandler | null;
+  /**
+   * Bytes one SSE connection may buffer before it is dropped. Defaults to
+   * `SSE_MAX_BUFFERED_BYTES`; tests lower it to reach the limit in a few writes.
+   */
+  sseMaxBufferedBytes?: number;
 }
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
@@ -447,7 +454,8 @@ function assertLocalRequest(req: IncomingMessage): void {
  * tests can drive a stub pi process and a private storage root.
  */
 export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { registry, bus, staticHandler = null } = deps;
+  const { registry, bus, staticHandler = null, sseMaxBufferedBytes = SSE_MAX_BUFFERED_BYTES } =
+    deps;
   const sessionRoot = deps.sessionRoot ?? getSessionRoot();
   const uiRequests = deps.uiRequests ?? pendingUiRequests;
   const routes: Route[] = [];
@@ -1487,6 +1495,32 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
 
   // --- event stream ---------------------------------------------------------
 
+  /**
+   * Live SSE connections, keyed by the id handed to the client in `hello`.
+   *
+   * Two things live here that the client cannot know on its own: which session
+   * this tab is reading, and how far behind its socket has fallen.
+   */
+  interface EventStream {
+    /**
+     * The session this client is reading.
+     *
+     * `undefined` (not declared yet) means send everything: the frames before
+     * the client's first subscription must not be lost, and a client that never
+     * subscribes is an older build. `null` means it is reading no session and
+     * wants none of the per-session stream.
+     */
+    sessionPath: string | null | undefined;
+    /** Set while `res.write` reported a full buffer; cleared by `drain`. */
+    throttled: boolean;
+    /** Frames held back while throttled, in order. */
+    queue: string[];
+    /** Running byte total of `queue` — the bound that actually matters. */
+    queuedBytes: number;
+  }
+
+  const streams = new Map<string, EventStream>();
+
   route("GET", "/api/events", ({ req, res }) => {
     res.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
@@ -1494,25 +1528,97 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       connection: "keep-alive",
       "x-accel-buffering": "no",
     });
-    res.write(": connected\n\n");
-    res.write(
+
+    const stream: EventStream = {
+      sessionPath: undefined,
+      throttled: false,
+      queue: [],
+      queuedBytes: 0,
+    };
+    const connectionId = randomUUID();
+    streams.set(connectionId, stream);
+
+    /**
+     * Write a frame, waiting out the socket's own buffer when it is full.
+     *
+     * `res.write` returning false is Node saying its buffer is full — the
+     * client is not reading fast enough. Ignoring that (writing anyway) is what
+     * let a stalled stream grow without bound: the benchmark held ~690MB across
+     * four slow readers. Here the frame waits for `drain`, every later frame
+     * queues behind it, and a queue past the cap ends the connection.
+     *
+     * Ending it is the only honest option. The held frames are stream deltas,
+     * so discarding them would leave the transcript wrong; a dropped socket
+     * makes `EventSource` reconnect, and the client re-reads an authoritative
+     * snapshot on the way back.
+     */
+    const write = (chunk: string): void => {
+      if (res.destroyed) return;
+      if (stream.throttled) {
+        stream.queue.push(chunk);
+        stream.queuedBytes += Buffer.byteLength(chunk);
+        if (stream.queuedBytes > sseMaxBufferedBytes) {
+          stream.queue.length = 0;
+          stream.queuedBytes = 0;
+          res.destroy();
+        }
+        return;
+      }
+      if (!res.write(chunk)) stream.throttled = true;
+    };
+
+    res.on("drain", () => {
+      stream.throttled = false;
+      while (stream.queue.length > 0) {
+        const next = stream.queue.shift()!;
+        stream.queuedBytes -= Buffer.byteLength(next);
+        if (!res.write(next)) {
+          stream.throttled = true;
+          return;
+        }
+      }
+    });
+
+    // Ask the browser to come back within a second: a reconnect only costs a
+    // snapshot read, and waiting out its multi-second default stalls the UI.
+    write("retry: 1000\n\n");
+    write(": connected\n\n");
+    write(
       `event: hello\ndata: ${JSON.stringify({
+        connectionId,
         activeSessions: registry.list().map((handle) => handle.sessionPath),
       })}\n\n`,
     );
 
     const unsubscribe = bus.subscribe((event) => {
-      res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      if (!wantsFrame(stream.sessionPath, event)) return;
+      write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     });
-    const heartbeat = setInterval(() => res.write(": ping\n\n"), 20_000);
+    const heartbeat = setInterval(() => write(": ping\n\n"), 20_000);
     heartbeat.unref?.();
 
     const cleanup = () => {
       clearInterval(heartbeat);
       unsubscribe();
+      streams.delete(connectionId);
     };
     req.on("close", cleanup);
     req.on("error", cleanup);
+  });
+
+  /**
+   * Point a live stream at the session its tab is reading.
+   *
+   * The client calls this on every session switch. Until it lands the stream
+   * still carries everything, so a switch never races the filter.
+   */
+  route("POST", "/api/events/subscription", ({ res, body }) => {
+    const payload = asObject(body);
+    const stream = streams.get(requireString(payload, "connectionId"));
+    if (!stream) throw notFound("no live event stream with that id");
+    stream.sessionPath =
+      payload.sessionPath === null ? null : requireString(payload, "sessionPath");
+    json(res, 200, { ok: true });
   });
 
   // --- dispatch -------------------------------------------------------------

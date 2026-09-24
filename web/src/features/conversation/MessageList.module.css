@@ -39,12 +39,17 @@
  * dsh's jump disc: 36px, opaque, the thinnest possible edge and a soft lift.
  * Opaque because it floats over live text — a translucent disc is unreadable
  * the moment it covers a code block — and the edge is what keeps it from
- * melting into a pale one. It sits a little further in than the rail so the two
- * do not overlap on a tall session.
+ * melting into a pale one.
+ *
+ * Its right edge is the composer card's right edge rather than a fixed 30px off
+ * the scrollport. The card is 780px wide and centred, with the wrap's 24px
+ * inset taking over once the viewport can no longer fit that, so the disc
+ * tracks the input at every width. The rail stays clear on its own: it only
+ * shows above 900px, where this offset is already past the rail's 30px gutter.
  */
 .jump {
   position: absolute;
-  right: 30px;
+  right: max(24px, calc((100% - 780px) / 2));
   bottom: 0;
   display: flex;
   align-items: center;

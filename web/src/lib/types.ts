@@ -335,6 +335,7 @@ export type BusEvent =
   | { type: "session_event"; sessionPath: string; event: SessionEvent }
   | { type: "session_closed"; sessionPath: string; reason: string }
   | { type: "session_external_changed"; sessionPath: string; modifiedAt: string }
+  | { type: "workspace_changed"; projectPath: string }
   | { type: "projects_changed" }
   | { type: "sessions_changed"; projectPath: string };
 

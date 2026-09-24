@@ -7,8 +7,10 @@ const refusalNotice = (
   overflow: number,
 ): ReturnType<typeof refusalNoticeOf> => refusalNoticeOf(refusals, overflow, zh);
 import {
+  MAX_IMAGE_DIMENSION,
   MAX_IMAGES_PER_MESSAGE,
   addImages,
+  fitScale,
   imageBlocksOf,
   imageDataUrl,
   isAcceptedImageType,
@@ -71,6 +73,23 @@ describe("isAcceptedImageType", () => {
     expect(isAcceptedImageType("image/svg+xml")).toBe(false);
     expect(isAcceptedImageType("application/pdf")).toBe(false);
     expect(isAcceptedImageType("")).toBe(false);
+  });
+});
+
+describe("fitScale", () => {
+  it("leaves an image already inside the bound alone", () => {
+    expect(fitScale(800, 600)).toBe(1);
+    expect(fitScale(MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION)).toBe(1);
+  });
+
+  it("scales the longest edge down to the bound", () => {
+    expect(fitScale(3136, 1568)).toBeCloseTo(0.5);
+    expect(fitScale(1000, 3136)).toBeCloseTo(MAX_IMAGE_DIMENSION / 3136);
+  });
+
+  it("treats a sizeless decode as nothing to do", () => {
+    // A zero dimension must not become a divide-by-zero canvas.
+    expect(fitScale(0, 0)).toBe(1);
   });
 });
 

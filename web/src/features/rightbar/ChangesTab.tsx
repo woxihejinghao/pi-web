@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { RefreshIcon } from "../../components/icons.tsx";
 import { api } from "../../lib/api.ts";
@@ -8,7 +8,8 @@ import { CommitBar, HistoryList } from "./ChangesFooter.tsx";
 import { TreeChevronIcon } from "./rightbar-icons.tsx";
 import pane from "./Pane.module.css";
 import styles from "./ChangesTab.module.css";
-import { useT } from "../../lib/app-state.ts";
+import { appStore, useT, workspaceChanged } from "../../lib/app-state.ts";
+import { useStoreSelector } from "../../lib/store.ts";
 
 /**
  * The project's changes, with the four things a git panel is for: committing,
@@ -37,19 +38,62 @@ export function ChangesTab({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Invalidates in-flight reads so an older reply cannot overwrite a newer one. */
+  const requestRef = useRef(0);
+  /** Read by the workspace subscription, which must not refresh under a write. */
+  const busyRef = useRef(false);
 
   const load = useCallback(async (): Promise<void> => {
+    const request = ++requestRef.current;
     setLoadError(null);
     try {
-      setView(await api.getGitStatus(projectId));
+      const next = await api.getGitStatus(projectId);
+      if (request === requestRef.current) setView(next);
     } catch (err) {
-      setLoadError((err as Error).message);
+      if (request === requestRef.current) setLoadError((err as Error).message);
     }
   }, [projectId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const projects = useStoreSelector(appStore, (state) => state.projects);
+  const projectPath = useMemo(
+    () => projects.find((project) => project.id === projectId)?.path ?? null,
+    [projects, projectId],
+  );
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  /**
+   * Follow edits made outside this panel — an editor save, a formatter, or a
+   * `git` command in a terminal. The server watches the working tree and says
+   * only that something moved; whether that is worth a `git status` read is
+   * decided here, and only while the panel is on screen, since this effect is
+   * the mount.
+   */
+  useEffect(() => {
+    if (projectPath === null) return;
+    let timer: number | null = null;
+    const unsubscribe = workspaceChanged.subscribe((payload) => {
+      if (payload.projectPath !== projectPath) return;
+      // A write re-reads on its own; refreshing underneath it would race its
+      // own reply back to a stale list.
+      if (busyRef.current) return;
+      if (timer !== null) clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void load();
+      }, 300);
+    });
+    return () => {
+      unsubscribe();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [projectPath, load]);
 
   /**
    * Every write goes through here.
@@ -60,6 +104,8 @@ export function ChangesTab({
    */
   const run = useCallback(async (action: () => Promise<GitStatusView>) => {
     setBusy(true);
+    // A write outranks any read still in flight; its reply is the truth.
+    requestRef.current += 1;
     setActionError(null);
     setNotice(null);
     try {
@@ -99,6 +145,7 @@ export function ChangesTab({
   const commit = useCallback(
     async (message: string): Promise<boolean> => {
       setBusy(true);
+      requestRef.current += 1;
       setActionError(null);
       setNotice(null);
       try {
@@ -118,6 +165,7 @@ export function ChangesTab({
 
   const push = useCallback(() => {
     setBusy(true);
+    requestRef.current += 1;
     setActionError(null);
     setNotice(null);
     api

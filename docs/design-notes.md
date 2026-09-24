@@ -93,6 +93,12 @@ Web 不会静默合并两边的写入 —— 那样会互相覆盖 leaf 指针�
 
 **流式渲染没有累积快照**：`message_update` 只带增量，客户端必须按 `contentIndex` 自行拼装，并以 `message_end.message` 为准。
 
+**SSE 只把「你正在看的那个会话」的 token 流发给你。** 一个 pi 进程的事件会广播给所有连接，但 `message_update` 是每 token 一条、而且带的是**增量**：四个标签页各自复制全部会话的全部事件时，扇出倍率就是 `会话数 × 客户端数`，实测 8 会话 × 4 客户端能把服务端写队列顶到 688MB、P50 延迟 1.2 秒（见 [bench](../bench/README.md)）。所以 `bus.ts` 的 `wantsFrame` 丢掉「不是这条连接订阅的会话」的 `message_update` / `tool_execution_update` —— 用黑名单而不是白名单：`agent_start` / `agent_settled`（侧栏状态点）、`extension_ui_request`（被阻塞的扩展对话框）、项目与会话列表照常发给每个客户端，pi 以后新增事件类型也不会被漏掉。客户端在 `hello` 里拿到 connection id，切会话时 `POST /api/events/subscription` 声明订阅；**声明之前服务端照发全部**，所以一次切换不会因为竞态丢帧，旧客户端也只是退化成原来的行为。
+
+**连接自带背压，慢客户端会被断开而不是无限缓冲。** `res.write` 返回 false 意味着 Node 自己的写缓冲满了；忽略它继续写，就是上面那 688MB 的来路。现在返回 false 就暂停投递、把后续帧排队等 `drain`，队列超过 `SSE_MAX_BUFFERED_BYTES`（默认 4MB）就断开这条连接 —— `message_update` 带的是增量，丢弃会把转录写坏，断开反而让 `EventSource` 在一秒内重连（服务端发 `retry: 1000`）并重读一份权威快照。重连时前端会重新读一次当前会话（`streamRestored` 信号），因为断线期间漏掉的增量不可能被下一条补上。
+
+**流式渲染有一个 50ms 的发布地板。** `message_update` 只按帧合并（`requestAnimationFrame`）在短回复里够用，但回复越长越不够：每个 delta 都要把**整段** partial 重新交给 react-markdown 解析，而帧率是固定的，于是成本随回复长度线性增长。压测（[bench 场景 C](../bench/README.md)，17.6 秒的长流式）里无节流时当前会话占到主线程 58%、8 会话并发直接打满；把发布下限提到 50ms（`STREAM_REPAINT_MS`）后两项都减半以上，观感仍是连续吐字。节流只作用于 token 流：`message_end`、`agent_settled`、工具结果这些事件仍然立即发布——它们是不能迟到的到达。
+
 **延迟都被推到了有预期的地方**：界面从不等 pi。选中项目时后台预热一个空会话（点 **+** 实测 2–3ms，对比冷启动 3220ms），预热未就绪时退化到纯前端 draft，点已有会话则直接从磁盘读转录（见下）。进程启动的开销要么提前付掉，要么发生在用户已经在“等待回复”的心理预期里。待发消息通过 `pendingPrompt` 交接给真实会话，切换会话时会丢弃，不会误投。
 
 **侧栏跟随 dsh 的信息层级**：顶部是全宽「新会话」按钮，下方是「工作区」分区，每个工作区展开后把它的会话嵌在下一层（会话行不重复文件夹图标，右侧只给紧凑的 `7天`）。工作区支持按目录祖先关系嵌套（`/a` 包的 `/a/b` 收在它下面，没有注册父目录的保持平铺）；每个工作区默认只列 5 条会话，其余折叠为「展开其余 N 个会话」。选中项用浅底 + 文字加粗，而不是只换背景色。
@@ -116,6 +122,8 @@ Web 不会静默合并两边的写入 —— 那样会互相覆盖 leaf 指针�
 **内嵌浏览器是沙箱 iframe，历史由自己记。** 地址栏与工具栏的后退/前进都在本地 `history[]`/`historyIndex` 里（每条上限 50 项），输入新地址会像浏览器一样截断前进项。默认沙箱与 dsh 相同（`allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox`），工具栏保留一个「仅本次生效」的关闭开关。**一处与 dsh 不同的取舍**：dsh 给无 scheme 的地址一律补 `https://`，这里对回环地址（`localhost`、`*.localhost`、`127.*`、`::1`）补 `http://` —— 这个标签页存在的理由就是本地 dev server，给它一个 https 地址等于永远打不开，而「请自己补 scheme」对一个地址框来说不是个好答案；其余主机仍然补 https。`file:` / `data:` / `javascript:` / `mailto:` 一律拒绝，带用户名的地址也拒绝。
 
 **变更面板读的是两份 diff，而不是一份 `git diff HEAD`。** 已暂存是 `git diff --cached`（index 对 HEAD），未暂存是 `git diff`（工作区对 index）—— 同一个文件可以同时在两边（`MM`）。一份合并的 diff 无法告诉面板「暂存这个文件」到底会搬走什么，而暂存之后未暂存那一份必须成对消失：这正是两条命令划出的那条界线。服务端（`git.ts`）先用 `git status --porcelain -z` 拿状态（`-z` 给的是原始路径，不用去解 git 的引号转义，含换行的路径也不会被当成记录边界），再对**每个文件每一侧**单独跑一次 diff。为什么不跑一次合并的 diff 再在 `--git` 块头切分：那样得去复刻 git 对含空格/非 ASCII 路径的引号规则，而逐文件的另一个好处是**限制才有意义** —— 一个巨大的文件（压缩后的 bundle、lockfile）只截断它自己，而不是拖垮整个面板。所有 git 调用走 `execFile` 的参数数组（从不拼 shell 字符串），并带 `GIT_OPTIONAL_LOCKS=0`（只读观察者不写 index，不跟用户开着的终端抢 index 锁）、`GIT_TERMINAL_PROMPT=0`（需要凭据时立即失败，而不是卡在没人看得到的提示上）与超时/缓冲上限；单文件补丁上限 256 KB，文件数上限 200（超出报 `omittedFiles`）。
+
+**变更面板跟着工作区文件走，而不是等用户点刷新。** 服务端每注册一个项目就递归 watch 它的工作树（`workspace-watch.ts`），debounce 400ms 后只发一个 `workspace_changed`——它只说「有东西动了」，不说是什么，也不读 git。要不要重读 `git status` 由面板决定：`node_modules` 的路径段在服务端就被滤掉（依赖目录的 churn 是变更面板唯一不需要为之重载的东西），面板只在**挂载时**订阅（也就是只有它开着才订阅），而且写操作进行中不自动刷新——重读还在路上时再叠一次，只会让旧回复有机会覆盖新状态。
 
 **每个写操作都回答「重新读到的状态」，而不是一句 ok。** 暂存/取消暂存、提交、推送、还原、切分支都是如此：面板从不展示一个它自己根据「预期 git 会怎么干」算出来的列表。git 的拒绝（没有暂存的改动、没配 user.email、推送被拒）被包成 `GitError` 并**原样带上 git 自己的那句话**（`nothing to commit, working tree clean`），路由层映射成 400 —— 这类失败是用户的动作没落地，不是服务器坏了；页面上就显示在按钮旁边。提交后新 commit 的 hash 也**不是从 `git commit` 的输出里抓的**，而是重新读一次历史的首条，这样即使 hooks 在提交过程中改写了历史，面板也不会指向一个从未存在的 hash。
 

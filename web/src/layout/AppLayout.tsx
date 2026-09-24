@@ -5,6 +5,7 @@ import { Rightbar } from "../features/rightbar/Rightbar.tsx";
 import { SettingsPage } from "../features/settings/SettingsPage.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { actions, appStore, useT } from "../lib/app-state.ts";
+import { setEventSession } from "../lib/sse.ts";
 import { useStore } from "../lib/store.ts";
 import styles from "./AppLayout.module.css";
 
@@ -20,6 +21,13 @@ export function AppLayout() {
   useEffect(() => {
     void actions.bootstrap();
   }, []);
+
+  // The server fans a session's token stream out only to the tab reading it;
+  // this is how it learns which session that is. Fire-and-forget, and a no-op
+  // until the stream greets us with its id.
+  useEffect(() => {
+    setEventSession(state.selectedSessionPath);
+  }, [state.selectedSessionPath]);
 
   // The settings page replaces the shell instead of sitting over it. That does
   // unmount the conversation, and remounting costs a transcript read — a few
