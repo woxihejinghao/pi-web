@@ -3,6 +3,14 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.1] - 2026-09-24
+
+### 变更
+
+- **README 拆成中英两份**：[README.md](./README.md) 为英文（npm 与 [pi.dev 画廊](https://pi.dev/packages/pi-web-simple) 展示的就是这一份），[README.zh-CN.md](./README.zh-CN.md) 为中文，两份顶部一键互切。切换链接用 GitHub 绝对地址而不是相对路径，因为相对链接在 npm 页面上会 404。
+- **`files` 补上 `README.zh-CN.md`**：npm 只默认带 `README.md`，不加这一项包里就没有中文版，切换链接会指向一个不存在的文件。
+- [CONTRIBUTING.md](./CONTRIBUTING.md) 与 [设计说明](./docs/design-notes.md) 里指向 README 的链接改指中文版（英文版里没有中文锚点）。
+
 ## [0.2.0] - 2026-09-24
 
 ### 新增
