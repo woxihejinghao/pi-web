@@ -22,7 +22,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CdpConnection, findChromeTarget } from "./lib/cdp.mjs";
 import { sanitizeProjectDirName, writeSessionFile } from "./lib/fixtures.mjs";
@@ -529,7 +529,8 @@ writeFileSync(
       sessions: SESSIONS,
       turns: TURNS,
       eventsPerSession: EVENTS,
-      currentSession,
+      // 只留 basename：完整路径含本机的仓库位置与 pid 临时目录。
+      currentSession: basename(currentSession),
       records,
     },
     null,

@@ -18,6 +18,8 @@
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "SECURITY.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "README.md"
   ],
   "keywords": [
@@ -30,7 +32,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/woxihejinghao/pi-web.git"
+    "url": "git+https://github.com/woxihejinghao/pi-web.git"
   },
   "homepage": "https://github.com/woxihejinghao/pi-web#readme",
   "bugs": {
@@ -42,7 +44,7 @@
     "start": "node bin/pi-web-simple.js",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",
-    "prepublishOnly": "pnpm build && pnpm test"
+    "prepublishOnly": "pnpm typecheck && pnpm build && pnpm test && node scripts/verify-dist.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.86.1"

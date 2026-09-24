@@ -19,19 +19,38 @@
  *   SETTLE_MS  握手完成后等待多久再量内存（默认 5000；MCP 子进程可能延迟启动）
  *   SAMPLE_MS  CPU 采样窗口（默认 2000）
  *   VARY_CWD   1 = 每个会话用不同的工作区目录（默认 0，同一个）
- *   PI_CLI     pi 的 dist/cli.js 路径
+ *   PI_CLI     pi 的 dist/cli.js 路径（默认按 workspace 布局自动解析）
  */
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { cpus, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cpuPercentBetween, fmtMb, processTree, psSnapshot, sleep } from "./lib/ps.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CLI =
-  process.env.PI_CLI ??
-  "/Users/milan/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
+
+/** 结果 JSON 里记录的可移植标识（不写本机绝对路径）。 */
+const PI_CLI_LABEL = "@earendil-works/pi-coding-agent/dist/cli.js";
+
+/**
+ * `dist/cli.js` 不在包的 exports 里（只暴露 "." / "./rpc-entry" / "./client"），
+ * 所以 require.resolve 走不通；这里按 workspace 布局直接找文件，PI_CLI 可覆盖。
+ */
+function resolvePiCli() {
+  if (process.env.PI_CLI) return process.env.PI_CLI;
+  const candidates = [
+    join(HERE, "..", "server", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"),
+    join(HERE, "..", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"),
+  ];
+  const hit = candidates.find((p) => existsSync(p));
+  if (!hit) {
+    throw new Error("找不到 pi CLI：先跑 pnpm install，或用 PI_CLI 指定 dist/cli.js 的路径。");
+  }
+  return hit;
+}
+
+const CLI = resolvePiCli();
 
 const NS = (process.env.NS ?? "1,2,4,8")
   .split(",")
@@ -229,7 +248,7 @@ writeFileSync(
     {
       at: new Date().toISOString(),
       machine: { cpu: cpus()[0]?.model, cores: cpus().length, memGb: totalmem() / 1024 ** 3 },
-      cli: CLI,
+      cli: process.env.PI_CLI ? CLI : PI_CLI_LABEL,
       varyCwd: VARY_CWD,
       settleMs: SETTLE_MS,
       sampleMs: SAMPLE_MS,

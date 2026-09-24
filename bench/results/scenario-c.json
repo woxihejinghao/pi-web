@@ -3,7 +3,7 @@
   "sessions": 8,
   "turns": 40,
   "eventsPerSession": 2000,
-  "currentSession": "/Users/milan/Desktop/pi-web-simple/bench/.bench-tmp/frontend-20625/sessions/--Users-milan-Desktop-pi-web-simple-bench-.bench-tmp-frontend-20625-project--/bench-07.jsonl",
+  "currentSession": "bench-07.jsonl",
   "records": [
     {
       "label": "0: 基线（无 streaming）",

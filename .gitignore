@@ -21,6 +21,9 @@ coverage/
 # Benchmark scratch space (results/scenario-*.json is kept)
 bench/.bench-tmp/
 
+# Packed tarballs from `npm pack`
+*.tgz
+
 # OS and editors
 .DS_Store
 .idea/

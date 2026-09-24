@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · build · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # 版本取自 package.json 的 packageManager 字段（pnpm@9.15.4）。
+      - uses: pnpm/action-setup@v4
+
+      # engines 要求 >=22.19.0；`22` 会取最新的 22.x。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 构建
+        run: pnpm build
+
+      - name: 测试
+        run: pnpm test
+
+      # 与 prepublishOnly 同一道闸门：files 里的 server/build 与 web/dist 不在 git 里，
+      # 构建失败时 npm 会静默发空包。这里让它在每次 CI 就暴露。
+      - name: 校验构建产物
+        run: node scripts/verify-dist.mjs

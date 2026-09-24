@@ -1,5 +1,19 @@
 # pi-web-simple
 
+A local web UI for the [pi](https://github.com/earendil-works/pi-coding-agent) coding agent — one local directory = one project, each project holding that directory's sessions. The agent core is pi itself, attached over `pi --mode rpc` subprocesses. The project management model and visual language follow [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness).
+
+```sh
+npx pi-web-simple    # serves the UI + API on http://127.0.0.1:5319
+```
+
+Requires Node.js `>= 22.19.0`. Binds to `127.0.0.1` only.
+
+**Highlights** — server-side directory picker · multi-session, one idle-recycled pi process per session · SSE streaming chat with Markdown + shiki highlighting · image input · session fork and topic tree · model picker · right sidebar (file tree, preview, git changes, embedded browser) · full git panel (stage, commit, push, restore, switch branch) · model / plugin / MCP settings.
+
+> 以下为中文文档。English contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+---
+
 一个基于 [pi](https://github.com/earendil-works/pi-coding-agent) 的本地项目管理 / 对话 Web UI。
 
 项目管理模型与界面风格参考 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)：**一个本地目录 = 一个项目**，项目下挂该目录的会话。agent 内核是 pi 本身，通过 `pi --mode rpc` 子进程接入。

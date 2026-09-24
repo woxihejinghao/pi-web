@@ -5,7 +5,7 @@
     "cores": 8,
     "memGb": 16
   },
-  "cli": "/Users/milan/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
+  "cli": "@earendil-works/pi-coding-agent/dist/cli.js",
   "varyCwd": false,
   "settleMs": 5000,
   "sampleMs": 2000,
