@@ -14,7 +14,7 @@ Requires Node.js `>= 22.19.0`. Binds to `127.0.0.1` only.
 
 | Dark theme | Light theme |
 | :---: | :---: |
-| ![Main view in the dark theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.png) | ![Main view in the light theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.png) |
+| ![Main view in the dark theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.en.png) | ![Main view in the light theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.en.png) |
 
 *Left: dark theme, right: light theme (follows the system by default, and can be pinned in settings). Both show the same session: workspace and sessions in the left column, the conversation with its thinking and tool calls (read / edit / write / Bash) in the middle, and the file changes on the right, where they can be staged, committed and pushed directly.*
 

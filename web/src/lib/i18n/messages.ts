@@ -763,7 +763,7 @@ export const en: Record<MessageKey, string> = {
   "slash.extension": "Extension",
 
   "stats.title": "Session stats",
-  "stats.counts": "{turns} turns · {steps} steps",
+  "stats.counts": "{turns} turn(s) · {steps} step(s)",
   "stats.modelTime": "Model time",
   "stats.toolTime": "Tool time",
   "stats.ttft": "Avg time to first token (TTFT)",
