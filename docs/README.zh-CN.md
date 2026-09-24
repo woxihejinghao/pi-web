@@ -96,18 +96,18 @@ pnpm test        # 前后端测试（vitest）
 
 ## 更多文档
 
-- [设计说明](./docs/design-notes.md)——为什么是这样：架构、与 pi CLI 并存、每个面板的实现取舍与踩过的坑。
-- [已知限制](./docs/known-limitations.md)——目前做不到什么，以及那些行为背后的取舍；装之前值得扫一遍。
-- [环境变量](./docs/configuration.md)——全部可选，含默认值。
-- [网络与隐私](./docs/network-and-privacy.md)——它连不连网、数据放在哪、为什么不能暴露到公网。
-- [安全策略](./SECURITY.md)——报告漏洞的渠道，以及按设计存在、不算漏洞的行为。
+- [设计说明](./design-notes.md)——为什么是这样：架构、与 pi CLI 并存、每个面板的实现取舍与踩过的坑。
+- [已知限制](./known-limitations.md)——目前做不到什么，以及那些行为背后的取舍；装之前值得扫一遍。
+- [环境变量](./configuration.md)——全部可选，含默认值。
+- [网络与隐私](./network-and-privacy.md)——它连不连网、数据放在哪、为什么不能暴露到公网。
+- [安全策略](../SECURITY.md)——报告漏洞的渠道，以及按设计存在、不算漏洞的行为。
 
-欢迎贡献，见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+欢迎贡献，见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
 ## 许可证
 
-MIT，见 [LICENSE](./LICENSE)。
+MIT，见 [LICENSE](../LICENSE)。
 
-界面与部分服务端逻辑移植、改编自 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（MIT，Copyright (c) 2026 DeepSeek）与 [@earendil-works/pi-coding-agent](https://github.com/earendil-works/pi-coding-agent)（MIT）。逐字节复制的范围与来源清单见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)——该文件随源码分发，请勿移除。
+界面与部分服务端逻辑移植、改编自 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（MIT，Copyright (c) 2026 DeepSeek）与 [@earendil-works/pi-coding-agent](https://github.com/earendil-works/pi-coding-agent)（MIT）。逐字节复制的范围与来源清单见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)——该文件随源码分发，请勿移除。
 
 本项目是非官方项目，与 pi（Earendil Works）和 DeepSeek 均无隶属关系；π 名称与标识归各自所有者。

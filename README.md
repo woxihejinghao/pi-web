@@ -1,6 +1,6 @@
 # pi-web-simple
 
-**English** · [简体中文](https://github.com/woxihejinghao/pi-web/blob/main/README.zh-CN.md)
+**English** · [简体中文](https://github.com/woxihejinghao/pi-web/blob/main/docs/README.zh-CN.md)
 
 A local web UI for the [pi](https://github.com/earendil-works/pi-coding-agent) coding agent — one local directory = one project, each project holding that directory's sessions. The agent core is pi itself, attached over `pi --mode rpc` subprocesses. The project management model and visual language follow [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness).
 

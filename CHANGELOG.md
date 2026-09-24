@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.2] - 2026-09-24
+
+### 修复
+
+- **npm 页面与 registry 显示的是中文版 README**。npm 用 glob `{README,README.*}` 挑包说明，而它返回的顺序是 `[README.zh-CN.md, README.md]`（不是字母序），命中第一个就 `break`——于是 0.2.1 里 `npm view pi-web-simple readme`、npm 网页、以及任何读 registry 的地方（包括画廊）拿到的都是中文版。中文版移到 [docs/README.zh-CN.md](./docs/README.zh-CN.md)，根目录只剩 `README.md`，候选就只有一个；它内部的相对链接（`docs/*` → `./*`，根目录文件 → `../*`）按新位置全部改过，英文版与 CONTRIBUTING、设计说明里的链接也跟着改指新路径。
+
 ## [0.2.1] - 2026-09-24
 
 ### 变更
