@@ -147,7 +147,7 @@ export function ModelPicker({
         className={styles.trigger}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`模型：${label}`}
+        aria-label={t("model.currentLabel", { name: label })}
         title={model === null ? t("model.choose") : `${model.provider}/${model.id}`}
         onClick={openMenu}
       >

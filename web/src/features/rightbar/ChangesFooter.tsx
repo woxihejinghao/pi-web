@@ -74,7 +74,7 @@ export function CommitBar({
           disabled={!canCommit}
           onClick={submit}
         >
-          提交{stagedCount > 0 ? ` ${String(stagedCount)} 个文件` : ""}
+          {stagedCount > 0 ? t("footer.commitFiles", { count: stagedCount }) : t("footer.commit")}
         </button>
         <button
           type="button"
@@ -83,7 +83,7 @@ export function CommitBar({
           title={
             view.upstream === null
               ? t("footer.noUpstreamHint")
-              : `推送到 ${view.upstream}`
+              : t("footer.pushTo", { upstream: view.upstream })
           }
           onClick={onPush}
         >

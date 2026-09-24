@@ -333,7 +333,7 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
 
             <footer className={styles.footer}>
               <div className={styles.hint} role="status">
-                {remaining === null ? "" : `${remaining} 秒后自动取消`}
+                {remaining === null ? "" : t("question.autoCancel", { seconds: remaining })}
               </div>
               <div className={styles.feedback} role="alert">
                 {error}

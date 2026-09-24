@@ -88,9 +88,9 @@ export function TreeDialog({
 
       {stats !== null && (
         <p className={styles.stats}>
-          {stats.total} 个节点
-          {stats.branches > 0 ? ` · ${String(stats.branches)} 处分叉` : " · 尚未分叉"}
-          {tree?.source === "disk" ? " · 读取自磁盘" : ""}
+          {t("tree.nodes", { count: stats.total })}
+          {stats.branches > 0 ? ` · ${t("tree.branches", { count: stats.branches })}` : ` · ${t("tree.noBranches")}`}
+          {tree?.source === "disk" ? ` · ${t("tree.fromDisk")}` : ""}
         </p>
       )}
 
@@ -143,14 +143,14 @@ function describe(
   if (entry.type === "model_change") {
     return {
       icon: "database",
-      text: `模型 · ${String(entry.provider ?? "")}/${String(entry.modelId ?? "")}`,
+      text: t("tree.model", { provider: String(entry.provider ?? ""), model: String(entry.modelId ?? "") }),
       forkable: false,
     };
   }
   if (entry.type === "thinking_level_change") {
     return {
       icon: "settings",
-      text: `思考级别 · ${String(entry.thinkingLevel ?? "")}`,
+      text: t("tree.thinkingLevel", { level: String(entry.thinkingLevel ?? "") }),
       forkable: false,
     };
   }
@@ -225,7 +225,7 @@ function TreeRow({
         <Glyph name={icon} size={14} className={styles.rowIcon} />
         <span className={styles.rowText}>{text}</span>
 
-        {branchPoint && <span className={styles.tag}>{node.children.length} 个分支</span>}
+        {branchPoint && <span className={styles.tag}>{t("tree.branchCount", { count: node.children.length })}</span>}
         {isLeaf && <span className={styles.tagLeaf}>{t("tree.current")}</span>}
         {forkable && (
           <span className={styles.tagFork} title={t("tree.forkableTitle")}>{t("tree.forkable")}</span>

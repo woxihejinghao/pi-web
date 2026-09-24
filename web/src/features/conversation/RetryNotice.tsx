@@ -45,7 +45,7 @@ export function RetryNotice({ retry }: { retry: RetryState }) {
       <div className={styles.retryDetails}>
         <div>
           <span className={styles.retryDetailLabel}>{t("retry.delay")}</span>
-          {`${Math.round(retry.delayMs)}毫秒`}
+          {t("retry.milliseconds", { value: Math.round(retry.delayMs) })}
         </div>
         {retry.errorMessage ? (
           <div>

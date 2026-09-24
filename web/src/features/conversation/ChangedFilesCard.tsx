@@ -54,7 +54,7 @@ export function ChangedFilesCard({
         <DiffIcon width={18} height={18} />
       </span>
       <span className={styles.titles}>
-        <span className={styles.title}>已编辑 {files.length} 个文件</span>
+        <span className={styles.title}>{t("editedFiles.title", { count: files.length })}</span>
         <span className={styles.stat}>{toolTally(files)}</span>
       </span>
     </>
@@ -100,7 +100,7 @@ export function ChangedFilesCard({
                   type="button"
                   className={styles.row}
                   title={file.path}
-                  aria-label={`在右侧栏预览 ${file.display}`}
+                  aria-label={t("editedFiles.previewOne", { name: file.display })}
                   onClick={() => onOpenFile?.(target)}
                 >
                   {label}
@@ -117,10 +117,10 @@ export function ChangedFilesCard({
           type="button"
           className={styles.toggle}
           aria-expanded={expanded}
-          aria-label={expanded ? t("editedFiles.collapseAll") : `展开全部 ${files.length} 个改动文件`}
+          aria-label={expanded ? t("editedFiles.collapseAll") : t("editedFiles.expandAll", { count: files.length })}
           onClick={() => setExpanded((value) => !value)}
         >
-          <span>{expanded ? t("common.collapse") : `全部 ${files.length} 个文件`}</span>
+          <span>{expanded ? t("common.collapse") : t("editedFiles.showAll", { count: files.length })}</span>
           <ChevronIcon width={14} height={14} />
         </button>
       ) : null}

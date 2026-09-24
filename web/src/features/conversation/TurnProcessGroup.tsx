@@ -39,7 +39,7 @@ export function TurnProcessGroup({
       collapsedContent={
         <>
           <span className={styles.sep} aria-hidden />
-          <span className={styles.count}>{count} 项</span>
+          <span className={styles.count}>{t("turn.processCount", { count })}</span>
         </>
       }
     >

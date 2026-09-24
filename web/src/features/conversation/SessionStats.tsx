@@ -80,7 +80,7 @@ function TimePill({
 }) {
   const t = useT();
   const { timing } = stats;
-  const counts = `${String(stats.turns)} 轮 ${String(stats.steps)} 步`;
+  const counts = t("stats.counts", { turns: stats.turns, steps: stats.steps });
   const tps =
     stats.tokensPerSecond === null
       ? null
@@ -162,7 +162,7 @@ function UsagePill({
 }) {
   const t = useT();
   const total = `${formatTokens(stats.totalTokens)} tok`;
-  const cacheHit = stats.cacheHitPercent === null ? null : `缓存命中 ${stats.cacheHitPercent}%`;
+  const cacheHit = stats.cacheHitPercent === null ? null : t("stats.cacheHitPercent", { percent: stats.cacheHitPercent });
   const { usage } = stats;
 
   return (
@@ -192,7 +192,7 @@ function UsagePill({
         <StatPanel
           icon={<Glyph name="database" size={14} />}
           title={t("stats.tokenUsage")}
-          value={`用量 ${total}`}
+          value={t("stats.usage", { total })}
         >
           {stats.model === null ? null : <StatRow label={t("stats.providerModel")} value={stats.model} route />}
           {stats.cacheHitPercent === null ? null : (

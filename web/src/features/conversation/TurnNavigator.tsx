@@ -214,7 +214,7 @@ function TurnNavigatorRail({
                   <button
                     type="button"
                     className={classes.join(" ")}
-                    aria-label={`跳转到第 ${String(item.turn)} 轮`}
+                    aria-label={t("turn.jumpTo", { turn: item.turn })}
                     aria-current={active ? "true" : undefined}
                     aria-busy={item.turn === busyTurn ? "true" : undefined}
                     aria-describedby={showing ? previewId : undefined}
@@ -237,7 +237,7 @@ function TurnNavigatorRail({
 
         {preview !== undefined && previewPosition !== undefined ? (
           <div id={previewId} role="tooltip" className={styles.preview} style={previewPosition}>
-            <div className={styles.previewPrompt}>{preview.prompt || `第 ${String(preview.turn)} 轮`}</div>
+            <div className={styles.previewPrompt}>{preview.prompt || t("turn.label", { turn: preview.turn })}</div>
             {preview.response !== "" ? (
               <div className={styles.previewResponse}>{preview.response}</div>
             ) : null}

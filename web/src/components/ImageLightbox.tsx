@@ -11,6 +11,7 @@ import { imageDataUrl } from "../lib/image-attachments.ts";
 import type { ImageBlock } from "../lib/types.ts";
 import { CloseIcon } from "./icons.tsx";
 import styles from "./ImageLightbox.module.css";
+import { useT } from "../lib/app-state.ts";
 
 /**
  * Full-size viewing for every thumbnail in the app.
@@ -36,6 +37,7 @@ interface Shown {
 }
 
 export function ImageLightboxProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const [shown, setShown] = useState<Shown | null>(null);
 
   const open = useCallback((image: ImageBlock, alt: string): void => {
@@ -63,7 +65,7 @@ export function ImageLightboxProvider({ children }: { children: ReactNode }) {
           className={styles.mask}
           role="dialog"
           aria-modal="true"
-          aria-label="图片查看"
+          aria-label={t("lightbox.title")}
           // The mask is the close target, so a click beside the picture does
           // what a click on a photo viewer always does. The comparison against
           // `currentTarget` is what keeps a click *on* the picture (or on the
@@ -77,8 +79,8 @@ export function ImageLightboxProvider({ children }: { children: ReactNode }) {
             type="button"
             className={styles.close}
             onClick={close}
-            aria-label="关闭"
-            title="关闭（Esc）"
+            aria-label={t("common.close")}
+            title={t("lightbox.closeTitle")}
           >
             <CloseIcon />
           </button>
@@ -100,23 +102,25 @@ export function ImageLightboxProvider({ children }: { children: ReactNode }) {
 export function ImageThumb({
   image,
   variant = "message",
-  alt = "图片",
+  alt,
 }: {
   image: ImageBlock;
   variant?: "message" | "user" | "tool";
   alt?: string;
 }) {
+  const t = useT();
+  const label = alt ?? t("lightbox.alt");
   const lightbox = useContext(LightboxContext);
   return (
     <button
       type="button"
       className={styles.thumb}
       data-variant={variant}
-      onClick={() => lightbox?.open(image, alt)}
-      title="点击查看大图"
-      aria-label={`查看大图：${alt}`}
+      onClick={() => lightbox?.open(image, label)}
+      title={t("lightbox.open")}
+      aria-label={t("lightbox.openLabel", { alt: label })}
     >
-      <img src={imageDataUrl(image)} alt={alt} loading="lazy" />
+      <img src={imageDataUrl(image)} alt={label} loading="lazy" />
     </button>
   );
 }

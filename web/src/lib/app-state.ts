@@ -182,6 +182,17 @@ export const appStore: Store<AppState> = createStore(initialState);
  * what makes a language switch repaint: every component that renders copy
  * subscribes, so it re-renders exactly like it does for an appearance change.
  */
+/**
+ * The translator for the language in effect right now.
+ *
+ * Actions compose user-facing notices outside React, so they cannot call a
+ * hook; reading the store at call time is what keeps a notice written in the
+ * language the user is actually looking at.
+ */
+function tr(): Translate {
+  return translator(resolveLanguage(appStore.get().settings.language));
+}
+
 export function useT(): Translate {
   const preference = useStore(appStore).settings.language;
   return useMemo(() => translator(resolveLanguage(preference)), [preference]);
@@ -342,13 +353,13 @@ export const actions = {
   async createProvider(input: ProviderInput): Promise<void> {
     const models = await api.createProvider(input);
     appStore.update((state) => ({ ...state, models }));
-    actions.setNotice(`已保存 ${input.id}。`);
+    actions.setNotice(tr()("notice.saved", { id: input.id }));
   },
 
   async updateProvider(id: string, input: Omit<ProviderInput, "id">): Promise<void> {
     const models = await api.updateProvider(id, input);
     appStore.update((state) => ({ ...state, models }));
-    actions.setNotice(`已保存 ${id}。`);
+    actions.setNotice(tr()("notice.saved", { id }));
   },
 
   async deleteProvider(id: string): Promise<void> {
@@ -394,7 +405,7 @@ export const actions = {
       // Extensions are loaded when a pi process starts, and the server retires
       // every resident one after this write — so the change lands on the next
       // message, not on the next app launch.
-      actions.setNotice(`${enabled ? "已启用" : "已停用"} ${item.name}，下一条消息生效。`);
+      actions.setNotice(tr()(enabled ? "notice.enabled" : "notice.disabled", { name: item.name }));
     } catch (err) {
       actions.setNotice((err as Error).message);
     }
@@ -427,7 +438,7 @@ export const actions = {
   async installTodoExtension(projectPath: string | null): Promise<void> {
     const todo = await api.installTodo(projectPath);
     appStore.update((state) => ({ ...state, todo }));
-    actions.setNotice("已安装 @juicesharp/rpiv-todo，下一条消息生效。");
+    actions.setNotice(tr()("notice.todoInstalled"));
   },
 
   /**
@@ -503,19 +514,21 @@ export const actions = {
   }): Promise<void> {
     const mcp = await api.saveMcpServer(input);
     appStore.update((state) => ({ ...state, mcp }));
-    actions.setNotice(`已保存 ${input.draft.name}，下一条消息生效。`);
+    actions.setNotice(tr()("notice.savedDraft", { name: input.draft.name }));
   },
 
   async deleteMcpServer(projectPath: string | null, name: string): Promise<void> {
     const mcp = await api.deleteMcpServer({ projectPath, name });
     appStore.update((state) => ({ ...state, mcp }));
-    actions.setNotice(`已删除 ${name}，下一条消息生效。`);
+    actions.setNotice(tr()("notice.deleted", { name }));
   },
 
   async importMcpConfigs(projectPath: string | null, kinds: string[]): Promise<void> {
     const mcp = await api.importMcpConfigs({ projectPath, kinds });
     appStore.update((state) => ({ ...state, mcp }));
-    actions.setNotice(`已导入 ${kinds.join("、")} 的 MCP 配置，重启后生效。`);
+    actions.setNotice(
+        tr()("notice.mcpImported", { kinds: kinds.join(tr()("notice.kindsSeparator")) }),
+      );
   },
 
   /**
@@ -530,7 +543,7 @@ export const actions = {
     try {
       const mcp = await api.setMcpServerEnabled({ projectPath, name, enabled });
       appStore.update((state) => ({ ...state, mcp }));
-      actions.setNotice(`${enabled ? "已启用" : "已停用"} ${name}，下一条消息生效。`);
+      actions.setNotice(tr()(enabled ? "notice.enabled" : "notice.disabled", { name }));
     } catch (err) {
       actions.setNotice((err as Error).message);
     }
@@ -550,8 +563,8 @@ export const actions = {
       const result = await api.restartMcp();
       actions.setNotice(
         result.closed === 0
-          ? "没有正在运行的会话进程。"
-          : `已重启 ${result.closed} 个会话进程，下一条消息会重新加载 MCP。`,
+          ? tr()("notice.noSessions")
+          : tr()("notice.restarted", { count: result.closed }),
       );
     } catch (err) {
       actions.setNotice((err as Error).message);
@@ -568,7 +581,7 @@ export const actions = {
   async installMcpAdapter(projectPath: string | null): Promise<void> {
     const mcp = await api.installMcpAdapter(projectPath);
     appStore.update((state) => ({ ...state, mcp }));
-    actions.setNotice("已安装 pi-mcp-adapter。");
+    actions.setNotice(tr()("notice.mcpAdapterInstalled"));
   },
 
   async refreshProjects(): Promise<void> {
@@ -747,7 +760,7 @@ export const actions = {
       actions.clearExternalChanged(sessionPath);
       await actions.refreshProjects();
       actions.setNotice(
-        result.method === "trash" ? "已将会话移到废纸篓。" : "已永久删除会话。",
+        result.method === "trash" ? tr()("notice.trashed") : tr()("notice.deletedForever"),
       );
     } catch (err) {
       actions.setNotice((err as Error).message);

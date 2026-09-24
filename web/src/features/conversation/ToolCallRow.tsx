@@ -139,7 +139,7 @@ export function ToolCallRow({
                       key={index}
                       image={image}
                       variant="tool"
-                      alt={`结果图片 ${String(index + 1)}`}
+                      alt={t("toolCall.resultImage", { index: index + 1 })}
                     />
                   ))}
                 </div>

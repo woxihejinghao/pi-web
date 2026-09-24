@@ -141,10 +141,7 @@ function SessionRow({
   };
 
   const remove = async (): Promise<void> => {
-    const confirmed = window.confirm(
-      `删除会话「${title}」？\n\n` +
-        "系统装有 trash 命令时会移入废纸篓，否则将永久删除。会话内容只有一份，不在 Web 端保留备份。",
-    );
+    const confirmed = window.confirm(t("session.deleteConfirm", { title }));
     if (!confirmed) return;
     await actions.deleteSession(sessionPath);
   };
@@ -177,7 +174,7 @@ function SessionRow({
         <button
           type="button"
           className={styles.iconButton}
-          aria-label={`隐藏 ${title}`}
+          aria-label={t("session.hideLabel", { title })}
           title={t("session.hide")}
           onClick={() => void hide()}
         >
@@ -187,7 +184,7 @@ function SessionRow({
           <button
             type="button"
             className={styles.iconButton}
-            aria-label={`删除 ${title}`}
+            aria-label={t("session.deleteLabel", { title })}
             title={t("session.delete")}
             onClick={() => void remove()}
           >
@@ -242,7 +239,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
 
   const removeProject = async (): Promise<void> => {
     const confirmed = window.confirm(
-      `删除工作区「${project.title}」？\n\n只会把它从列表里移除，目录和会话历史都不会被删除。`,
+      t("project.deleteConfirm", { title: project.title }),
     );
     if (!confirmed) return;
     await actions.removeProject(project.id);
@@ -313,7 +310,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
             type="button"
             ref={menuButtonRef}
             className={styles.iconButton}
-            aria-label={`更多操作 ${project.title}`}
+            aria-label={t("project.moreLabel", { title: project.title })}
             aria-haspopup="menu"
             aria-expanded={menuAt !== null}
             title={t("project.more")}
@@ -324,7 +321,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
           <button
             type="button"
             className={styles.iconButton}
-            aria-label={`在 ${project.title} 中新建会话`}
+            aria-label={t("project.newSessionIn", { title: project.title })}
             title={t("project.newSession")}
             onClick={() => {
               setMenuAt(null);
@@ -382,7 +379,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               style={{ marginLeft: sessionIndent }}
               onClick={() => actions.revealMoreSessions(project.id, limit + PAGE_SIZE)}
             >
-              展开其余 {remaining} 个会话
+              {t("session.expandAll", { count: remaining })}
             </button>
           ) : null}
 

@@ -31,12 +31,12 @@ export function AttachmentStrip({
         <div className={styles.attachments}>
           {images.map((image, index) => (
             <div className={styles.attachment} key={index}>
-              <img src={imageDataUrl(image)} alt={`附件 ${String(index + 1)}`} />
+              <img src={imageDataUrl(image)} alt={t("attach.alt", { index: index + 1 })} />
               <button
                 type="button"
                 className={styles.remove}
                 onClick={() => onRemove(index)}
-                aria-label={`移除附件 ${String(index + 1)}`}
+                aria-label={t("attach.removeLabel", { index: index + 1 })}
                 title={t("common.remove")}
               >
                 <CloseIcon />

@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Interface copy resolves through `useT`, and the default `system` preference
+// lands on English without a navigator (node test environment). The assertions
+// below pin the Chinese wording, so fix the host locale here.
+vi.stubGlobal("navigator", { language: "zh-CN" });
 import { api } from "./api.ts";
 import {
   actions,

@@ -108,7 +108,7 @@ export function ChangesFile({
             className={styles.rowAction}
             disabled={busy}
             title={t("fileDiff.stageTitle")}
-            aria-label={`暂存 ${file.path}`}
+            aria-label={t("fileDiff.stageLabel", { path: file.path })}
             onClick={() => onStage(file.path, true)}
           >
             <PlusIcon width={13} height={13} />
@@ -119,7 +119,7 @@ export function ChangesFile({
             className={styles.rowAction}
             disabled={busy}
             title={t("fileDiff.unstageTitle")}
-            aria-label={`取消暂存 ${file.path}`}
+            aria-label={t("fileDiff.unstageLabel", { path: file.path })}
             onClick={() => onStage(file.path, false)}
           >
             <MinusIcon width={13} height={13} />
@@ -131,7 +131,7 @@ export function ChangesFile({
             className={clsx(styles.rowAction, styles.rowActionDanger)}
             disabled={busy}
             title={t("fileDiff.restoreTitle")}
-            aria-label={`还原 ${file.path}`}
+            aria-label={t("fileDiff.restoreLabel", { path: file.path })}
             onClick={() => onDiscard(file.path)}
           >
             <UndoIcon width={13} height={13} />
@@ -187,6 +187,7 @@ function FilePatch({
  * its line count on the header so nothing is hidden silently.
  */
 function Hunk({ hunk }: { hunk: DiffHunk }) {
+  const t = useT();
   const bodyLines = hunk.lines.filter((line) => line.kind !== "meta");
   const [open, setOpen] = useState(bodyLines.length <= HUNK_OPEN_LINES);
 
@@ -203,7 +204,7 @@ function Hunk({ hunk }: { hunk: DiffHunk }) {
         </span>
         <span className={styles.hunkRange}>{hunk.header}</span>
         <span className={styles.hunkCount}>
-          {bodyLines.length} 行{open ? "" : " · 点击展开"}
+          {t("fileDiff.lineCount", { count: bodyLines.length })}{open ? "" : ` · ${t("fileDiff.expandHint")}`}
         </span>
       </button>
       {open

@@ -2,6 +2,7 @@ import { useId } from "react";
 import clsx from "clsx";
 import { limitCompleted, visibleTodos, type TodoItem, type TodoStatus } from "./todo-model.ts";
 import styles from "./TodoList.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * The task rows. Shared by the plan panel above the composer and the todo row
@@ -83,6 +84,7 @@ export function TodoList({
   completedLimit?: number;
   className?: string;
 }) {
+  const t = useT();
   const { rows, hiddenCompleted } =
     completedLimit === undefined
       ? { rows: visibleTodos(todos), hiddenCompleted: 0 }
@@ -110,7 +112,7 @@ export function TodoList({
         </li>
       ))}
       {hiddenCompleted > 0 ? (
-        <li className={styles.more}>{`+${String(hiddenCompleted)} 项已完成`}</li>
+        <li className={styles.more}>{t("todo.hiddenCompleted", { count: hiddenCompleted })}</li>
       ) : null}
     </ul>
   );

@@ -90,7 +90,7 @@ export function ChangesTab({
     (path: string) => {
       // Discarding is the one action here that destroys work, and it cannot be
       // undone; the confirmation names the file rather than asking "are you sure".
-      if (!window.confirm(`还原 ${path} 的未提交改动？这会丢掉磁盘上的修改。`)) return;
+      if (!window.confirm(t("changes.restoreConfirm", { path }))) return;
       void run(() => api.discardPaths(projectId, [path]));
     },
     [projectId, run],
@@ -104,7 +104,7 @@ export function ChangesTab({
       try {
         const result = await api.commitChanges(projectId, message);
         setView(result.view);
-        setNotice(`已提交 ${result.hash}。`);
+        setNotice(t("changes.committed", { hash: result.hash }));
         return true;
       } catch (err) {
         setActionError((err as Error).message);
@@ -211,7 +211,7 @@ export function ChangesTab({
 
             {view.omittedFiles > 0 ? (
               <div className={pane.note}>
-                改动文件过多，另有 {view.omittedFiles} 个未列出。
+                {t("changes.omitted", { count: view.omittedFiles })}
               </div>
             ) : null}
 

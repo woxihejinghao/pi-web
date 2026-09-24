@@ -86,7 +86,11 @@ export function ContextMeter({ context, onRequestLive }: ContextMeterProps) {
   const label =
     percent === null || context.tokens === null
       ? t("context.unknown")
-      : `上下文 ${formatPercent(percent)}% · ${formatTokens(context.tokens)} / ${formatTokens(context.contextWindow)}`;
+      : t("context.breakdown", {
+          percent: formatPercent(percent),
+          used: formatTokens(context.tokens),
+          window: formatTokens(context.contextWindow),
+        });
 
   return (
     <span className={styles.anchor} ref={rootRef}>

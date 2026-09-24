@@ -225,6 +225,7 @@ function assistantTextOf(messages: AgentMessage[]): string {
  * was pasted into it, and the skill-command fold only ever applies to the text.
  */
 function UserTurn({ content }: { content: string | ContentBlock[] }) {
+  const t = useT();
   const text = textFromContent(content);
   const images = imageBlocksOf(content);
   const skill = parseSkillCall(text);
@@ -241,7 +242,7 @@ function UserTurn({ content }: { content: string | ContentBlock[] }) {
                 key={index}
                 image={image}
                 variant="user"
-                alt={`附件 ${String(index + 1)}`}
+                alt={t("attach.alt", { index: index + 1 })}
               />
             ))}
           </div>

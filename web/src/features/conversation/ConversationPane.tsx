@@ -109,7 +109,7 @@ export function ConversationPane() {
           // the sidebar re-renders.
           if (project !== undefined) actions.expandProject(project.id);
         });
-        actions.setNotice(`已从「${label}」分叉为新会话。「${label}」之后的轮次仍留在原会话里。`);
+        actions.setNotice(t("pane.forkedNotice", { label }));
       })
       .catch((err: Error) => actions.setNotice(err.message));
   };
