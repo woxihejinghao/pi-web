@@ -33,6 +33,14 @@ jobs:
           node-version: '24'
           cache: pnpm
 
+      # 可信发布要求 npm >= 11.5.1（更低的版本根本不会发 OIDC 头，症状是
+      # ENEEDAUTH 而非 OIDC 报错）。Node 24 各小版本自带的 npm 不一样，
+      # 与其猜，不如显式升到最新并把版本号打进日志 —— 认证再失败时这是第一个线索。
+      - name: 升级 npm（可信发布需要 >= 11.5.1）
+        run: |
+          npm install -g npm@latest
+          npm --version
+
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
