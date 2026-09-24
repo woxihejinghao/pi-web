@@ -1,5 +1,14 @@
 /* Ported from dsh's StateDot. */
 
+/*
+ * dsh hoists the running colour into a variable so a theme can retint it; the
+ * dot itself never uses it (its colour comes from `data-state` or the caller).
+ */
+.dot,
+.matrix {
+  --dsh-state-ongoing: var(--dsw-static-deepseek-450);
+}
+
 .dot {
   position: relative;
   display: inline-block;
@@ -37,4 +46,56 @@
 
 .dot[data-state="idle"] {
   color: var(--dsw-alias-label-tertiary);
+}
+
+/*
+ * The running mark, which dsh keeps off the dot. It is a chase of eight cells
+ * around an empty centre, and unlike the dot it is always the brand blue —
+ * "working" should not read as a warning state.
+ */
+.matrix {
+  display: inline-block;
+  flex: none;
+  color: var(--dsh-state-ongoing);
+}
+
+.cell {
+  fill: currentColor;
+  opacity: 0.15;
+  animation: dsh-state-dot-chase 1s infinite;
+}
+
+/*
+ * One cell lights at a time: full while its step is current, then fading
+ * through three steps back to the resting 15% before its next turn. The eight
+ * 125ms steps add up to the 1s loop, so the ring reads as one travelling light.
+ */
+@keyframes dsh-state-dot-chase {
+  0%,
+  12.4% {
+    opacity: 1;
+  }
+
+  12.5%,
+  24.9% {
+    opacity: 0.6;
+  }
+
+  25%,
+  37.4% {
+    opacity: 0.35;
+  }
+
+  37.5%,
+  to {
+    opacity: 0.15;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell {
+    animation: none;
+    /* Hold the ring readable: its resting 15% would say almost nothing. */
+    opacity: 0.45;
+  }
 }

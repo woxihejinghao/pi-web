@@ -4,7 +4,7 @@ import { useT } from "../../lib/app-state.ts";
 import styles from "./TurnStatus.module.css";
 
 /**
- * The shimmering "working..." label under a turn that is still running.
+ * The shimmering "Working..." label under a turn that is still running.
  *
  * Ported from dsh's `TurnStatus`. Three details are load-bearing:
  *
@@ -35,7 +35,7 @@ export function TurnStatus({ startTime }: { startTime?: number | undefined }) {
 
   return (
     <div className={styles.turnStatus} role="status" aria-live="polite">
-      working...
+      Working...
       {showClock ? (
         // Announced state is the shimmer text; a ticking number would make
         // screen readers re-announce every second.

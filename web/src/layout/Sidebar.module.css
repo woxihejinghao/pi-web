@@ -412,6 +412,30 @@
   font-weight: 600;
 }
 
+/*
+ * dsh's leading slot on a session row, holding the run-state mark. It only
+ * exists while there is a mark to show — an idle session keeps the clean
+ * left edge it had before — and it is not interactive, so the stretched title
+ * target underneath still owns the row.
+ */
+.sessionStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  pointer-events: none;
+}
+
+/* The status wording is for screen readers; the mark carries it visually. */
+.visuallyHidden {
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+}
+
 .sessionTime {
   flex: 0 0 auto;
   font-size: 11.5px;

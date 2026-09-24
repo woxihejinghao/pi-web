@@ -5,7 +5,7 @@ import { describe, expect, it , vi } from "vitest";
 // lands on English without a navigator (node test environment). The assertions
 // below pin the Chinese wording, so fix the host locale here.
 vi.stubGlobal("navigator", { language: "zh-CN" });
-import { appStore } from "../../lib/app-state.ts";
+import { appStore, type PendingUiRequest } from "../../lib/app-state.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
 import type { ProjectView, SessionView } from "../../lib/types.ts";
 import { ProjectTreeItem } from "./ProjectTree.tsx";
@@ -194,5 +194,98 @@ describe("ProjectTree new-session row", () => {
 
     expect(html).not.toContain(">新会话<");
     expect(html).toContain("already here");
+  });
+});
+
+/**
+ * dsh's run-state mark on a session row: a chase of cells while the session is
+ * running, a settled dot for a finished run the user has not opened yet. An
+ * idle session keeps the clean left edge and shows neither.
+ */
+describe("ProjectTree session status mark", () => {
+  const PATH = "/sessions/p1/live.jsonl";
+
+  const session = (path: string, title: string): SessionView => ({
+    path,
+    id: path,
+    cwd: "/Users/dev/proj",
+    title,
+    titleSource: "session",
+    preview: "",
+    created: "2025-01-01T00:00:00.000Z",
+    modified: "2025-01-01T00:00:00.000Z",
+    messageCount: 1,
+    hidden: false,
+  });
+
+  /** Render the workspace with the given marks, then put the store back. */
+  function renderWith(
+    activity: Record<string, "ongoing" | "done">,
+    pending: PendingUiRequest[] = [],
+  ): string {
+    const before = appStore.get();
+    appStore.set({
+      ...before,
+      selectedProjectId: "p1",
+      expandedProjects: { p1: true },
+      selectedSessionPath: null,
+      draftProjectId: null,
+      sessions: { p1: [session(PATH, "live run")] },
+      sessionActivity: activity,
+      pendingUiRequests: pending,
+    });
+    try {
+      return renderToStaticMarkup(<ProjectTreeItem node={workspace()} />);
+    } finally {
+      appStore.set(before);
+    }
+  }
+
+  const asking = (sessionPath: string, method: "select" | "confirm" = "confirm"): PendingUiRequest => ({
+    sessionPath,
+    request: { type: "extension_ui_request", id: `q-${sessionPath}`, method },
+  });
+
+  it("draws the ongoing chase while the session is running", () => {
+    const html = renderWith({ [PATH]: "ongoing" });
+
+    expect(html).toContain('data-state="ongoing"');
+    expect(html).toContain("进行中");
+  });
+
+  it("draws a settled dot for a finished run the user has not opened", () => {
+    const html = renderWith({ [PATH]: "done" });
+
+    expect(html).toContain('data-state="done"');
+    expect(html).toContain("已完成");
+  });
+
+  it("leaves an idle session without a mark", () => {
+    const html = renderWith({});
+
+    expect(html).not.toContain('data-state="ongoing"');
+    expect(html).not.toContain("进行中");
+    expect(html).not.toContain("已完成");
+  });
+
+  it("turns warning while an extension is blocked on the session", () => {
+    const html = renderWith({}, [asking(PATH, "select")]);
+
+    expect(html).toContain('data-state="warning"');
+    expect(html).toContain("等待回答");
+  });
+
+  it("lets the pending question outrank a running agent", () => {
+    const html = renderWith({ [PATH]: "ongoing" }, [asking(PATH)]);
+
+    expect(html).toContain('data-state="warning"');
+    expect(html).not.toContain('data-state="ongoing"');
+  });
+
+  it("does not mark a session the question belongs to another one", () => {
+    const html = renderWith({}, [asking("/sessions/p1/other.jsonl")]);
+
+    expect(html).not.toContain('data-state="warning"');
+    expect(html).not.toContain("等待回答");
   });
 });

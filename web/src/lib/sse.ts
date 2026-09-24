@@ -63,6 +63,9 @@ export function connectEvents(): () => void {
     const data = parse<Extract<BusEvent, { type: "session_closed" }>>(raw);
     if (!data) return;
     actions.setActiveSessions(appStore.get().activeSessions.filter((p) => p !== data.sessionPath));
+    // A process torn down mid-run never settles, so its running mark would
+    // animate forever. The session going away clears it.
+    actions.clearSessionActivity(data.sessionPath);
   });
 
   source.addEventListener("session_external_changed", (raw) => {

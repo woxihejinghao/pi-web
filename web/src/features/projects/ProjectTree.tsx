@@ -9,6 +9,8 @@ import {
 } from "../../components/icons.tsx";
 import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts";
 import { Glyph } from "../../components/dsh-icons.tsx";
+import { StateDot, type StateDotState } from "../../components/StateDot.tsx";
+import type { MessageKey } from "../../lib/i18n/index.ts";
 import { formatRelativeTime } from "../../lib/format.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
 import { useStore } from "../../lib/store.ts";
@@ -111,12 +113,34 @@ interface RowProps {
   indent: number;
 }
 
+/**
+ * dsh's session status mark. A pending question outranks live activity, which
+ * outranks a finished run the user has not opened — the same order as dsh's
+ * `sessionStatuses`. `label` is the wording a screen reader hears; the mark
+ * carries it visually.
+ */
+interface SessionStatus {
+  state: StateDotState;
+  label: MessageKey;
+}
+
+function sessionStatus(
+  activity: "ongoing" | "done" | undefined,
+  pending: boolean,
+): SessionStatus | undefined {
+  if (pending) return { state: "warning", label: "session.statusWaitingAnswer" };
+  if (activity === "ongoing") return { state: "ongoing", label: "session.statusRunning" };
+  if (activity === "done") return { state: "done", label: "session.statusCompleted" };
+  return undefined;
+}
+
 function SessionRow({
   sessionPath,
   title,
   time,
   active,
   external,
+  status,
   indent,
   canDelete = true,
 }: RowProps & {
@@ -125,6 +149,8 @@ function SessionRow({
   time: string;
   active: boolean;
   external: boolean;
+  /** dsh's status mark; undefined leaves the leading slot empty. */
+  status?: SessionStatus;
   /** False for a row that has no file on disk yet, so there is nothing to remove. */
   canDelete?: boolean;
 }) {
@@ -152,6 +178,13 @@ function SessionRow({
       style={{ marginLeft: indent }}
       title={sessionPath}
     >
+      {status === undefined ? null : (
+        <span className={styles.sessionStatus}>
+          <StateDot state={status.state} />
+          {/* dsh labels the mark for screen readers instead of the pointer. */}
+          <span className={styles.visuallyHidden}>{t(status.label)}</span>
+        </span>
+      )}
       <button
         type="button"
         className={styles.sessionTitle}
@@ -228,6 +261,9 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   // one of its neighbours holds the selection pinned a phantom "新会话" under
   // it until a real session in that workspace was clicked.
   const selected = state.selectedSessionPath;
+  /** True when this row's session is the one an extension is blocked on. */
+  const pendingFor = (path: string | null): boolean =>
+    path !== null && state.pendingUiRequests.some((item) => item.sessionPath === path);
   const provisional =
     selected !== null &&
     project.id === state.selectedProjectId &&
@@ -362,6 +398,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               time={isDraftSession(selected) ? t("session.preparing") : t("session.unsaved")}
               active
               external={false}
+              status={sessionStatus(state.sessionActivity[selected], pendingFor(selected))}
               indent={sessionIndent}
               canDelete={false}
             />
@@ -375,6 +412,10 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               time={formatRelativeTime(session.modified, t)}
               active={session.path === selected}
               external={Boolean(state.externalChanged[session.path])}
+              status={sessionStatus(
+                state.sessionActivity[session.path],
+                pendingFor(session.path),
+              )}
               indent={sessionIndent}
             />
           ))}

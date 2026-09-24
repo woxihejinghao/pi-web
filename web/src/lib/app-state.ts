@@ -85,6 +85,15 @@ export interface AppState {
   draftProjectId: string | null;
   /** Session files with a live pi process on the server. */
   activeSessions: string[];
+  /**
+   * Live agent activity per session path, for the sidebar's status mark.
+   *
+   * `"ongoing"` while a session's agent loop is running; `"done"` once it
+   * settles out of view — dsh's "completed" reminder, which opening the
+   * session clears. A path with no entry reads as idle. Keyed by the real
+   * session path, so a draft's mark moves when its file lands.
+   */
+  sessionActivity: Record<string, "ongoing" | "done">;
   /** Sessions another process appended to while we held them. */
   externalChanged: Record<string, true>;
   /**
@@ -160,6 +169,7 @@ const initialState: AppState = {
   selectedSessionPath: null,
   draftProjectId: null,
   activeSessions: [],
+  sessionActivity: {},
   externalChanged: {},
   pendingUiRequests: [],
   pendingPrompt: null,
@@ -725,16 +735,25 @@ export const actions = {
   },
 
   selectSession(sessionPath: string | null): void {
-    appStore.update((state) => ({
-      ...state,
-      selectedSessionPath: sessionPath,
-      // Dropping the queued prompt here is what stops it from being delivered
-      // to whatever session the user opens next.
-      pendingPrompt: null,
-      // Leaving the new-session flow also drops the model chosen for it: the
-      // session it was meant for is not the one being opened.
-      newSessionModel: null,
-    }));
+    appStore.update((state) => {
+      // Opening a session is reading its result, so its completion reminder has
+      // done its job. A running session keeps its mark.
+      const sessionActivity = { ...state.sessionActivity };
+      if (sessionPath !== null && sessionActivity[sessionPath] === "done") {
+        delete sessionActivity[sessionPath];
+      }
+      return {
+        ...state,
+        selectedSessionPath: sessionPath,
+        // Dropping the queued prompt here is what stops it from being delivered
+        // to whatever session the user opens next.
+        pendingPrompt: null,
+        // Leaving the new-session flow also drops the model chosen for it: the
+        // session it was meant for is not the one being opened.
+        newSessionModel: null,
+        sessionActivity,
+      };
+    });
   },
 
   /** Renames via a UI override; pi's own JSONL is never rewritten. */
@@ -768,9 +787,11 @@ export const actions = {
     try {
       const result = await api.deleteSession(sessionPath);
       if (appStore.get().selectedSessionPath === sessionPath) actions.selectSession(null);
-      // The "changed by another process" dot is keyed by path too; a deleted
-      // session must not leave it behind for a future session at that path.
+      // The "changed by another process" dot and the run-state mark are keyed
+      // by path too; a deleted session must not leave either behind for a
+      // future session at that path.
       actions.clearExternalChanged(sessionPath);
+      actions.clearSessionActivity(sessionPath);
       await actions.refreshProjects();
       actions.setNotice(
         result.method === "trash" ? tr()("notice.trashed") : tr()("notice.deletedForever"),
@@ -889,6 +910,52 @@ export const actions = {
     });
   },
 
+  /**
+   * Fold an agent boundary into the sidebar's status mark.
+   *
+   * Called for every `session_event`, so it filters to the two boundaries that
+   * matter and leaves token deltas alone.
+   */
+  noteSessionActivity(sessionPath: string, event: SessionEvent): void {
+    if (event.type === "agent_start") actions.markSessionOngoing(sessionPath);
+    else if (event.type === "agent_settled") actions.markSessionSettled(sessionPath);
+  },
+
+  markSessionOngoing(sessionPath: string): void {
+    appStore.update((state) =>
+      state.sessionActivity[sessionPath] === "ongoing"
+        ? state
+        : {
+            ...state,
+            sessionActivity: { ...state.sessionActivity, [sessionPath]: "ongoing" },
+          },
+    );
+  },
+
+  /**
+   * A run finished. If the user is watching that session there is nothing to
+   * remind them about, so the mark is dropped rather than turned into a
+   * "completed" dot they would clear with their next click.
+   */
+  markSessionSettled(sessionPath: string): void {
+    const watching = appStore.get().selectedSessionPath === sessionPath;
+    appStore.update((state) => {
+      const sessionActivity = { ...state.sessionActivity };
+      if (watching) delete sessionActivity[sessionPath];
+      else sessionActivity[sessionPath] = "done";
+      return { ...state, sessionActivity };
+    });
+  },
+
+  clearSessionActivity(sessionPath: string): void {
+    appStore.update((state) => {
+      if (state.sessionActivity[sessionPath] === undefined) return state;
+      const sessionActivity = { ...state.sessionActivity };
+      delete sessionActivity[sessionPath];
+      return { ...state, sessionActivity };
+    });
+  },
+
   /** Show the new-session hero: no conversation is selected. */
   enterNewSession(): void {
     appStore.update((state) => ({
@@ -998,6 +1065,7 @@ export const actions = {
   },
 
   emitSessionEvent(sessionPath: string, event: SessionEvent): void {
+    actions.noteSessionActivity(sessionPath, event);
     sessionEvents.emit({ sessionPath, event });
   },
 };

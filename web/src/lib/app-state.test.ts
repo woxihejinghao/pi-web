@@ -398,6 +398,59 @@ describe("sidebar ui state", () => {
   });
 });
 
+/**
+ * The sidebar's run-state mark comes from agent boundaries, not from the
+ * conversation view — it has to keep working for a session the user is not
+ * currently looking at.
+ */
+describe("session activity marks", () => {
+  const PATH = "/sessions/proj-abc/live.jsonl";
+
+  it("marks a session ongoing when its agent starts", () => {
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+
+    expect(appStore.get().sessionActivity[PATH]).toBe("ongoing");
+  });
+
+  it("turns that into a completion reminder once it settles elsewhere", () => {
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(appStore.get().sessionActivity[PATH]).toBe("done");
+  });
+
+  it("never reminds the user about the session they are watching", () => {
+    actions.selectSession(PATH);
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
+  });
+
+  it("clears the reminder when the session is opened", () => {
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+    expect(appStore.get().sessionActivity[PATH]).toBe("done");
+
+    actions.selectSession(PATH);
+
+    expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
+  });
+
+  it("keeps a running mark when the session is opened", () => {
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+
+    actions.selectSession(PATH);
+
+    expect(appStore.get().sessionActivity[PATH]).toBe("ongoing");
+  });
+
+  it("ignores the token deltas between the boundaries", () => {
+    actions.emitSessionEvent(PATH, { type: "message_update", delta: "x" });
+
+    expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
+  });
+});
+
 describe("deleting a session", () => {
   it("clears the selection and says where the file went", async () => {
     mocked.deleteSession.mockResolvedValue({ ok: true, method: "trash" });
