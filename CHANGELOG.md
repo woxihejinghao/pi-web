@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.1] - 2026-09-24
+
+### 文档
+
+- **README 补上「安装后怎么启动」**：把 `npx` 零安装、`npm i -g` 全局命令、pi 包 `/web` 三种方式整理成一张对照表，附 `PI_WEB_SIMPLE_PORT` / `PI_WEB_SIMPLE_OPEN` 两个开关和后台常驻（`nohup`）命令；中英两份 README 同步。
+
 ## [0.4.0] - 2026-09-24
 
 ### 新增

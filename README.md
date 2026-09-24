@@ -41,13 +41,31 @@ node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = project directory)
 
 ## Quick start
 
-Requires Node.js `>= 22.19`.
+Requires Node.js `>= 22.19`. The server binds to `127.0.0.1` only.
+
+However you install it, you start the same thing: one process serving the front end and the API on <http://127.0.0.1:5319> and opening the browser. Pick a row by how you expect to use it:
+
+| Install | Start it with | Best when |
+| :-- | :-- | :-- |
+| nothing | `npx pi-web-simple` | trying it out, or keeping it off your PATH |
+| `npm install -g pi-web-simple` | `pi-web-simple` | you want a plain command from any directory |
+| `pi install npm:pi-web-simple` | `/web` inside pi | you already work in a pi session — see below |
+
+The port and the browser are the only two knobs, and all three rows read the same ones:
 
 ```sh
-npx pi-web-simple
+PI_WEB_SIMPLE_PORT=5400    # listen elsewhere (default 5319)
+PI_WEB_SIMPLE_OPEN=0       # do not open a browser
 ```
 
-One process serves both the front end and the API, listens on <http://127.0.0.1:5319> and opens the browser — the same address the dev server puts in the address bar, so there is only one port to remember. Set `PI_WEB_SIMPLE_OPEN=0` to keep the browser closed.
+To keep it running after the terminal closes:
+
+```sh
+PI_WEB_SIMPLE_OPEN=0 nohup pi-web-simple >/tmp/piws.log 2>&1 &
+pkill -f 'pi-web-simple/bin/pi-web-simple.js'   # stop it
+```
+
+The address is the same one the dev server puts in the address bar, so there is only one port to remember. Every variable, with defaults: [environment variables](./docs/configuration.md).
 
 First run: click **+** in the left column, walk to the target directory in the picker (the shortcuts at the top jump straight to home / Desktop / Documents / Downloads / root, and a path can be pasted into the address bar), then click **Choose this directory** to add the project. Click **+** under the project to start a session.
 
@@ -69,7 +87,7 @@ Then, in pi:
 /web stop       # stop it
 ```
 
-The child process started by `/web` belongs to that pi session and is stopped when pi exits, so no orphan keeps holding the port. Startup failures — a port already in use, for instance — are reported back into pi together with the last few lines of the server log. To keep it running outside of pi, use `npx pi-web-simple`.
+The child process started by `/web` belongs to that pi session and is stopped when pi exits, so no orphan keeps holding the port. Startup failures — a port already in use, for instance — are reported back into pi together with the last few lines of the server log. To keep it running outside pi, use the `nohup` command above.
 
 ### Develop from source
 

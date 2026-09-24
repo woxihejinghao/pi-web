@@ -41,13 +41,31 @@ node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = 项目目录)
 
 ## 快速开始
 
-需要 Node.js `>= 22.19`。
+需要 Node.js `>= 22.19`。服务只监听 `127.0.0.1`。
+
+不管怎么装，起的都是同一个东西：一个进程在 <http://127.0.0.1:5319> 同时提供前端与 API，并自动打开浏览器。按你打算怎么用挑一行：
+
+| 安装方式 | 这样启动 | 适合 |
+| :-- | :-- | :-- |
+| 不安装 | `npx pi-web-simple` | 先试试，或不想往 PATH 里放东西 |
+| `npm install -g pi-web-simple` | `pi-web-simple` | 想在任意目录直接敲一条命令 |
+| `pi install npm:pi-web-simple` | 在 pi 里 `/web` | 你本来就泡在 pi 会话里——见下 |
+
+端口和浏览器是仅有的两个开关，三种方式读的是同一组：
 
 ```sh
-npx pi-web-simple
+PI_WEB_SIMPLE_PORT=5400    # 换个端口（默认 5319）
+PI_WEB_SIMPLE_OPEN=0       # 不自动打开浏览器
 ```
 
-一个进程同时提供前端和 API，监听 <http://127.0.0.1:5319> 并自动打开浏览器——地址和下面的开发模式一致，所以不必记两个端口。不想要自动打开就设 `PI_WEB_SIMPLE_OPEN=0`。
+想在终端关掉之后继续跑：
+
+```sh
+PI_WEB_SIMPLE_OPEN=0 nohup pi-web-simple >/tmp/piws.log 2>&1 &
+pkill -f 'pi-web-simple/bin/pi-web-simple.js'   # 停掉
+```
+
+地址和下面的开发模式一致，所以不必记两个端口；全部变量及默认值见[环境变量](./configuration.md)。
 
 首次使用：点击左侧栏的 **+**，在弹出的目录选择器里逐级进入目标目录（顶部快捷位置可直达主目录 / 桌面 / 文稿 / 下载 / 根目录，地址栏也可直接粘贴路径），点 **选择此目录** 添加项目；再点项目下的 **+** 新建会话开始对话。
 
@@ -69,7 +87,7 @@ pi install npm:pi-web-simple
 /web stop       # 关掉
 ```
 
-`/web` 起的子进程由当前 pi 会话托管，pi 退出时一并结束（不会留下占着端口的孤儿进程）；端口被占用等启动失败会把服务端最后几行日志报回 pi 界面。想在 pi 之外常驻，仍然用 `npx pi-web-simple`。
+`/web` 起的子进程由当前 pi 会话托管，pi 退出时一并结束（不会留下占着端口的孤儿进程）；端口被占用等启动失败会把服务端最后几行日志报回 pi 界面。想在 pi 之外常驻，用上面那条 `nohup` 命令。
 
 ### 从源码开发
 
