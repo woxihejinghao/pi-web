@@ -68,35 +68,6 @@ pnpm typecheck   # 前后端类型检查
 pnpm test        # 前后端测试（vitest）
 ```
 
-## 环境变量
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `PI_WEB_SIMPLE_HOME` | `~/.pi-web-simple` | 项目记录（`store.json`）的存放目录 |
-| `PI_WEB_SIMPLE_PORT` | 开发 `4319`、发布版 `5319` | 监听端口。开发模式下这是**后端 API** 端口（Vite 反代的目标）；发布版 CLI 里这是**唯一**端口，前端和 API 都在上面 |
-| `PI_WEB_SIMPLE_STATIC_DIR` | 自动探测 `web/dist` | 前端构建产物的位置。非空值即启用静态托管，空串强制只跑 API |
-| `PI_WEB_SIMPLE_OPEN` | 发布版 `1` | 设为 `1` 时启动后打开浏览器；开发模式默认不开，免得抢走编辑器焦点 |
-| `PI_WEB_SIMPLE_SESSION_DIR` | pi 的默认目录 | 覆盖会话存储根目录；同时作用于会话查找与派生的 pi 子进程（`--session-dir`） |
-| `PI_WEB_SIMPLE_IDLE_MS` | `600000` | 会话空闲多久后回收其 pi 进程（预热进程同样适用） |
-| `PI_WEB_SIMPLE_MAX_SESSIONS` | `8` | 同时存活的 pi 进程上限 |
-
-开发模式下前端 dev server 的代理目标端口读取 `PI_WEB_SIMPLE_PORT`，两处要保持一致。
-
-## 网络与隐私
-
-这个工具按**单机单人、无鉴权**设计，服务端只绑定 `127.0.0.1`。上一条的 `Host`/`Origin` 校验只挡浏览器发起的跨源请求，**不是认证边界**——别把它暴露到公网，也别用反向代理把外部流量转进来。报告安全问题见 [SECURITY.md](./SECURITY.md)。
-
-它会发起这些对外请求、并带有这些副作用；除版本检查外全部由你显式触发：
-
-| 时机 | 目标 | 说明 |
-|---|---|---|
-| 启动时 | `https://pi.dev/api/latest-version` | 与 pi CLI 启动时轮询的同一个端点，只做版本比较（见 [更新提示为什么分两条路，而且都不代劳](./docs/design-notes.md#更新提示为什么分两条路而且都不代劳)） |
-| 点「获取可用模型」 | 你配置的 provider 地址 | 用 `GET <baseUrl>/models` 拉取模型列表 |
-| 点 MCP 的「检查」 | MCP 配置里的命令或地址 | **会真的启动那个 stdio 命令**或请求那个 URL，超时 15 秒 |
-| 与模型对话 | 你配置的 provider | 会话内容按 pi 的正常行为发给模型 |
-
-除此之外，服务端不联网、不埋点、不上报。它读到的东西都留在本机：会话正文只有 pi 一份（`~/.pi/agent/`，或 `PI_WEB_SIMPLE_SESSION_DIR` 指定的目录），项目记录与 UI 偏好在 `~/.pi-web-simple/store.json`，模型的 API 密钥由 pi 自己管理（页面只写不读，见 [模型配置为什么在改文件](./docs/design-notes.md#模型配置为什么在改文件)）。目录浏览（`/api/fs/*`）会枚举**服务端所在机器**的目录，但只列子目录名、不读文件内容。
-
 ## 许可证
 
 MIT，见 [LICENSE](./LICENSE)。
