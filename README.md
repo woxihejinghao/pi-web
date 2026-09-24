@@ -12,7 +12,7 @@ Requires Node.js `>= 22.19.0`. Binds to `127.0.0.1` only.
 
 | 深色主题 | 浅色主题 |
 | :---: | :---: |
-| ![深色主题下的主界面](./docs/images/overview-dark.png) | ![浅色主题下的主界面](./docs/images/overview-light.png) |
+| ![深色主题下的主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.png) | ![浅色主题下的主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.png) |
 
 *左：深色主题，右：浅色主题（默认跟随系统，也可在设置里固定）。两图是同一份会话：左栏工作区与会话，中间对话、思考过程与工具调用（读取 / 编辑 / 写入 / Bash），右栏文件变更可直接暂存、提交、推送。*
 
