@@ -221,10 +221,17 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
 
   // A draft, or a real session whose file has not been written yet, is not in
   // `all` — it still needs a row, pinned to the top like dsh's "新会话".
+  //
+  // `draftProjectId` is the ownership check: selecting a workspace does not
+  // close the conversation you were reading, so a session opened elsewhere
+  // also fails `all.some(...)` here. Without it, expanding any workspace while
+  // one of its neighbours holds the selection pinned a phantom "新会话" under
+  // it until a real session in that workspace was clicked.
   const selected = state.selectedSessionPath;
   const provisional =
     selected !== null &&
     project.id === state.selectedProjectId &&
+    state.draftProjectId === project.id &&
     (isDraftSession(selected) || !all.some((session) => session.path === selected));
 
   if (searching && matched.length === 0 && !project.title.toLowerCase().includes(query)) {

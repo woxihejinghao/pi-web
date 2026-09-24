@@ -7,7 +7,7 @@ import { describe, expect, it , vi } from "vitest";
 vi.stubGlobal("navigator", { language: "zh-CN" });
 import { appStore } from "../../lib/app-state.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
-import type { ProjectView } from "../../lib/types.ts";
+import type { ProjectView, SessionView } from "../../lib/types.ts";
 import { ProjectTreeItem } from "./ProjectTree.tsx";
 
 function workspace(overrides: Partial<ProjectView> = {}): ProjectNode {
@@ -111,5 +111,88 @@ describe("ProjectTree workspace mark", () => {
 
     expect(marked(html, "caretRight")).toBe(true);
     expect(html).not.toContain("projectCaretOpen");
+  });
+});
+
+/**
+ * The provisional "新会话" row is pinned to the workspace that started it.
+ *
+ * Selecting a workspace deliberately does not close the conversation you were
+ * reading, so a session opened elsewhere also fails `all.some(...)`: ownership
+ * has to be named, not inferred from the path.
+ */
+describe("ProjectTree new-session row", () => {
+  const session = (path: string, title: string): SessionView => ({
+    path,
+    id: path,
+    cwd: "/Users/dev/proj",
+    title,
+    titleSource: "session",
+    preview: "",
+    created: "2025-01-01T00:00:00.000Z",
+    modified: "2025-01-01T00:00:00.000Z",
+    messageCount: 1,
+    hidden: false,
+  });
+
+  /** Render with the app store in a given shape, then put it back. */
+  function renderWith(state: {
+    selectedSessionPath?: string | null;
+    draftProjectId?: string | null;
+    selectedProjectId?: string | null;
+    sessions?: SessionView[];
+  }): string {
+    const before = appStore.get();
+    appStore.set({
+      ...before,
+      selectedProjectId: state.selectedProjectId ?? "p1",
+      expandedProjects: { p1: true },
+      selectedSessionPath: state.selectedSessionPath ?? null,
+      draftProjectId: state.draftProjectId ?? null,
+      sessions: { p1: state.sessions ?? [] },
+    });
+    try {
+      return renderToStaticMarkup(<ProjectTreeItem node={workspace()} />);
+    } finally {
+      appStore.set(before);
+    }
+  }
+
+  it("pins a draft under the workspace that opened it", () => {
+    const html = renderWith({ selectedSessionPath: "draft:abc", draftProjectId: "p1" });
+
+    expect(html).toContain(">新会话<");
+    expect(html).toContain("准备中");
+  });
+
+  it("keeps a spawned session provisional until the list catches up", () => {
+    // The real path has been swapped in but `sessions` has not refreshed yet.
+    const html = renderWith({
+      selectedSessionPath: "/sessions/p1/fresh.jsonl",
+      draftProjectId: "p1",
+    });
+
+    expect(html).toContain(">新会话<");
+    expect(html).toContain("未保存");
+  });
+
+  it("does not claim a conversation opened in another workspace", () => {
+    const html = renderWith({
+      selectedSessionPath: "/sessions/p2/other.jsonl",
+      draftProjectId: "p2",
+    });
+
+    expect(html).not.toContain(">新会话<");
+  });
+
+  it("leaves the row to the real session once it is in the list", () => {
+    const html = renderWith({
+      selectedSessionPath: "/sessions/p1/here.jsonl",
+      draftProjectId: "p1",
+      sessions: [session("/sessions/p1/here.jsonl", "already here")],
+    });
+
+    expect(html).not.toContain(">新会话<");
+    expect(html).toContain("already here");
   });
 });

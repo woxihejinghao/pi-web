@@ -71,6 +71,18 @@ export interface AppState {
   /** Sessions per project id; a missing key means "not loaded yet". */
   sessions: Record<string, SessionView[]>;
   selectedSessionPath: string | null;
+  /**
+   * The workspace whose new session `selectedSessionPath` may still be
+   * standing in for — a draft, or a real path the session list has not caught
+   * up with yet.
+   *
+   * Which workspace a session path belongs to cannot be inferred on the
+   * client: pi encodes the cwd into the session directory with a private
+   * scheme the server already has to mirror. Naming the workspace here is what
+   * lets a row render "新会话" for its own draft without claiming a session
+   * opened in some other workspace.
+   */
+  draftProjectId: string | null;
   /** Session files with a live pi process on the server. */
   activeSessions: string[];
   /** Sessions another process appended to while we held them. */
@@ -146,6 +158,7 @@ const initialState: AppState = {
   selectedProjectId: null,
   sessions: {},
   selectedSessionPath: null,
+  draftProjectId: null,
   activeSessions: [],
   externalChanged: {},
   pendingUiRequests: [],
@@ -782,6 +795,7 @@ export const actions = {
       ...state,
       selectedProjectId: projectId,
       selectedSessionPath: localId,
+      draftProjectId: projectId,
       pendingPrompt: null,
       // Consumed here: the choice belongs to the session being created, not to
       // whatever the user does after it exists.

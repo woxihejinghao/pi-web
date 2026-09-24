@@ -89,6 +89,24 @@ describe("draft sessions", () => {
     expect(isDraftSession(appStore.get().selectedSessionPath)).toBe(false);
   });
 
+  it("remembers which workspace owns the draft", async () => {
+    const create = deferredCreate();
+    actions.startDraftSession("project-1");
+
+    expect(appStore.get().draftProjectId).toBe("project-1");
+
+    create.resolve({ sessionPath: REAL_PATH, sessionId: "s1", projectPath: "/home/me/proj", prewarmed: false });
+
+    await vi.waitFor(() => {
+      expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
+    });
+    // Still project-1 after the swap: the real path stays provisional until
+    // the session list catches up with it, and `selectProject` does not clear
+    // the selection, so this is what keeps a neighbour's workspace from
+    // claiming the row.
+    expect(appStore.get().draftProjectId).toBe("project-1");
+  });
+
   it("does not steal selection back if the user moved on", async () => {
     const create = deferredCreate();
     actions.startDraftSession("project-1");
