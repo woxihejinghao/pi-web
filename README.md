@@ -1,5 +1,7 @@
 # pi-web-simple
 
+**English** · [简体中文](https://github.com/woxihejinghao/pi-web/blob/main/README.zh-CN.md)
+
 A local web UI for the [pi](https://github.com/earendil-works/pi-coding-agent) coding agent — one local directory = one project, each project holding that directory's sessions. The agent core is pi itself, attached over `pi --mode rpc` subprocesses. The project management model and visual language follow [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness).
 
 ```sh
@@ -10,102 +12,104 @@ Requires Node.js `>= 22.19.0`. Binds to `127.0.0.1` only.
 
 **Highlights** — server-side directory picker · multi-session, one idle-recycled pi process per session · SSE streaming chat with Markdown + shiki highlighting · image input · session fork and topic tree · model picker · right sidebar (file tree, preview, git changes, embedded browser) · full git panel (stage, commit, push, restore, switch branch) · model / plugin / MCP settings.
 
-| 深色主题 | 浅色主题 |
+| Dark theme | Light theme |
 | :---: | :---: |
-| ![深色主题下的主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.png) | ![浅色主题下的主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.png) |
+| ![Main view in the dark theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.png) | ![Main view in the light theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.png) |
 
-*左：深色主题，右：浅色主题（默认跟随系统，也可在设置里固定）。两图是同一份会话：左栏工作区与会话，中间对话、思考过程与工具调用（读取 / 编辑 / 写入 / Bash），右栏文件变更可直接暂存、提交、推送。*
-
-> 以下为中文文档。English contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+*Left: dark theme, right: light theme (follows the system by default, and can be pinned in settings). Both show the same session: workspace and sessions in the left column, the conversation with its thinking and tool calls (read / edit / write / Bash) in the middle, and the file changes on the right, where they can be staged, committed and pushed directly.*
 
 ---
 
-一个基于 [pi](https://github.com/earendil-works/pi-coding-agent) 的本地项目管理 / 对话 Web UI。
+pi-web-simple is a local project-management and chat UI built on [pi](https://github.com/earendil-works/pi-coding-agent).
 
-项目管理模型与界面风格参考 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)：**一个本地目录 = 一个项目**，项目下挂该目录的会话。agent 内核是 pi 本身，通过 `pi --mode rpc` 子进程接入。
+The project model and the visual language follow [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness): **one local directory = one project**, and each project holds the sessions of that directory. The agent core is pi itself, attached through `pi --mode rpc` subprocesses.
 
 ```
-浏览器 (React + Vite)
-   │  POST /api/*            上行命令
-   │  GET  /api/events (SSE) 下行事件
+Browser (React + Vite)
+   │  POST /api/*            commands upstream
+   │  GET  /api/events (SSE) events downstream
    ▼
-Node 服务端 (单进程)
-   ├─ 项目记录   ~/.pi-web-simple/store.json
-   ├─ 界面偏好   同一份 store.json（外观 / 字号 / 对话显示 / 发送行为）
-   ├─ 模型提供方 ~/.pi/agent/models.json + auth.json（pi 没有对应 RPC）
-   ├─ 会话列表   从 pi 自己的存储实时派生
-   └─ 进程注册表 每个会话一个 pi RPC 子进程（懒启动 + 空闲回收）
+Node server (single process)
+   ├─ projects      ~/.pi-web-simple/store.json
+   ├─ UI prefs      the same store.json (appearance / font size / transcript / send behaviour)
+   ├─ providers     ~/.pi/agent/models.json + auth.json (pi exposes no RPC for these)
+   ├─ sessions      derived live from pi's own storage
+   └─ process pool  one pi RPC subprocess per session (lazy start + idle recycle)
    ▼
-node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = 项目目录)
+node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = project directory)
 ```
 
-## 快速开始
+## Quick start
 
-需要 Node.js `>= 22.19`。
+Requires Node.js `>= 22.19`.
 
 ```sh
 npx pi-web-simple
 ```
 
-一个进程同时提供前端和 API，监听 <http://127.0.0.1:5319> 并自动打开浏览器——地址和下面的开发模式一致，所以不必记两个端口。不想要自动打开就设 `PI_WEB_SIMPLE_OPEN=0`。
+One process serves both the front end and the API, listens on <http://127.0.0.1:5319> and opens the browser — the same address the dev server puts in the address bar, so there is only one port to remember. Set `PI_WEB_SIMPLE_OPEN=0` to keep the browser closed.
 
-首次使用：点击左侧栏的 **+**，在弹出的目录选择器里逐级进入目标目录（顶部快捷位置可直达主目录 / 桌面 / 文稿 / 下载 / 根目录，地址栏也可直接粘贴路径），点 **选择此目录** 添加项目；再点项目下的 **+** 新建会话开始对话。
+First run: click **+** in the left column, walk to the target directory in the picker (the shortcuts at the top jump straight to home / Desktop / Documents / Downloads / root, and a path can be pasted into the address bar), then click **Choose this directory** to add the project. Click **+** under the project to start a session.
 
-### 作为 pi 包使用
+### Use it as a pi package
 
-这个包本身也是一个 [pi 包](https://pi.dev/packages)，带上它就能在 pi 会话里直接开界面：
+This package is also a [pi package](https://pi.dev/packages), so the UI can be opened from inside a pi session:
 
 ```sh
 pi install npm:pi-web-simple
 ```
 
-然后在 pi 里：
+Then, in pi:
 
 ```text
-/web            # 启动界面：默认 5319，并自动打开浏览器
-/web 5400       # 换个端口
-/web --no-open  # 只启动，不开浏览器
-/web status     # 看它是否在跑
-/web stop       # 关掉
+/web            # start the UI: port 5319 by default, opens the browser
+/web 5400       # use another port
+/web --no-open  # start it without opening a browser
+/web status     # is it running?
+/web stop       # stop it
 ```
 
-`/web` 起的子进程由当前 pi 会话托管，pi 退出时一并结束（不会留下占着端口的孤儿进程）；端口被占用等启动失败会把服务端最后几行日志报回 pi 界面。想在 pi 之外常驻，仍然用 `npx pi-web-simple`。
+The child process started by `/web` belongs to that pi session and is stopped when pi exits, so no orphan keeps holding the port. Startup failures — a port already in use, for instance — are reported back into pi together with the last few lines of the server log. To keep it running outside of pi, use `npx pi-web-simple`.
 
-### 从源码开发
+### Develop from source
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-开发模式分成两个进程，改代码即时生效：
+Development runs two processes, so edits take effect immediately:
 
-- 前端 dev server：`127.0.0.1:5319`（Vite，`/api` 反向代理到后端）
-- 后端 API：`127.0.0.1:4319`
+- front-end dev server: `127.0.0.1:5319` (Vite, proxying `/api` to the back end)
+- back-end API: `127.0.0.1:4319`
 
-浏览器里打开的仍然是 5319，所以两种模式在地址栏没有区别。
+The browser still opens port 5319, so the address bar looks the same in both modes.
 
-其他命令：
+Other commands:
 
 ```sh
-pnpm build       # 构建前端 + 编译后端到 server/build
-pnpm start       # 用构建产物启动（等价于 npx，端口 5319）
-pnpm typecheck   # 前后端类型检查
-pnpm test        # 前后端测试（vitest）
+pnpm build       # build the front end + compile the back end into server/build
+pnpm start       # start from the built output (same as npx, port 5319)
+pnpm typecheck   # typecheck the front end and the back end
+pnpm test        # front-end and back-end tests (vitest)
 ```
 
-## 更多文档
+## More documentation
 
-- [设计说明](./docs/design-notes.md)——为什么是这样：架构、与 pi CLI 并存、每个面板的实现取舍与踩过的坑。
-- [已知限制](./docs/known-limitations.md)——目前做不到什么，以及那些行为背后的取舍；装之前值得扫一遍。
-- [环境变量](./docs/configuration.md)——全部可选，含默认值。
-- [网络与隐私](./docs/network-and-privacy.md)——它连不连网、数据放在哪、为什么不能暴露到公网。
-- [安全策略](./SECURITY.md)——报告漏洞的渠道，以及按设计存在、不算漏洞的行为。
+The documents linked below are currently written in Chinese.
 
-## 许可证
+- [Design notes](./docs/design-notes.md) — why it is built this way: architecture, coexistence with the pi CLI, the trade-offs behind every panel, and the mistakes along the way.
+- [Known limitations](./docs/known-limitations.md) — what it cannot do yet and the trade-offs behind that behaviour; worth a skim before installing.
+- [Environment variables](./docs/configuration.md) — all optional, with their defaults.
+- [Network and privacy](./docs/network-and-privacy.md) — whether it talks to the network, where data lives, and why it must not be exposed publicly.
+- [Security policy](./SECURITY.md) — how to report vulnerabilities, plus behaviour that is by design and not a vulnerability.
 
-MIT，见 [LICENSE](./LICENSE)。
+Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) (in Chinese).
 
-界面与部分服务端逻辑移植、改编自 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（MIT，Copyright (c) 2026 DeepSeek）与 [@earendil-works/pi-coding-agent](https://github.com/earendil-works/pi-coding-agent)（MIT）。逐字节复制的范围与来源清单见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)——该文件随源码分发，请勿移除。
+## License
 
-本项目是非官方项目，与 pi（Earendil Works）和 DeepSeek 均无隶属关系；π 名称与标识归各自所有者。
+MIT, see [LICENSE](./LICENSE).
+
+The UI and parts of the server logic are ported and adapted from [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) (MIT, Copyright (c) 2026 DeepSeek) and [@earendil-works/pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) (MIT). [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) lists the byte-for-byte copied ranges and their sources — that file ships with the source, please keep it.
+
+This is an unofficial project, not affiliated with pi (Earendil Works) or DeepSeek; the π name and marks belong to their respective owners.

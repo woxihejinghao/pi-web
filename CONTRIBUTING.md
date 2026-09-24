@@ -14,7 +14,7 @@ pnpm install
 pnpm dev
 ```
 
-开发模式下前端在 `127.0.0.1:5319`、后端 API 在 `127.0.0.1:4319`，浏览器打开的仍是 5319。完整说明见 [README 的「从源码开发」](./README.md#从源码开发)，环境变量表见 [docs/configuration.md](./docs/configuration.md)。
+开发模式下前端在 `127.0.0.1:5319`、后端 API 在 `127.0.0.1:4319`，浏览器打开的仍是 5319。完整说明见 [README 的「从源码开发」](./README.zh-CN.md#从源码开发)，环境变量表见 [docs/configuration.md](./docs/configuration.md)。
 
 ## 提交前必须通过
 

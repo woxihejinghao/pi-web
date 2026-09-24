@@ -21,7 +21,8 @@
     "SECURITY.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md"
   ],
   "pi": {
     "extensions": [
