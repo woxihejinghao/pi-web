@@ -1,0 +1,53 @@
+name: Release
+
+# 只在推 tag 时发布。重跑失败的任务用 Actions 页面的 "Re-run failed jobs"，
+# 不需要额外的 workflow_dispatch 入口。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: 发布到 npm（OIDC 可信发布）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # OIDC 唯一需要的授权：全程不需要任何 token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      # npm >= 11.5.1 才会发送 OIDC 头，而 Node 22 自带 npm 10.x（会得到 404 PUT）。
+      # 因此这里必须用 Node 24。
+      #
+      # 特意不设 registry-url：setup-node 会往 .npmrc 写入
+      # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`，该变量为空时
+      # npm 会因解析不出 token 报 ENEEDAUTH，反而挡住 OIDC。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 校验 tag 与 package.json 版本一致
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "✗ tag v$tag 与 package.json version $pkg 不一致，拒绝发布"
+            exit 1
+          fi
+          echo "✓ tag v$tag 与 package.json 版本一致"
+
+      # npm publish 会自动触发 prepublishOnly：
+      # typecheck → build → test → 产物完整性闸门。
+      # 发布只有这一次尝试机会（同版本不能重发），所以闸门交给 npm 自己跑。
+      - name: 发布
+        run: npm publish --access public
