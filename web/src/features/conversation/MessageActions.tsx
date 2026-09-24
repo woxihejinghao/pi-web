@@ -99,7 +99,7 @@ export function MessageActions({
       {usage != null && (
         <span className={styles.stat} title={t("message.usageTitle")}>
           <Glyph name="database" size={14} className={styles.statIcon} />
-          用量 {formatTokens(usage.totalTokens)} tok
+          {t("message.usage", { tokens: formatTokens(usage.totalTokens) })}
         </span>
       )}
 

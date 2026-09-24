@@ -70,10 +70,12 @@ export function UpdateSection({
   };
 
   return (
-    <SettingsGroup title="关于">
+    <SettingsGroup title={t("settings.updates.about")}>
       <SettingsRow
-        title="pi 版本"
-        description={`这个 Web UI 通过 npm 依赖接入的 pi 内核（${info?.packageName ?? "@earendil-works/pi-coding-agent"}）`}
+        title={t("settings.updates.piVersion")}
+        description={t("settings.updates.piVersionDescription", {
+          package: info?.packageName ?? "@earendil-works/pi-coding-agent",
+        })}
       >
         <div className={styles.control}>
           <span className={styles.version}>{info?.current ?? "—"}</span>
@@ -93,23 +95,26 @@ export function UpdateSection({
               title={info.updateCommand}
               onClick={copyCommand}
             >
-              {copied ? "已复制" : "复制更新命令"}
+              {copied ? t("common.copied") : t("settings.updates.copyCommand")}
             </button>
           ) : null}
           <button type="button" className={styles.ghost} disabled={checking} onClick={check}>
-            {checking ? "检查中…" : "检查更新"}
+            {checking ? t("settings.updates.checking") : t("settings.updates.check")}
           </button>
         </div>
       </SettingsRow>
 
-      <SettingsRow title="插件更新" description="已安装 pi 包与上游版本的比较">
+      <SettingsRow
+          title={t("settings.updates.pluginUpdates")}
+          description={t("settings.updates.pluginUpdatesDescription")}
+        >
         <div className={styles.control}>
           <span className={clsx(styles.status, count > 0 && styles.statusNew)}>
             {extensionUpdateStatus(view, t)}
           </span>
           {count > 0 && onOpenPlugins !== undefined ? (
             <button type="button" className={styles.ghost} onClick={onOpenPlugins}>
-              去插件页
+              {t("settings.updates.goToPlugins")}
             </button>
           ) : null}
         </div>

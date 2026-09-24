@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import type { ExtensionItem, ExtensionUpdate } from "../../lib/types.ts";
 import { extensionUpdateCount, updateForSource } from "../../lib/updates.ts";
 import { shouldOfferTodoInstall } from "../conversation/todo-model.ts";
-import { GROUP_META, extensionSourceLabel, groupExtensions } from "./plugin-model.ts";
+import { extensionSourceLabel, groupExtensions, groupMeta } from "./plugin-model.ts";
 import styles from "./PluginsSection.module.css";
 
 /**
@@ -41,6 +41,7 @@ import styles from "./PluginsSection.module.css";
 type Scope = "user" | "project";
 
 export function PluginsSection({ className }: { className?: string }) {
+  const t = useT();
   const state = useStore(appStore);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<Scope, boolean>>({
@@ -147,7 +148,7 @@ export function PluginsSection({ className }: { className?: string }) {
     });
     void actions
       .updateExtension(projectPath, item.source)
-      .then(() => actions.setNotice(`已更新 ${item.name}，下一条消息生效。`))
+      .then(() => actions.setNotice(t("settings.plugins.updated", { name: item.name })))
       .catch((err: Error) => {
         setUpdateErrors((previous) => ({ ...previous, [item.path]: err.message }));
       })
@@ -163,7 +164,7 @@ export function PluginsSection({ className }: { className?: string }) {
   return (
     <div className={className}>
       <div className={styles.header}>
-        <h1 className={styles.heading}>插件</h1>
+        <h1 className={styles.heading}>{t("settings.nav.plugins")}</h1>
         {/*
           dsh's header action opens the deployment's config file. That file is
           per-deployment there; here there are two (global settings and the
@@ -176,10 +177,10 @@ export function PluginsSection({ className }: { className?: string }) {
             type="button"
             className={styles.configPath}
             disabled={checkingUpdates}
-            title="重新向上游查询已装包的最新版本"
+            title={t("settings.plugins.checkUpdatesTitle")}
             onClick={refreshUpdates}
           >
-            {checkingUpdates ? "检查中…" : "检查更新"}
+            {checkingUpdates ? t("settings.updates.checking") : t("settings.updates.check")}
           </button>
           <button
             type="button"
@@ -190,16 +191,14 @@ export function PluginsSection({ className }: { className?: string }) {
               if (view === null) return;
               void navigator.clipboard
                 .writeText(view.settingsPath)
-                .then(() => actions.setNotice(`已复制 ${view.settingsPath}`))
+                .then(() => actions.setNotice(t("settings.plugins.copyNotice", { path: view.settingsPath })))
                 .catch(() => actions.setNotice(view.settingsPath));
             }}
-          >
-            复制配置路径
-          </button>
+          >{t("settings.models.copyPath")}</button>
         </div>
       </div>
 
-      <p className={styles.lead}>管理 pi 启动时加载的扩展：本机目录里的文件，以及已安装的 pi 包。</p>
+      <p className={styles.lead}>{t("settings.plugins.lead")}</p>
 
       {/*
         The task panel's own notice can be closed, so the offer has to exist
@@ -211,9 +210,7 @@ export function PluginsSection({ className }: { className?: string }) {
       */}
       {shouldOfferTodoInstall(todo, false) ? (
         <div className={styles.todoNotice}>
-          <p className={styles.todoNoticeText}>
-            任务清单面板需要 rpiv-todo 扩展（pi 的 <code>todo</code> 工具由它提供）。
-          </p>
+          <p className={styles.todoNoticeText}>{t("settings.plugins.todoNoticePrefix")}<code>todo</code>{t("settings.plugins.todoNoticeSuffix")}</p>
           <button
             type="button"
             className={styles.todoNoticeAction}
@@ -221,7 +218,7 @@ export function PluginsSection({ className }: { className?: string }) {
             title="pi install npm:@juicesharp/rpiv-todo"
             onClick={installTodo}
           >
-            {installingTodo ? "安装中…" : "安装"}
+            {installingTodo ? t("todo.installing") : t("todo.install")}
           </button>
           {todoError !== null ? <p className={styles.todoNoticeError}>{todoError}</p> : null}
         </div>
@@ -235,7 +232,7 @@ export function PluginsSection({ className }: { className?: string }) {
       {updateCount > 0 ? (
         <div className={styles.updateNotice}>
           <p className={styles.updateNoticeText}>
-            {updateCount} 个插件有可用更新，展开对应条目点「更新」即可。
+            {t("settings.plugins.updatesSummary", { count: updateCount })}
           </p>
         </div>
       ) : null}
@@ -246,30 +243,28 @@ export function PluginsSection({ className }: { className?: string }) {
           className={styles.searchInput}
           type="search"
           value={query}
-          placeholder="搜索插件"
-          aria-label="搜索插件"
+          placeholder={t("settings.plugins.searchPlaceholder")}
+          aria-label={t("settings.plugins.searchPlaceholder")}
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
 
       {view === null ? (
-        <div className={styles.placeholder}>正在读取插件…</div>
+        <div className={styles.placeholder}>{t("settings.plugins.loading")}</div>
       ) : view.error !== null ? (
         <div className={styles.failure}>
-          <p className={styles.failureText}>暂时无法读取插件。</p>
+          <p className={styles.failureText}>{t("settings.plugins.failed")}</p>
           <p className={styles.failureDetail}>{view.error}</p>
           <button
             type="button"
             className={styles.retry}
             onClick={() => void actions.loadExtensions(projectPath)}
-          >
-            重试
-          </button>
+          >{t("common.retry")}</button>
         </div>
       ) : total === 0 ? (
-        <div className={styles.placeholder}>暂无插件。</div>
+        <div className={styles.placeholder}>{t("settings.plugins.empty")}</div>
       ) : searching && matched === 0 ? (
-        <div className={styles.placeholder}>没有匹配的插件。</div>
+        <div className={styles.placeholder}>{t("settings.plugins.noMatch")}</div>
       ) : (
         <>
           {(["user", "project"] as const).map((scope) => {
@@ -298,15 +293,13 @@ export function PluginsSection({ className }: { className?: string }) {
                       collapsed[scope] && styles.groupChevronCollapsed,
                     )}
                   />
-                  <span className={styles.groupTitle}>{GROUP_META[scope].title}</span>
-                  <span className={styles.groupSub}>{GROUP_META[scope].subtitle}</span>
-                  <span className={styles.groupCount}>{items.length} 个</span>
+                  <span className={styles.groupTitle}>{groupMeta(t)[scope].title}</span>
+                  <span className={styles.groupSub}>{groupMeta(t)[scope].subtitle}</span>
+                  <span className={styles.groupCount}>{t("settings.plugins.groupCount", { count: items.length })}</span>
                 </button>
 
                 {scope === "project" && !view.projectTrusted ? (
-                  <p className={styles.note}>
-                    pi 尚未信任这个工作区，下面这些 .pi 扩展不会被加载，也无法在这里改写。
-                  </p>
+                  <p className={styles.note}>{t("settings.plugins.untrusted")}</p>
                 ) : null}
 
                 {!collapsed[scope] || searching ? (
@@ -369,6 +362,7 @@ function PluginCard({
   onSetEnabled: (enabled: boolean) => void;
   onUpdate: () => void;
 }) {
+  const t = useT();
   return (
     <div className={styles.card}>
       <div className={styles.cardMainRow}>
@@ -384,18 +378,18 @@ function PluginCard({
             className={clsx(styles.cardChevron, !expanded && styles.cardChevronCollapsed)}
           />
           <span className={styles.cardTitle}>{item.name}</span>
-          <span className={styles.cardBadge}>{extensionSourceLabel(item)}</span>
+          <span className={styles.cardBadge}>{extensionSourceLabel(item, t)}</span>
           {/*
             On the collapsed row too: a package that needs updating should say
             so without being expanded, since that is the row's news.
           */}
-          {update !== null ? <span className={styles.updateBadge}>可更新</span> : null}
+          {update !== null ? <span className={styles.updateBadge}>{t("settings.plugins.updateBadge")}</span> : null}
         </button>
 
         <span
           className={clsx(styles.status, item.enabled ? styles.statusOn : styles.statusOff)}
         >
-          {item.enabled ? "已启用" : "已停用"}
+          {item.enabled ? t("common.enabled") : t("common.disabled")}
         </span>
 
         {/*
@@ -408,7 +402,7 @@ function PluginCard({
           type="button"
           role="switch"
           aria-checked={item.enabled}
-          aria-label={`${item.enabled ? "停用" : "启用"} ${item.name}`}
+          aria-label={`${item.enabled ? t("common.disable") : t("common.enable")} ${item.name}`}
           className={clsx(
             styles.switch,
             item.enabled && styles.switchOn,
@@ -423,12 +417,12 @@ function PluginCard({
 
       {expanded ? (
         <dl className={styles.details}>
-          <DetailRow label="完整名称" value={item.path} />
-          <DetailRow label="来自" value={extensionSourceLabel(item)} />
-          <DetailRow label="完整来源" value={item.source} />
+          <DetailRow label={t("settings.plugins.pathLabel")} value={item.path} />
+          <DetailRow label={t("settings.plugins.sourceLabel")} value={extensionSourceLabel(item, t)} />
+          <DetailRow label={t("settings.plugins.sourcePathLabel")} value={item.source} />
           <DetailRow
-            label="配置状态"
-            value={item.enabled ? "已启用" : "已停用"}
+            label={t("settings.plugins.stateLabel")}
+            value={item.enabled ? t("common.enabled") : t("common.disabled")}
           />
         </dl>
       ) : null}
@@ -442,7 +436,7 @@ function PluginCard({
         <div className={styles.updatePanel}>
           {update !== null ? (
             <>
-              <span className={styles.updateText}>上游有新版本</span>
+              <span className={styles.updateText}>{t("settings.plugins.upstream")}</span>
               <button
                 type="button"
                 className={styles.updateAction}
@@ -450,7 +444,7 @@ function PluginCard({
                 title={`pi update ${item.source}`}
                 onClick={onUpdate}
               >
-                {updating ? "更新中…" : "更新"}
+                {updating ? t("settings.plugins.updating") : t("settings.plugins.update")}
               </button>
             </>
           ) : null}
@@ -464,6 +458,7 @@ function PluginCard({
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
+  const t = useT();
   return (
     <div className={styles.detailRow}>
       <dt className={styles.detailLabel}>{label}</dt>

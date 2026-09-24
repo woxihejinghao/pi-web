@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { RefreshIcon } from "../../components/icons.tsx";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import type { McpProbeResult, McpServerView, McpView } from "../../lib/types.ts";
 import { Dialog } from "./Dialog.tsx";
 import { McpServerEditor } from "./McpServerEditor.tsx";
 import {
-  SCOPE_OPTIONS,
-  STATE_OPTIONS,
+  scopeOptions,
+  stateOptions,
   filterServers,
   scopeLabel,
   type ScopeFilter,
@@ -47,6 +47,7 @@ type ProbeState = McpProbeResult | "running";
 const INSTALL_COMMAND = "pi install npm:pi-mcp-adapter";
 
 export function McpSection({ className }: { className?: string }) {
+  const t = useT();
   const state = useStore(appStore);
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
@@ -109,7 +110,7 @@ export function McpSection({ className }: { className?: string }) {
   const copyInstallCommand = (): void => {
     void navigator.clipboard
       .writeText(INSTALL_COMMAND)
-      .then(() => actions.setNotice(`已复制 ${INSTALL_COMMAND}`))
+      .then(() => actions.setNotice(t("settings.mcp.copyNotice", { command: INSTALL_COMMAND })))
       .catch(() => actions.setNotice(INSTALL_COMMAND));
   };
 
@@ -140,7 +141,7 @@ export function McpSection({ className }: { className?: string }) {
       <div className={styles.header}>
         <div className={styles.titleGroup}>
           <Glyph name="mcp" size={16} className={styles.titleIcon} />
-          <h1 className={styles.heading}>MCP 服务器</h1>
+          <h1 className={styles.heading}>{t("settings.mcp.title")}</h1>
         </div>
         <div className={styles.headerActions}>
           <button
@@ -149,7 +150,7 @@ export function McpSection({ className }: { className?: string }) {
             disabled={restarting || view === null || !view.available}
             onClick={restart}
           >
-            {restarting ? "重启中…" : "重启"}
+            {restarting ? t("settings.mcp.restarting") : t("settings.mcp.restart")}
           </button>
           <button
             type="button"
@@ -157,39 +158,31 @@ export function McpSection({ className }: { className?: string }) {
             disabled={view === null || view.importable.length === 0}
             title={
               view !== null && view.importable.length === 0
-                ? "没有检测到可导入的其他 Agent 配置"
+                ? t("settings.mcp.noImports")
                 : undefined
             }
             onClick={() => setImporting(true)}
-          >
-            从其他 Agent 导入
-          </button>
+          >{t("settings.mcp.import")}</button>
           <button
             type="button"
             className={styles.primaryButton}
             disabled={view === null || !view.available}
             onClick={() => setEditing({ server: null })}
-          >
-            添加服务器
-          </button>
+          >{t("settings.mcp.add")}</button>
         </div>
       </div>
 
-      <p className={styles.lead}>
-        管理 pi 的 MCP 服务器。新增、修改或删除后需要重启，下一次发消息时生效。
-      </p>
+      <p className={styles.lead}>{t("settings.mcp.lead")}</p>
 
       {view === null ? (
-        <div className={styles.placeholder}>正在读取 MCP 配置…</div>
+        <div className={styles.placeholder}>{t("settings.mcp.loading")}</div>
       ) : !view.available ? (
         // The extension is missing, which is a different state from "no servers
         // configured" — so it gets an explanation and a way out of it, not an
         // empty list. Installing is the same operation `pi install` performs.
         <div className={styles.notice}>
-          <p className={styles.noticeTitle}>需要先安装 pi-mcp-adapter</p>
-          <p className={styles.noticeBody}>
-            pi 本身不带 MCP 支持，这一节的能力来自 pi-mcp-adapter 扩展。装好之后这一页会自动可用，不用重启本服务。
-          </p>
+          <p className={styles.noticeTitle}>{t("settings.mcp.adapterTitle")}</p>
+          <p className={styles.noticeBody}>{t("settings.mcp.adapterBody")}</p>
           {view.unavailableReason !== null ? (
             <p className={styles.noticeDetail}>{view.unavailableReason}</p>
           ) : null}
@@ -200,24 +193,20 @@ export function McpSection({ className }: { className?: string }) {
               disabled={installing}
               onClick={install}
             >
-              {installing ? "安装中…（可能要一分钟）" : "安装 pi-mcp-adapter"}
+              {installing ? t("settings.mcp.installingAdapter") : t("settings.mcp.installAdapter")}
             </button>
             <button
               type="button"
               className={styles.textButton}
               disabled={installing}
               onClick={copyInstallCommand}
-            >
-              复制安装命令
-            </button>
+            >{t("settings.mcp.copyCommand")}</button>
             <button
               type="button"
               className={styles.textButton}
               disabled={installing}
               onClick={refresh}
-            >
-              重新检查
-            </button>
+            >{t("settings.mcp.recheck")}</button>
           </div>
           <p className={styles.noticeCommand}>{INSTALL_COMMAND}</p>
           {installError !== null ? (
@@ -226,22 +215,20 @@ export function McpSection({ className }: { className?: string }) {
         </div>
       ) : view.error !== null ? (
         <div className={styles.notice}>
-          <p className={styles.noticeTitle}>暂时无法读取 MCP 配置。</p>
+          <p className={styles.noticeTitle}>{t("settings.mcp.unreadable")}</p>
           <p className={styles.noticeBody}>{view.error}</p>
-          <button type="button" className={styles.textButton} onClick={refresh}>
-            重试
-          </button>
+          <button type="button" className={styles.textButton} onClick={refresh}>{t("common.retry")}</button>
         </div>
       ) : (
         <>
           <div className={styles.toolbar}>
             <select
               className={styles.select}
-              aria-label="作用域"
+              aria-label={t("settings.mcp.scopeLabel")}
               value={scopeFilter}
               onChange={(event) => setScopeFilter(event.target.value as ScopeFilter)}
             >
-              {SCOPE_OPTIONS.map((option) => (
+              {scopeOptions(t).map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -249,11 +236,11 @@ export function McpSection({ className }: { className?: string }) {
             </select>
             <select
               className={styles.select}
-              aria-label="状态"
+              aria-label={t("settings.mcp.statusLabel")}
               value={stateFilter}
               onChange={(event) => setStateFilter(event.target.value as StateFilter)}
             >
-              {STATE_OPTIONS.map((option) => (
+              {stateOptions(t).map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -263,8 +250,8 @@ export function McpSection({ className }: { className?: string }) {
             <button
               type="button"
               className={styles.iconButton}
-              aria-label="刷新"
-              title="重新读取配置文件"
+              aria-label={t("common.refresh")}
+              title={t("settings.mcp.refreshTitle")}
               disabled={refreshing}
               onClick={refresh}
             >
@@ -273,11 +260,9 @@ export function McpSection({ className }: { className?: string }) {
           </div>
 
           {view.servers.length === 0 ? (
-            <div className={styles.placeholder}>
-              还没有 MCP 服务器。用「添加服务器」新建一个，或者从其他 Agent 导入。
-            </div>
+            <div className={styles.placeholder}>{t("settings.mcp.empty")}</div>
           ) : visible.length === 0 ? (
-            <div className={styles.placeholder}>没有匹配的服务器。</div>
+            <div className={styles.placeholder}>{t("settings.mcp.noMatch")}</div>
           ) : (
             <div className={styles.cards}>
               {visible.map((server) => (
@@ -353,6 +338,7 @@ function McpCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const checked = probe !== undefined && probe !== "running" ? probe : null;
 
   return (
@@ -360,14 +346,14 @@ function McpCard({
       <div className={styles.cardHead}>
         <span className={styles.cardName}>{server.name}</span>
         <span className={styles.cardTags}>
-          <span className={styles.tag}>{scopeLabel(server)}</span>
+          <span className={styles.tag}>{scopeLabel(server, t)}</span>
           <span className={styles.tag}>{server.transport}</span>
           <span className={clsx(styles.tag, server.enabled ? styles.tagOn : styles.tagOff)}>
-            {server.enabled ? "启用中" : "已停用"}
+            {server.enabled ? t("settings.mcp.enabled") : t("common.disabled")}
           </span>
           {server.envKeys.length + server.headerKeys.length > 0 ? (
-            <span className={styles.tag} title={`已存储密钥：${[...server.envKeys, ...server.headerKeys].join("、")}`}>
-              已存密钥 {server.envKeys.length + server.headerKeys.length}
+            <span className={styles.tag} title={t("settings.mcp.keysStoredTitle", { keys: [...server.envKeys, ...server.headerKeys].join(t("notice.kindsSeparator")) })}>
+              {t("settings.mcp.keysStored", { count: server.envKeys.length + server.headerKeys.length })}
             </span>
           ) : null}
         </span>
@@ -388,16 +374,16 @@ function McpCard({
           disabled={probe === "running"}
           onClick={onCheck}
         >
-          {probe === "running" ? "检查中…" : "检查"}
+          {probe === "running" ? t("settings.updates.checking") : t("settings.mcp.check")}
         </button>
         <button
           type="button"
           className={styles.cardButton}
           disabled={!canToggle || busy}
-          title={canToggle ? undefined : "停用是工作区级的覆盖，请先选择一个工作区"}
+          title={canToggle ? undefined : t("settings.mcp.disableTitle")}
           onClick={onToggle}
         >
-          {server.enabled ? "停用" : "启用"}
+          {server.enabled ? t("common.disable") : t("common.enable")}
         </button>
         <button
           type="button"
@@ -405,26 +391,22 @@ function McpCard({
           disabled={server.hostImport}
           title={
             server.hostImport
-              ? `定义在 ${server.importKind} 的配置文件里，请在那里编辑`
+              ? t("settings.mcp.definedElsewhere", { kind: server.importKind ?? "" })
               : undefined
           }
           onClick={onEdit}
-        >
-          编辑
-        </button>
+        >{t("tool.edit")}</button>
         <button
           type="button"
           className={styles.cardDanger}
           disabled={server.hostImport}
           title={
             server.hostImport
-              ? `定义在 ${server.importKind} 的配置文件里，这里只能停用`
+              ? t("settings.mcp.definedElsewhereDisable", { kind: server.importKind ?? "" })
               : undefined
           }
           onClick={onDelete}
-        >
-          删除
-        </button>
+        >{t("common.delete")}</button>
       </div>
     </div>
   );
@@ -434,22 +416,27 @@ function McpCard({
  * The files this section reads and writes.
  *
  * dsh's panel does not show them because it owns its registry; here the config
- * lives in files that other tools read too, and a row that says "停用" is really
+ * lives in files that other tools read too, and a row that says t("common.disable") is really
  * writing one of them. Naming them is the difference between a button and a
  * guess.
  */
 function McpPaths({ view }: { view: McpView }) {
+  const t = useT();
   return (
     <div className={styles.paths}>
-      <div className={styles.pathsTitle}>配置文件</div>
+      <div className={styles.pathsTitle}>{t("settings.mcp.configFiles")}</div>
       <dl className={styles.pathsList}>
-        <PathRow label="全局添加" value={view.paths.global} />
-        <PathRow label="工作区添加" value={view.paths.project} />
-        <PathRow label="启用/停用" value={view.paths.projectPi} />
+        <PathRow label={t("settings.mcp.pathGlobal")} value={view.paths.global} />
+        <PathRow label={t("settings.mcp.pathProject")} value={view.paths.project} />
+        <PathRow label={t("settings.mcp.pathToggle")} value={view.paths.projectPi} />
         {view.imports.length > 0 ? (
           <PathRow
-            label="已导入"
-            value={view.imports.map((entry) => `${entry.kind}（${entry.serverCount} 个）`).join("、")}
+            label={t("settings.mcp.imported")}
+            value={view.imports
+              .map((entry) =>
+                t("settings.mcp.importedValue", { kind: entry.kind, count: entry.serverCount }),
+              )
+              .join(t("notice.kindsSeparator"))}
           />
         ) : null}
       </dl>
@@ -458,6 +445,7 @@ function McpPaths({ view }: { view: McpView }) {
 }
 
 function PathRow({ label, value }: { label: string; value: string }) {
+  const t = useT();
   return (
     <div className={styles.pathRow}>
       <dt className={styles.pathLabel}>{label}</dt>
@@ -485,6 +473,7 @@ function McpImportDialog({
   projectPath: string | null;
   onClose: () => void;
 }) {
+  const t = useT();
   const [selected, setSelected] = useState<Record<string, true>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -504,11 +493,9 @@ function McpImportDialog({
   };
 
   return (
-    <Dialog onClose={busy ? undefined : onClose} label="从其他 Agent 导入">
-      <h2 className={styles.dialogTitle}>从其他 Agent 导入</h2>
-      <p className={styles.dialogCopy}>
-        勾选要引入的配置。这些文件仍由各自的工具维护，这里只读取它们。
-      </p>
+    <Dialog onClose={busy ? undefined : onClose} label={t("settings.mcp.import")}>
+      <h2 className={styles.dialogTitle}>{t("settings.mcp.import")}</h2>
+      <p className={styles.dialogCopy}>{t("settings.mcp.importBody")}</p>
       <div className={styles.importList}>
         {view.importable.map((candidate) => (
           <label key={candidate.kind} className={styles.importRow}>
@@ -533,16 +520,14 @@ function McpImportDialog({
       </div>
       {error !== null ? <p className={styles.dialogError}>{error}</p> : null}
       <div className={styles.dialogActions}>
-        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>
-          取消
-        </button>
+        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>{t("common.cancel")}</button>
         <button
           type="button"
           className={styles.primaryButton}
           disabled={busy || kinds.length === 0}
           onClick={run}
         >
-          {busy ? "导入中…" : "导入"}
+          {busy ? t("settings.mcp.importing") : t("settings.mcp.importAction")}
         </button>
       </div>
     </Dialog>
@@ -558,6 +543,7 @@ function McpDeleteDialog({
   projectPath: string | null;
   onClose: () => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -574,25 +560,26 @@ function McpDeleteDialog({
   };
 
   return (
-    <Dialog onClose={busy ? undefined : onClose} label={`删除 ${server.name}`}>
-      <h2 className={styles.dialogTitle}>删除 {server.name}？</h2>
+    <Dialog onClose={busy ? undefined : onClose} label={t("settings.mcp.removeTitle", { name: server.name })}>
+      <h2 className={styles.dialogTitle}>{t("settings.mcp.removeTitle", { name: server.name })}</h2>
       <p className={styles.dialogCopy}>
         {/*
           Deleting is a file edit, so the dialog says which file. When a server
           is defined in several layers, removing the top one re-exposes the one
           under it — worth saying before the click, not after.
         */}
-        {`会从定义它的配置文件里移除这条记录${
-          server.sourcePath.length > 0 ? `（${server.sourcePath}）` : ""
-        }。如果更低优先级的文件里还有同名定义，那个定义会重新生效。`}
+        {t("settings.mcp.removeBody", {
+          extra:
+            server.sourcePath.length > 0
+              ? t("settings.mcp.removeBodySource", { path: server.sourcePath })
+              : "",
+        })}
       </p>
       {error !== null ? <p className={styles.dialogError}>{error}</p> : null}
       <div className={styles.dialogActions}>
-        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>
-          取消
-        </button>
+        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>{t("common.cancel")}</button>
         <button type="button" className={styles.dangerButtonSolid} onClick={remove} disabled={busy}>
-          {busy ? `正在删除 ${server.name}…` : "删除"}
+          {busy ? t("settings.mcp.removing", { name: server.name }) : t("common.delete")}
         </button>
       </div>
     </Dialog>

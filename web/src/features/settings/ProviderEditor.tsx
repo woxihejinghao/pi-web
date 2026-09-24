@@ -1,7 +1,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
 // Aliased: `api` is also the name of this form's wire-protocol field, which is
 // dsh's label for it (API 协议) and not worth renaming.
 import { api as apiClient } from "../../lib/api.ts";
@@ -21,7 +21,7 @@ type EditorMode = "edit" | "create-known" | "create-custom";
  *
  * The API key is **write-only**. The page never receives the current key, so it
  * cannot show or echo one; a save that leaves the field untouched sends no key
- * at all and the stored one survives. "已配置——输入新值可替换" is the placeholder
+ * at all and the stored one survives. t("settings.provider.apiKeyConfigured") is the placeholder
  * for exactly that state.
  *
  * The **API address and protocol live in a collapsed 自定义设置 area**. pi knows
@@ -46,6 +46,7 @@ export function ProviderEditor({
   apiProtocols: string[];
   onClose: () => void;
 }) {
+  const t = useT();
   const state = useStore(appStore);
   const existing = new Set((state.models?.providers ?? []).map((p) => p.id));
 
@@ -74,11 +75,11 @@ export function ProviderEditor({
   const idLocked = !creating || known;
 
   const idProblem = ((): string | null => {
-    if (id.length === 0) return creating ? "请输入提供方 ID。" : null;
+    if (id.length === 0) return creating ? t("settings.provider.idRequired") : null;
     if (!/^[a-z][a-z0-9-]*$/.test(id)) {
-      return "需以小写字母开头，之后可用小写字母、数字和短横线。";
+      return t("settings.provider.idRule");
     }
-    if (creating && existing.has(id)) return "已有提供方使用了这个 ID。";
+    if (creating && existing.has(id)) return t("settings.provider.idTaken");
     return null;
   })();
 
@@ -92,7 +93,7 @@ export function ProviderEditor({
   const discoverModels = (): void => {
     const trimmed = baseUrl.trim();
     if (trimmed.length === 0) {
-      setFetchError("请先填写 API 地址，再获取。");
+      setFetchError(t("settings.provider.needBaseUrl"));
       return;
     }
     setFetching(true);
@@ -107,7 +108,7 @@ export function ProviderEditor({
       .then(({ models: found }) => {
         setFetching(false);
         if (found.length === 0) {
-          setFetchError("该提供方没有列出任何模型，请手动添加。");
+          setFetchError(t("settings.provider.noModels"));
           return;
         }
         setFetched(found);
@@ -151,10 +152,10 @@ export function ProviderEditor({
 
   const title =
     mode === "edit"
-      ? `编辑 ${provider?.name ?? id}`
+      ? t("settings.provider.editTitle", { name: provider?.name ?? id })
       : mode === "create-custom"
-        ? "自定义提供方"
-        : "添加提供方";
+        ? t("settings.provider.customTitle")
+        : t("settings.provider.addTitle");
 
   return (
     <Dialog onClose={busy ? undefined : onClose} label={title}>
@@ -162,17 +163,17 @@ export function ProviderEditor({
 
       <div className={styles.body}>
         {known ? (
-          <Field label="提供方" hint="以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。">
+          <Field label={t("settings.provider.fieldLabel")} hint={t("settings.provider.fieldHint")}>
             <select
               className={styles.input}
               value={id}
-              aria-label="提供方"
+              aria-label={t("settings.provider.fieldLabel")}
               onChange={(event) => {
                 setId(event.target.value);
                 setName(event.target.value);
               }}
             >
-              <option value="">未选择</option>
+              <option value="">{t("settings.provider.none")}</option>
               {knownProviders
                 .filter((candidate) => !existing.has(candidate))
                 .map((candidate) => (
@@ -183,12 +184,12 @@ export function ProviderEditor({
             </select>
           </Field>
         ) : (
-          <Field label="提供方 ID" hint={idLocked ? undefined : "以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。"}>
+          <Field label={t("settings.provider.idLabel")} hint={idLocked ? undefined : t("settings.provider.fieldHint")}>
             <input
               className={styles.input}
               value={id}
               readOnly={idLocked}
-              aria-label="提供方 ID"
+              aria-label={t("settings.provider.idLabel")}
               placeholder="my-provider"
               onChange={(event) => setId(event.target.value)}
             />
@@ -196,11 +197,11 @@ export function ProviderEditor({
         )}
 
         {!known && (
-          <Field label="显示名称" hint="留空时使用提供方 ID。">
+          <Field label={t("settings.provider.displayName")} hint={t("settings.provider.displayNameHint")}>
             <input
               className={styles.input}
               value={name}
-              aria-label="显示名称"
+              aria-label={t("settings.provider.displayName")}
               placeholder={id}
               onChange={(event) => setName(event.target.value)}
             />
@@ -208,20 +209,20 @@ export function ProviderEditor({
         )}
 
         <Field
-          label="API 密钥"
+          label={t("settings.provider.apiKey")}
           hint={
             provider?.configured === true
-              ? "已配置——输入新值可替换"
-              : "输入 API 密钥；若该提供方以其他方式鉴权，可以留空。"
+              ? t("settings.provider.apiKeyConfigured")
+              : t("settings.provider.apiKeyHint")
           }
         >
           <input
             className={styles.input}
             type="password"
             value={apiKey}
-            aria-label="API 密钥"
+            aria-label={t("settings.provider.apiKey")}
             autoComplete="off"
-            placeholder={provider?.configured === true ? "已配置——输入新值可替换" : "输入 API 密钥"}
+            placeholder={provider?.configured === true ? t("settings.provider.apiKeyConfigured") : t("settings.provider.apiKeyPlaceholder")}
             onChange={(event) => setApiKey(event.target.value)}
           />
         </Field>
@@ -237,33 +238,31 @@ export function ProviderEditor({
             name="chevronDown"
             size={14}
             className={advancedOpen ? styles.caretOpen : styles.caret}
-          />
-          自定义设置
-        </button>
+          />{t("settings.provider.customSettings")}</button>
 
         {advancedOpen && (
           <div className={styles.advanced}>
             <Field
-              label="API 地址"
-              hint="留空则使用 pi 对该提供方的默认地址。"
+              label={t("settings.provider.baseUrl")}
+              hint={t("settings.provider.baseUrlHint")}
             >
               <input
                 className={styles.input}
                 value={baseUrl}
-                aria-label="API 地址"
+                aria-label={t("settings.provider.baseUrl")}
                 placeholder="https://api.example.com/v1"
                 onChange={(event) => setBaseUrl(event.target.value)}
               />
             </Field>
 
-            <Field label="API 协议" hint="留空则使用 pi 对该提供方的默认协议。">
+            <Field label={t("settings.provider.apiProtocol")} hint={t("settings.provider.apiProtocolHint")}>
               <select
                 className={styles.input}
                 value={api}
-                aria-label="API 协议"
+                aria-label={t("settings.provider.apiProtocol")}
                 onChange={(event) => setApi(event.target.value)}
               >
-                <option value="">未选择</option>
+                <option value="">{t("settings.provider.none")}</option>
                 {apiProtocols.map((protocol) => (
                   <option key={protocol} value={protocol}>
                     {protocol}
@@ -273,37 +272,33 @@ export function ProviderEditor({
             </Field>
 
             <div className={styles.modelsHeader}>
-              <span className={styles.modelsLabel}>模型目录</span>
+              <span className={styles.modelsLabel}>{t("settings.provider.modelCatalog")}</span>
               <button
                 type="button"
                 className={styles.smallButton}
                 disabled={fetching}
                 onClick={discoverModels}
               >
-                {fetching ? "正在询问提供方…" : "获取可用模型"}
+                {fetching ? t("settings.provider.fetching") : t("settings.provider.fetchModels")}
               </button>
               <button
                 type="button"
                 className={styles.smallButton}
                 onClick={() => setModels((list) => [...list, { id: "" }])}
               >
-                <Glyph name="plus" size={14} />
-                添加模型
-              </button>
+                <Glyph name="plus" size={14} />{t("settings.provider.addModel")}</button>
             </div>
             {fetchError !== null && <p className={styles.fetchError}>{fetchError}</p>}
             {models.length === 0 && (
-              <p className={styles.modelsEmpty}>
-                pi 的内置提供方自带模型列表；自定义提供方需要在这里至少添加一个模型。
-              </p>
+              <p className={styles.modelsEmpty}>{t("settings.provider.catalogHint")}</p>
             )}
             {models.map((model, index) => (
               <div className={styles.modelRow} key={`${index}-${model.id}`}>
                 <input
                   className={styles.input}
                   value={model.id}
-                  aria-label={`模型 ID ${index + 1}`}
-                  placeholder="模型 ID"
+                  aria-label={t("settings.provider.modelIdLabel", { index: index + 1 })}
+                  placeholder={t("settings.provider.modelId")}
                   onChange={(event) =>
                     setModels((list) =>
                       list.map((entry, i) =>
@@ -315,8 +310,8 @@ export function ProviderEditor({
                 <input
                   className={styles.input}
                   value={model.name ?? ""}
-                  aria-label={`显示名称 ${index + 1}`}
-                  placeholder="留空时使用模型 ID"
+                  aria-label={t("settings.provider.modelNameLabel", { index: index + 1 })}
+                  placeholder={t("settings.provider.modelNamePlaceholder")}
                   onChange={(event) =>
                     setModels((list) =>
                       list.map((entry, i) =>
@@ -328,7 +323,7 @@ export function ProviderEditor({
                 <button
                   type="button"
                   className={styles.iconButton}
-                  aria-label={`删除模型 ${index + 1}`}
+                  aria-label={t("settings.provider.removeModel", { index: index + 1 })}
                   onClick={() =>
                     setModels((list) => list.filter((_, i) => i !== index))
                   }
@@ -365,16 +360,14 @@ export function ProviderEditor({
       )}
 
       <div className={styles.actions}>
-        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>
-          取消
-        </button>
+        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>{t("common.cancel")}</button>
         <button
           type="button"
           className={clsx(styles.primaryButton)}
           onClick={submit}
           disabled={busy || idProblem !== null}
         >
-          {busy ? (creating ? "创建中…" : "保存中…") : creating ? "创建提供方" : "保存"}
+          {busy ? (creating ? t("settings.provider.creating") : t("settings.provider.saving")) : creating ? t("settings.provider.create") : t("common.save")}
         </button>
       </div>
     </Dialog>
@@ -390,6 +383,7 @@ function Field({
   hint?: string;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <label className={styles.field}>
       <span className={styles.fieldLabel}>{label}</span>

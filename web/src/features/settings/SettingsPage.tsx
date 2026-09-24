@@ -7,6 +7,8 @@ import { McpSection } from "./McpSection.tsx";
 import { ModelsSection } from "./ModelsSection.tsx";
 import { PluginsSection } from "./PluginsSection.tsx";
 import styles from "./SettingsPage.module.css";
+import { useT } from "../../lib/app-state.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 type SectionId = "general" | "models" | "plugins" | "mcp";
 
@@ -19,27 +21,33 @@ type SectionId = "general" | "models" | "plugins" | "mcp";
  * Labels are dsh's, verbatim — including 插件 for the plugins section, which dsh
  * lists between 模型 and Agent 预设.
  */
-const SECTIONS: readonly { id: SectionId; label: string; glyph: GlyphName }[] = [
-  { id: "general", label: "通用设置", glyph: "settings" },
-  { id: "models", label: "模型", glyph: "database" },
-  { id: "plugins", label: "插件", glyph: "plugin" },
+/** The nav rail, built from `t` so the labels follow the language setting. */
+function navSections(
+  t: Translate,
+): readonly { id: SectionId; label: string; glyph: GlyphName }[] {
+  return [
+    { id: "general", label: t("settings.nav.general"), glyph: "settings" },
+    { id: "models", label: t("settings.nav.models"), glyph: "database" },
+    { id: "plugins", label: t("settings.nav.plugins"), glyph: "plugin" },
   // dsh puts MCP beside 技能 inside its extension panel; here it is its own
-  // section, because this page's navigation is flat and MCP is not a plugin.
-  { id: "mcp", label: "MCP", glyph: "mcp" },
-];
+    // section, because this page's navigation is flat and MCP is not a plugin.
+    { id: "mcp", label: "MCP", glyph: "mcp" },
+  ];
+}
 
 export function SettingsPage() {
+  const t = useT();
   const [section, setSection] = useState<SectionId>("general");
 
   return (
     <div className={styles.page}>
-      <nav className={styles.nav} aria-label="设置">
+      <nav className={styles.nav} aria-label={t("settings.nav.label")}>
         <button type="button" className={styles.back} onClick={actions.closeSettings}>
           <Glyph name="chevronDown" size={14} className={styles.backArrow} />
-          返回应用
+          {t("settings.nav.back")}
         </button>
         <div className={styles.navList}>
-          {SECTIONS.map((entry) => (
+          {navSections(t).map((entry) => (
             <button
               key={entry.id}
               type="button"

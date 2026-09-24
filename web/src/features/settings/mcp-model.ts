@@ -1,4 +1,5 @@
 import type { McpServerView, McpView } from "../../lib/types.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 /**
  * Pure model for the MCP section: the two filters and the tag text. Kept out of
@@ -6,20 +7,28 @@ import type { McpServerView, McpView } from "../../lib/types.ts";
  * page that talks to the server.
  */
 
-export const SCOPE_OPTIONS = [
-  { value: "all", label: "全部作用域" },
-  { value: "user", label: "全局" },
-  { value: "project", label: "当前工作区" },
-] as const;
+export function scopeOptions(
+  t: Translate,
+): readonly { value: ScopeFilter; label: string }[] {
+  return [
+    { value: "all", label: t("settings.mcpScope.all") },
+    { value: "user", label: t("settings.mcpScope.user") },
+    { value: "project", label: t("settings.mcpScope.project") },
+  ];
+}
 
-export const STATE_OPTIONS = [
-  { value: "all", label: "全部状态" },
-  { value: "enabled", label: "已启用" },
-  { value: "disabled", label: "已停用" },
-] as const;
+export function stateOptions(
+  t: Translate,
+): readonly { value: StateFilter; label: string }[] {
+  return [
+    { value: "all", label: t("settings.mcpStatus.all") },
+    { value: "enabled", label: t("settings.mcpStatus.enabled") },
+    { value: "disabled", label: t("settings.mcpStatus.disabled") },
+  ];
+}
 
-export type ScopeFilter = (typeof SCOPE_OPTIONS)[number]["value"];
-export type StateFilter = (typeof STATE_OPTIONS)[number]["value"];
+export type ScopeFilter = "all" | "user" | "project";
+export type StateFilter = "all" | "enabled" | "disabled";
 
 /**
  * What the row says about where the definition came from.
@@ -28,9 +37,11 @@ export type StateFilter = (typeof STATE_OPTIONS)[number]["value"];
  * definition that lives in `~/.cursor/mcp.json` and is only *read* through Pi's
  * import list.
  */
-export function scopeLabel(server: McpServerView): string {
-  if (server.hostImport) return `来自 ${server.importKind}`;
-  return server.sourceKind === "project" ? "当前工作区" : "全局";
+export function scopeLabel(server: McpServerView, t: Translate): string {
+  if (server.hostImport) return t("settings.mcpOrigin.from", { kind: server.importKind ?? "" });
+  return server.sourceKind === "project"
+    ? t("settings.mcpScope.project")
+    : t("settings.mcpScope.user");
 }
 
 /** Apply both filters. An empty inventory filters to an empty list. */

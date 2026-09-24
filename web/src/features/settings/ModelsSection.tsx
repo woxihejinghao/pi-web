@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import type { ModelProvider } from "../../lib/types.ts";
 import { ProviderEditor } from "./ProviderEditor.tsx";
@@ -18,6 +18,7 @@ import styles from "./ModelsSection.module.css";
  * provider with its credential state, then two add buttons — is the same.
  */
 export function ModelsSection({ className }: { className?: string }) {
+  const t = useT();
   const state = useStore(appStore);
   const [editing, setEditing] = useState<ModelProvider | null>(null);
   const [creating, setCreating] = useState<"known" | "custom" | null>(null);
@@ -34,7 +35,7 @@ export function ModelsSection({ className }: { className?: string }) {
   return (
     <div className={className}>
       <div className={styles.header}>
-        <h1 className={styles.heading}>模型</h1>
+        <h1 className={styles.heading}>{t("model.label")}</h1>
         {/*
           dsh's button says 打开配置文件 because it is a desktop app that can
           hand the path to the OS. A browser cannot, so the label names what
@@ -49,18 +50,16 @@ export function ModelsSection({ className }: { className?: string }) {
             if (models === null) return;
             void navigator.clipboard
               .writeText(models.modelsPath)
-              .then(() => actions.setNotice(`已复制 ${models.modelsPath}`))
+              .then(() => actions.setNotice(t("settings.models.copyNotice", { path: models.modelsPath })))
               .catch(() => actions.setNotice(models.modelsPath));
           }}
-        >
-          复制配置路径
-        </button>
+        >{t("settings.models.copyPath")}</button>
       </div>
 
-      <p className={styles.lead}>填入各提供方的 API 密钥即可使用其模型。</p>
+      <p className={styles.lead}>{t("settings.models.lead")}</p>
 
       {models === null ? (
-        <div className={styles.loading}>正在加载提供方目录…</div>
+        <div className={styles.loading}>{t("settings.models.loading")}</div>
       ) : (
         <>
           <div className={styles.list}>
@@ -80,17 +79,13 @@ export function ModelsSection({ className }: { className?: string }) {
               className={styles.addButton}
               onClick={() => setCreating("known")}
             >
-              <Glyph name="plus" size={16} />
-              添加提供方
-            </button>
+              <Glyph name="plus" size={16} />{t("settings.provider.addTitle")}</button>
             <button
               type="button"
               className={styles.addButton}
               onClick={() => setCreating("custom")}
             >
-              <Glyph name="plus" size={16} />
-              添加自定义提供方
-            </button>
+              <Glyph name="plus" size={16} />{t("settings.models.addCustom")}</button>
           </div>
         </>
       )}
@@ -134,10 +129,11 @@ function ProviderRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   return (
     <div className={styles.row}>
       <span className={styles.rowName}>{provider.name}</span>
-      {provider.custom && <span className={styles.badge}>自定义</span>}
+      {provider.custom && <span className={styles.badge}>{t("settings.models.customBadge")}</span>}
       {/*
         The dot reports a credential in the config files, which is where a
         provider configured on this page keeps it. A key supplied through the
@@ -152,23 +148,19 @@ function ProviderRow({
         title={
           provider.configured
             ? provider.keySource === "auth"
-              ? "API 密钥已配置（auth.json）"
-              : "API 密钥已配置（models.json 内联）"
-            : "配置文件里没有 API 密钥"
+              ? t("settings.models.keyInAuth")
+              : t("settings.models.keyInline")
+            : t("settings.models.keyMissing")
         }
       />
       <div className={styles.rowActions}>
-        <button type="button" className={styles.pillButton} onClick={onEdit}>
-          编辑
-        </button>
+        <button type="button" className={styles.pillButton} onClick={onEdit}>{t("tool.edit")}</button>
         <button
           type="button"
           className={styles.dangerButton}
           onClick={onDelete}
-          aria-label={`删除 ${provider.id}`}
-        >
-          删除
-        </button>
+          aria-label={t("settings.models.removeLabel", { id: provider.id })}
+        >{t("common.delete")}</button>
       </div>
     </div>
   );
@@ -187,6 +179,7 @@ function DeleteProviderDialog({
   provider: ModelProvider;
   onClose: () => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -203,20 +196,18 @@ function DeleteProviderDialog({
   };
 
   return (
-    <Dialog onClose={busy ? undefined : onClose} label={`删除 ${provider.id}`}>
-      <h2 className={styles.dialogTitle}>删除 {provider.name}？</h2>
+    <Dialog onClose={busy ? undefined : onClose} label={t("settings.models.removeTitle", { name: provider.id })}>
+      <h2 className={styles.dialogTitle}>{t("settings.models.removeTitle", { name: provider.name })}</h2>
       <p className={styles.dialogCopy}>
         {provider.keySource === "auth"
-          ? `删除 ${provider.name} 会移除其配置和存储的 API 密钥。`
-          : `删除 ${provider.name} 会移除其配置；其使用的凭证（如有）由其他位置管理，将会保留。`}
+          ? t("settings.models.removeWithKey", { name: provider.name })
+          : t("settings.models.removeKeepKey", { name: provider.name })}
       </p>
       {error !== null && <p className={styles.dialogError}>{error}</p>}
       <div className={styles.dialogActions}>
-        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>
-          取消
-        </button>
+        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>{t("common.cancel")}</button>
         <button type="button" className={styles.dangerButtonSolid} onClick={remove} disabled={busy}>
-          {busy ? `正在删除 ${provider.name}…` : "删除"}
+          {busy ? t("settings.models.removing", { name: provider.name }) : t("common.delete")}
         </button>
       </div>
     </Dialog>

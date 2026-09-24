@@ -3,6 +3,7 @@ import { Glyph } from "../../components/dsh-icons.tsx";
 import type { ProviderModelEntry } from "../../lib/types.ts";
 import { Dialog } from "./Dialog.tsx";
 import styles from "./FetchModelsDialog.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * Pick which of a provider's models to add to its catalog.
@@ -31,6 +32,7 @@ export function FetchModelsDialog({
   onAdopt: (selected: ProviderModelEntry[]) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const already = useMemo(() => new Set(existing), [existing]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -62,17 +64,17 @@ export function FetchModelsDialog({
   };
 
   return (
-    <Dialog onClose={onClose} label="选择要添加的模型">
-      <h2 className={styles.title}>选择要添加的模型</h2>
-      <p className={styles.description}>以下是模型提供方的可用模型，勾选要添加的模型。</p>
+    <Dialog onClose={onClose} label={t("settings.fetch.title")}>
+      <h2 className={styles.title}>{t("settings.fetch.title")}</h2>
+      <p className={styles.description}>{t("settings.fetch.description")}</p>
 
       <div className={styles.searchWrap}>
         <Glyph name="search" size={14} className={styles.searchIcon} />
         <input
           className={styles.search}
           value={query}
-          aria-label="搜索模型"
-          placeholder="搜索模型"
+          aria-label={t("settings.fetch.searchLabel")}
+          placeholder={t("settings.fetch.searchLabel")}
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
@@ -95,13 +97,13 @@ export function FetchModelsDialog({
             })
           }
         >
-          {allSelected ? "取消全选" : "全选"}
+          {allSelected ? t("settings.fetch.clearAll") : t("common.selectAll")}
         </button>
       </div>
 
       <div className={styles.list}>
         {filtered.length === 0 ? (
-          <p className={styles.empty}>没有匹配的模型。</p>
+          <p className={styles.empty}>{t("settings.fetch.empty")}</p>
         ) : (
           filtered.map((model) => {
             const present = already.has(model.id);
@@ -120,7 +122,7 @@ export function FetchModelsDialog({
                 {model.name !== undefined && model.name !== model.id && (
                   <span className={styles.itemName}>{model.name}</span>
                 )}
-                {present && <span className={styles.itemTag}>已在目录中</span>}
+                {present && <span className={styles.itemTag}>{t("settings.fetch.present")}</span>}
               </label>
             );
           })
@@ -129,7 +131,7 @@ export function FetchModelsDialog({
 
       <div className={styles.actions}>
         <button type="button" className={styles.ghostButton} onClick={onClose}>
-          取消
+          {t("common.cancel")}
         </button>
         <button
           type="button"
@@ -137,7 +139,7 @@ export function FetchModelsDialog({
           disabled={selected.size === 0}
           onClick={adopt}
         >
-          添加所选
+          {t("settings.fetch.add")}
         </button>
       </div>
     </Dialog>

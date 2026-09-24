@@ -1,4 +1,5 @@
 import type { ExtensionItem, ExtensionsView } from "../../lib/types.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 /**
  * Pure model for the plugins section: which group an extension belongs to and
@@ -18,16 +19,26 @@ export type PluginScope = "user" | "project";
  * content for no reason. Subtitles are dsh's, adapted from "会话/预设" to pi's
  * workspace scope.
  */
-export const GROUP_META: Record<PluginScope, { title: string; subtitle: string }> = {
-  user: { title: "全局插件", subtitle: "系统与所有工作区共用" },
-  project: { title: "工作区插件", subtitle: "只在这个工作区加载" },
-};
+export function groupMeta(
+  t: Translate,
+): Record<PluginScope, { title: string; subtitle: string }> {
+  return {
+    user: {
+      title: t("settings.pluginScope.user.title"),
+      subtitle: t("settings.pluginScope.user.subtitle"),
+    },
+    project: {
+      title: t("settings.pluginScope.project.title"),
+      subtitle: t("settings.pluginScope.project.subtitle"),
+    },
+  };
+}
 
 /** What contributed an entry, in the terms the row can act on. */
-export function extensionSourceLabel(item: ExtensionItem): string {
-  if (item.origin === "package") return "pi 包";
-  if (item.source === "auto") return "自动发现";
-  if (item.source === "local") return "本地路径";
+export function extensionSourceLabel(item: ExtensionItem, t: Translate): string {
+  if (item.origin === "package") return t("settings.pluginOrigin.package");
+  if (item.source === "auto") return t("settings.pluginOrigin.auto");
+  if (item.source === "local") return t("settings.pluginOrigin.local");
   return item.source;
 }
 

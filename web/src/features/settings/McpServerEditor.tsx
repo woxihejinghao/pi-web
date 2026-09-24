@@ -1,6 +1,7 @@
 import { useState } from "react";
 import clsx from "clsx";
-import { actions } from "../../lib/app-state.ts";
+import { actions, useT } from "../../lib/app-state.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 import type { McpSecretRow, McpServerView } from "../../lib/types.ts";
 import { Dialog } from "./Dialog.tsx";
 import styles from "./McpServerEditor.module.css";
@@ -20,13 +21,18 @@ import styles from "./McpServerEditor.module.css";
  *   MCP host that reads that file", not just pi.
  */
 
-const TRANSPORTS = [
-  { value: "stdio", label: "stdio", hint: "本地进程，通过 stdin/stdout 通信" },
-  { value: "http", label: "http", hint: "Streamable HTTP 远程端点" },
-  { value: "sse", label: "sse", hint: "旧版 SSE 远程端点" },
-] as const;
+/** The three transports, with the hint that explains each. */
+function transportOptions(
+  t: Translate,
+): readonly { value: Transport; label: string; hint: string }[] {
+  return [
+    { value: "stdio", label: "stdio", hint: t("settings.mcpTransport.stdioHint") },
+    { value: "http", label: "http", hint: t("settings.mcpTransport.httpHint") },
+    { value: "sse", label: "sse", hint: t("settings.mcpTransport.sseHint") },
+  ];
+}
 
-type Transport = (typeof TRANSPORTS)[number]["value"];
+type Transport = "stdio" | "http" | "sse";
 
 export function McpServerEditor({
   server,
@@ -37,6 +43,7 @@ export function McpServerEditor({
   projectPath: string | null;
   onClose: () => void;
 }) {
+  const t = useT();
   const editing = server !== null;
   const [name, setName] = useState(server?.name ?? "");
   const [transport, setTransport] = useState<Transport>(
@@ -89,11 +96,11 @@ export function McpServerEditor({
   };
 
   return (
-    <Dialog onClose={busy ? undefined : onClose} label={editing ? `编辑 ${server.name}` : "添加服务器"}>
-      <h2 className={styles.title}>{editing ? `编辑 ${server.name}` : "添加服务器"}</h2>
+    <Dialog onClose={busy ? undefined : onClose} label={editing ? t("settings.mcpEditor.editTitle", { name: server.name }) : t("settings.mcp.add")}>
+      <h2 className={styles.title}>{editing ? t("settings.mcpEditor.editTitle", { name: server.name }) : t("settings.mcp.add")}</h2>
 
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>名称</span>
+        <span className={styles.fieldLabel}>{t("settings.mcpEditor.name")}</span>
         <input
           className={styles.input}
           value={name}
@@ -104,9 +111,9 @@ export function McpServerEditor({
       </label>
 
       <div className={styles.field}>
-        <span className={styles.fieldLabel}>传输</span>
+        <span className={styles.fieldLabel}>{t("settings.mcpEditor.transport")}</span>
         <div className={styles.pills}>
-          {TRANSPORTS.map((option) => (
+          {transportOptions(t).map((option) => (
             <button
               key={option.value}
               type="button"
@@ -124,7 +131,7 @@ export function McpServerEditor({
       {transport === "stdio" ? (
         <>
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>命令</span>
+            <span className={styles.fieldLabel}>{t("slash.commands")}</span>
             <input
               className={styles.input}
               value={command}
@@ -133,21 +140,21 @@ export function McpServerEditor({
             />
           </label>
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>参数</span>
+            <span className={styles.fieldLabel}>{t("settings.mcpEditor.args")}</span>
             <input
               className={styles.input}
               value={args}
               placeholder="-y figma-developer-mcp --stdio"
               onChange={(event) => setArgs(event.target.value)}
             />
-            <span className={styles.fieldHint}>按空格分隔。不改动这一行就不会重排已存参数。</span>
+            <span className={styles.fieldHint}>{t("settings.mcpEditor.argsHint")}</span>
           </label>
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>工作目录</span>
+            <span className={styles.fieldLabel}>{t("settings.mcpEditor.cwd")}</span>
             <input
               className={styles.input}
               value={cwd}
-              placeholder="留空表示继承 pi 的目录"
+              placeholder={t("settings.mcpEditor.cwdPlaceholder")}
               onChange={(event) => setCwd(event.target.value)}
             />
           </label>
@@ -165,58 +172,52 @@ export function McpServerEditor({
       )}
 
       <RowEditor
-        label="环境变量"
+        label={t("settings.mcpEditor.env")}
         keyPlaceholder="FIGMA_API_KEY"
         rows={envRows}
         onChange={setEnvRows}
-        hint="值留空表示保持已存值；删除整行则移除该变量。"
+        hint={t("settings.mcpEditor.envHint")}
       />
 
       {transport === "stdio" ? null : (
         <RowEditor
-          label="请求头"
+          label={t("settings.mcpEditor.headers")}
           keyPlaceholder="Authorization"
           rows={headerRows}
           onChange={setHeaderRows}
-          hint="值留空表示保持已存值；删除整行则移除该请求头。"
+          hint={t("settings.mcpEditor.headersHint")}
         />
       )}
 
       <div className={styles.field}>
-        <span className={styles.fieldLabel}>写入位置</span>
+        <span className={styles.fieldLabel}>{t("settings.mcpEditor.writeTo")}</span>
         <div className={styles.pills}>
           <button
             type="button"
             className={clsx(styles.pill, scope === "global" && styles.pillActive)}
             aria-pressed={scope === "global"}
             onClick={() => setScope("global")}
-          >
-            全局
-          </button>
+          >{t("settings.mcpScope.user")}</button>
           <button
             type="button"
             className={clsx(styles.pill, scope === "project" && styles.pillActive)}
             aria-pressed={scope === "project"}
             disabled={!canUseProject}
-            title={canUseProject ? undefined : "请先选择一个工作区"}
+            title={canUseProject ? undefined : t("settings.mcpEditor.projectTitle")}
             onClick={() => setScope("project")}
-          >
-            当前工作区
-          </button>
+          >{t("settings.mcpScope.project")}</button>
         </div>
         <span className={styles.fieldHint}>
-          {canUseProject ? `工作区写入 ${projectPath}/.mcp.json。` : "还没有选中工作区，只能写入全局。"}
+          {canUseProject ? t("settings.mcpEditor.projectNote", { path: `${projectPath}/.mcp.json` }) : t("settings.mcpEditor.noProject")}
         </span>
       </div>
 
       {error !== null ? <p className={styles.error}>{error}</p> : null}
 
       <div className={styles.actions}>
-        <button type="button" className={styles.ghost} onClick={onClose} disabled={busy}>
-          取消
-        </button>
+        <button type="button" className={styles.ghost} onClick={onClose} disabled={busy}>{t("common.cancel")}</button>
         <button type="button" className={styles.primary} onClick={save} disabled={busy}>
-          {busy ? "保存中…" : "保存"}
+          {busy ? t("settings.provider.saving") : t("common.save")}
         </button>
       </div>
     </Dialog>
@@ -240,6 +241,7 @@ function RowEditor({
   onChange: (rows: McpSecretRow[]) => void;
   hint: string;
 }) {
+  const t = useT();
   const update = (index: number, patch: Partial<McpSecretRow>): void => {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };
@@ -253,20 +255,20 @@ function RowEditor({
             className={styles.input}
             value={row.key}
             placeholder={keyPlaceholder}
-            aria-label={`${label}名称`}
+            aria-label={t("settings.mcpEditor.rowNameLabel", { label })}
             onChange={(event) => update(index, { key: event.target.value })}
           />
           <input
             className={styles.input}
             value={row.value}
-            placeholder="值（留空保留）"
-            aria-label={`${label}值`}
+            placeholder={t("settings.mcpEditor.rowValuePlaceholder")}
+            aria-label={t("settings.mcpEditor.rowValueLabel", { label })}
             onChange={(event) => update(index, { value: event.target.value })}
           />
           <button
             type="button"
             className={styles.rowRemove}
-            aria-label={`删除这一行`}
+            aria-label={t("settings.mcpEditor.removeRow")}
             onClick={() => onChange(rows.filter((_, i) => i !== index))}
           >
             ×
@@ -277,9 +279,7 @@ function RowEditor({
         type="button"
         className={styles.rowAdd}
         onClick={() => onChange([...rows, { key: "", value: "" }])}
-      >
-        + 添加一行
-      </button>
+      >{t("settings.mcpEditor.addRow")}</button>
       <span className={styles.fieldHint}>{hint}</span>
     </div>
   );

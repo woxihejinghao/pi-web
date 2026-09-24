@@ -88,7 +88,7 @@ export function CommitBar({
           onClick={onPush}
         >
           <ArrowUpIcon width={13} height={13} />
-          推送
+          {t("footer.push")}
           {view.ahead > 0 ? <span className={styles.pushCount}>{view.ahead}</span> : null}
         </button>
       </div>

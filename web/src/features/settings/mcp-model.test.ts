@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../../lib/i18n/index.ts";
 import type { McpServerView, McpView } from "../../lib/types.ts";
-import { filterServers, scopeLabel } from "./mcp-model.ts";
+import { filterServers, scopeLabel as scopeLabelOf } from "./mcp-model.ts";
+
+// These assertions pin the Chinese wording, so the translator is passed in
+// rather than resolved from whatever locale the test host happens to have.
+const zh = translator("zh-CN");
+const scopeLabel = (server: Parameters<typeof scopeLabelOf>[0]): string =>
+  scopeLabelOf(server, zh);
 
 function server(overrides: Partial<McpServerView> & { name: string }): McpServerView {
   return {

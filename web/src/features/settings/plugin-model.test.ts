@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../../lib/i18n/index.ts";
 import type { ExtensionItem, ExtensionsView } from "../../lib/types.ts";
-import { extensionSourceLabel, groupExtensions } from "./plugin-model.ts";
+import {
+  extensionSourceLabel as extensionSourceLabelOf,
+  groupExtensions,
+} from "./plugin-model.ts";
+
+// These assertions pin the Chinese wording, so the translator is passed in
+// rather than resolved from whatever locale the test host happens to have.
+const zh = translator("zh-CN");
+const extensionSourceLabel = (
+  item: Parameters<typeof extensionSourceLabelOf>[0],
+): string => extensionSourceLabelOf(item, zh);
 
 function item(overrides: Partial<ExtensionItem> & { path: string }): ExtensionItem {
   return {
