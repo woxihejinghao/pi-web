@@ -4,6 +4,7 @@ import { Glyph } from "../../components/dsh-icons.tsx";
 import { formatMessageTime, formatTokens, formatTurnDuration } from "../../lib/duration.ts";
 import type { MessageUsage } from "../../lib/types.ts";
 import styles from "./MessageActions.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * The row of actions dsh draws under a message: copy, fork, and — for an
@@ -42,6 +43,7 @@ export function MessageActions({
   onFork?: (entryId: string) => void;
   align?: "start" | "end";
 }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -74,8 +76,8 @@ export function MessageActions({
       <button
         type="button"
         className={styles.action}
-        aria-label="复制"
-        title="复制"
+        aria-label={t("common.copy")}
+        title={t("common.copy")}
         onClick={copy}
       >
         <Glyph name="copy" size={16} />
@@ -85,8 +87,8 @@ export function MessageActions({
         <button
           type="button"
           className={styles.action}
-          aria-label="从此处分叉"
-          title="从此处分叉"
+          aria-label={t("message.fork")}
+          title={t("message.fork")}
           onClick={() => onFork(forkEntryId)}
         >
           <Glyph name="branch" size={16} />
@@ -94,14 +96,14 @@ export function MessageActions({
       )}
 
       {usage != null && (
-        <span className={styles.stat} title="本轮所有模型调用累加的 token 数（含缓存读取）">
+        <span className={styles.stat} title={t("message.usageTitle")}>
           <Glyph name="database" size={14} className={styles.statIcon} />
           用量 {formatTokens(usage.totalTokens)} tok
         </span>
       )}
 
       {durationMs != null && (
-        <span className={styles.stat} title="从你的消息发出到本轮结束的墙上时间">
+        <span className={styles.stat} title={t("message.durationTitle")}>
           <Glyph name="clock" size={14} className={styles.statIcon} />
           用时 {formatTurnDuration(durationMs)}
         </span>
@@ -111,7 +113,7 @@ export function MessageActions({
         <span className={clsx(styles.stat, styles.time)}>{formatMessageTime(timestamp)}</span>
       )}
 
-      {copied && <span className={styles.copied}>已复制</span>}
+      {copied && <span className={styles.copied}>{t("common.copied")}</span>}
     </div>
   );
 }

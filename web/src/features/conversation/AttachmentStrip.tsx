@@ -4,6 +4,7 @@ import { CloseIcon } from "../../components/icons.tsx";
 import { ACCEPTED_IMAGE_MIME_TYPES, imageDataUrl } from "../../lib/image-attachments.ts";
 import type { ImageBlock } from "../../lib/types.ts";
 import styles from "./AttachmentStrip.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * The draft strip: what is about to be sent, above the text it is attached to.
@@ -22,6 +23,7 @@ export function AttachmentStrip({
   refusal: string | null;
   onRemove(index: number): void;
 }) {
+  const t = useT();
   if (images.length === 0 && refusal === null) return null;
   return (
     <>
@@ -35,7 +37,7 @@ export function AttachmentStrip({
                 className={styles.remove}
                 onClick={() => onRemove(index)}
                 aria-label={`移除附件 ${String(index + 1)}`}
-                title="移除"
+                title={t("common.remove")}
               >
                 <CloseIcon />
               </button>
@@ -60,14 +62,15 @@ export function AttachmentStrip({
  * names the act is what dsh puts on the circle.
  */
 export function AttachButton({ disabled, onClick }: { disabled?: boolean; onClick(): void }) {
+  const t = useT();
   return (
     <button
       type="button"
       className={styles.attach}
       disabled={disabled ?? false}
       onClick={onClick}
-      aria-label="添加图片"
-      title="添加图片（也可粘贴或拖入）"
+      aria-label={t("attach.add")}
+      title={t("attach.addTitle")}
     >
       <Glyph name="paperclip" />
     </button>
@@ -88,6 +91,7 @@ export function AttachmentInput({
   inputRef: RefObject<HTMLInputElement | null>;
   onFiles(files: File[]): void;
 }) {
+  const t = useT();
   return (
     <input
       ref={inputRef}

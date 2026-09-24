@@ -8,6 +8,7 @@ import { imageBlocksOf } from "../../lib/image-attachments.ts";
 import { VARIANT_TITLES, classify, deriveSummary, shortenPath, type Variant } from "./row-model.ts";
 import type { ToolExecution } from "./useConversation.ts";
 import styles from "./ToolCallRow.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /** Variant → glyph. The UI half of the variant table; the rest lives in row-model. */
 const VARIANT_GLYPHS: Record<Variant, GlyphName> = {
@@ -65,6 +66,7 @@ export function ToolCallRow({
   cwd?: string | undefined;
   home?: string | undefined;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const variant = classify(call.name);
   const state = execution?.isError ? "error" : execution?.running ? "running" : "ok";
@@ -84,7 +86,7 @@ export function ToolCallRow({
 
   return (
     <div className={styles.root} data-variant={variant} data-tool={call.name} data-state={state}>
-      {running ? <span className={styles.visuallyHidden}>运行中</span> : null}
+      {running ? <span className={styles.visuallyHidden}>{t("common.running")}</span> : null}
 
       <DisclosureRow
         rowClassName={styles.row}
@@ -115,17 +117,17 @@ export function ToolCallRow({
             {showInput ? (
               <>
                 <div className={styles.ioSection}>
-                  <span className={styles.ioLabel}>输入</span>
-                  <span className={styles.ioText}>{input || "运行中…"}</span>
+                  <span className={styles.ioLabel}>{t("toolCall.input")}</span>
+                  <span className={styles.ioText}>{input || t("common.runningEllipsis")}</span>
                 </div>
                 <div className={styles.ioDivider} />
               </>
             ) : null}
             <div className={styles.ioSection}>
-              <span className={styles.ioLabel}>输出</span>
+              <span className={styles.ioLabel}>{t("toolCall.output")}</span>
               {output.length > 0 || running || images.length === 0 ? (
                 <span className={styles.ioText} data-error={execution?.isError || undefined}>
-                  {output.length > 0 ? output : running ? "运行中…" : "(无输出)"}
+                  {output.length > 0 ? output : running ? t("common.runningEllipsis") : t("toolCall.noOutput")}
                 </span>
               ) : null}
               {/* A picture from `read` is the answer itself, not a value for the

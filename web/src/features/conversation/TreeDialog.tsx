@@ -5,6 +5,8 @@ import { api } from "../../lib/api.ts";
 import type { SessionTreeNode, SessionTreeView } from "../../lib/types.ts";
 import { Dialog } from "../settings/Dialog.tsx";
 import styles from "./TreeDialog.module.css";
+import { useT } from "../../lib/app-state.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 /**
  * The session's entry tree — pi's `/tree`, rendered for the browser.
@@ -28,6 +30,7 @@ export function TreeDialog({
   onFork: (entryId: string) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [tree, setTree] = useState<SessionTreeView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,11 +82,9 @@ export function TreeDialog({
   }, [tree]);
 
   return (
-    <Dialog onClose={onClose} label="话题树">
-      <h2 className={styles.title}>话题树</h2>
-      <p className={styles.description}>
-        这条会话的完整记录。高亮的是当前所在位置；从用户消息处可以分叉。
-      </p>
+    <Dialog onClose={onClose} label={t("pane.topicTree")}>
+      <h2 className={styles.title}>{t("pane.topicTree")}</h2>
+      <p className={styles.description}>{t("tree.description")}</p>
 
       {stats !== null && (
         <p className={styles.stats}>
@@ -97,9 +98,9 @@ export function TreeDialog({
         {error !== null ? (
           <p className={styles.error}>{error}</p>
         ) : tree === null ? (
-          <p className={styles.empty}>正在读取…</p>
+          <p className={styles.empty}>{t("tree.reading")}</p>
         ) : tree.tree.length === 0 ? (
-          <p className={styles.empty}>这条会话还是空的。</p>
+          <p className={styles.empty}>{t("tree.empty")}</p>
         ) : (
           tree.tree.map((node) => (
             <TreeRow
@@ -114,16 +115,17 @@ export function TreeDialog({
       </div>
 
       <div className={styles.actions}>
-        <button type="button" className={styles.ghostButton} onClick={onClose}>
-          关闭
-        </button>
+        <button type="button" className={styles.ghostButton} onClick={onClose}>{t("settings.autoCompaction.off")}</button>
       </div>
     </Dialog>
   );
 }
 
 /** A readable one-line label for an entry, without pulling in its full body. */
-function describe(node: SessionTreeNode): { icon: "sparkle" | "terminal" | "database" | "settings"; text: string; forkable: boolean } {
+function describe(
+  t: Translate,
+  node: SessionTreeNode,
+): { icon: "sparkle" | "terminal" | "database" | "settings"; text: string; forkable: boolean } {
   const entry = node.entry;
   if (entry.type === "message") {
     const role = entry.message?.role;
@@ -131,12 +133,12 @@ function describe(node: SessionTreeNode): { icon: "sparkle" | "terminal" | "data
       return { icon: "sparkle", text: preview(entry.message?.content), forkable: true };
     }
     if (role === "assistant") {
-      return { icon: "sparkle", text: preview(entry.message?.content) || "助手回复", forkable: false };
+      return { icon: "sparkle", text: preview(entry.message?.content) || t("tree.assistantReply"), forkable: false };
     }
     if (role === "toolResult") {
-      return { icon: "terminal", text: "工具结果", forkable: false };
+      return { icon: "terminal", text: t("tree.toolResult"), forkable: false };
     }
-    return { icon: "sparkle", text: String(role ?? "消息"), forkable: false };
+    return { icon: "sparkle", text: String(role ?? t("tree.message")), forkable: false };
   }
   if (entry.type === "model_change") {
     return {
@@ -153,7 +155,7 @@ function describe(node: SessionTreeNode): { icon: "sparkle" | "terminal" | "data
     };
   }
   if (entry.type === "compaction") {
-    return { icon: "database", text: "上下文压缩摘要", forkable: false };
+    return { icon: "database", text: t("tree.compactionSummary"), forkable: false };
   }
   return { icon: "settings", text: entry.type, forkable: false };
 }
@@ -189,8 +191,9 @@ function TreeRow({
   leafId: string | null;
   expandedByDefault: Set<string>;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(() => expandedByDefault.has(node.entry.id));
-  const { icon, text, forkable } = describe(node);
+  const { icon, text, forkable } = describe(t, node);
   const isLeaf = node.entry.id === leafId;
   const hasChildren = node.children.length > 0;
   const branchPoint = node.children.length > 1;
@@ -205,7 +208,7 @@ function TreeRow({
           <button
             type="button"
             className={styles.caret}
-            aria-label={open ? "折叠" : "展开"}
+            aria-label={open ? t("common.fold") : t("common.expand")}
             aria-expanded={open}
             onClick={() => setOpen((value) => !value)}
           >
@@ -223,11 +226,9 @@ function TreeRow({
         <span className={styles.rowText}>{text}</span>
 
         {branchPoint && <span className={styles.tag}>{node.children.length} 个分支</span>}
-        {isLeaf && <span className={styles.tagLeaf}>当前位置</span>}
+        {isLeaf && <span className={styles.tagLeaf}>{t("tree.current")}</span>}
         {forkable && (
-          <span className={styles.tagFork} title="可在消息操作行中从此处分叉">
-            可分叉
-          </span>
+          <span className={styles.tagFork} title={t("tree.forkableTitle")}>{t("tree.forkable")}</span>
         )}
       </div>
 

@@ -3,6 +3,7 @@ import clsx from "clsx";
 import type { SlashCommand } from "../../lib/types.ts";
 import { SOURCE_LABEL } from "./slash.ts";
 import styles from "./SlashMenu.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 export interface SlashMenuProps {
   matches: SlashCommand[];
@@ -25,6 +26,7 @@ interface Section {
  * sections.
  */
 export function SlashMenu({ matches, highlight, onHighlight, onSelect }: SlashMenuProps) {
+  const t = useT();
   const viewportRef = useRef<HTMLDivElement>(null);
 
   const sections = useMemo(() => {
@@ -46,7 +48,7 @@ export function SlashMenu({ matches, highlight, onHighlight, onSelect }: SlashMe
   }, [highlight]);
 
   return (
-    <div className={styles.menu} role="listbox" aria-label="命令">
+    <div className={styles.menu} role="listbox" aria-label={t("slash.commands")}>
       <div className={styles.viewport} ref={viewportRef}>
         {sections.map((section) => (
           <Fragment key={section.label}>

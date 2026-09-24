@@ -10,6 +10,7 @@ import { PathLabel } from "./rightbar-path.tsx";
 import type { RightbarTab } from "./rightbar-state.ts";
 import pane from "./Pane.module.css";
 import styles from "./PreviewTab.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 type PreviewState =
   | { status: "loading" }
@@ -26,6 +27,7 @@ type PreviewState =
  * through the same on-demand path.
  */
 export function PreviewTab({ projectId, tab }: { projectId: string; tab: RightbarTab }) {
+  const t = useT();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<PreviewState>({ status: "loading" });
 
@@ -54,8 +56,8 @@ export function PreviewTab({ projectId, tab }: { projectId: string; tab: Rightba
         <button
           type="button"
           className={pane.action}
-          title="重新载入"
-          aria-label="重新载入文件"
+          title={t("pane.reload")}
+          aria-label={t("preview.reloadLabel")}
           onClick={() => setAttempt((value) => value + 1)}
         >
           <RefreshIcon width={14} height={14} />
@@ -64,9 +66,7 @@ export function PreviewTab({ projectId, tab }: { projectId: string; tab: Rightba
       <div className={clsx(pane.scroll, styles.body)}>
         {state.status === "loading" ? (
           <div className={styles.centered}>
-            <span className={styles.spinner} aria-hidden />
-            加载中…
-          </div>
+            <span className={styles.spinner} aria-hidden />{t("common.loading")}</div>
         ) : state.status === "failed" ? (
           <div className={pane.error}>{state.error}</div>
         ) : (
@@ -78,13 +78,14 @@ export function PreviewTab({ projectId, tab }: { projectId: string; tab: Rightba
 }
 
 function Body({ file }: { file: WorkspaceFileContent }) {
+  const t = useT();
   const kind = previewKindFor(file.name, file.kind);
 
   if (kind === "unsupported") {
     return (
       <div className={styles.centered}>
         <span className={styles.unsupportedName}>{file.name}</span>
-        {file.reason ?? "暂不支持预览这个文件"}
+        {file.reason ?? t("preview.unsupported")}
       </div>
     );
   }
@@ -92,7 +93,7 @@ function Body({ file }: { file: WorkspaceFileContent }) {
   // A text file longer than the read cap ends mid-line; saying so above the
   // content is what stops the last line from looking like a truncated file.
   const notice = file.truncated ? (
-    <div className={styles.notice}>文件过大，仅显示前 1 MB。</div>
+    <div className={styles.notice}>{t("preview.tooLarge")}</div>
   ) : null;
 
   if (kind === "image") {

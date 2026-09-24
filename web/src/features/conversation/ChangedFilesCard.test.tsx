@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ChangedFilesCard } from "./ChangedFilesCard.tsx";
 import type { TurnFile } from "./turn-files.ts";
+
+// The card renders through `useT`, and the default `system` preference resolves
+// to English when there is no navigator (this runs in the node environment). The
+// assertions below are about the Chinese copy, so pin the host locale.
+vi.stubGlobal("navigator", { language: "zh-CN" });
 
 function file(display: string, overrides: Partial<TurnFile> = {}): TurnFile {
   return {

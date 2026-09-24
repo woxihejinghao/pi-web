@@ -3,6 +3,7 @@ import { ChevronIcon } from "../../components/icons.tsx";
 import { DiffIcon } from "../rightbar/rightbar-icons.tsx";
 import type { TurnFile } from "./turn-files.ts";
 import styles from "./ChangedFilesCard.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * Rows shown before the fold: dsh's summary height for a closing message, and
@@ -37,6 +38,7 @@ export function ChangedFilesCard({
   /** Absent when the sidebar cannot be addressed (no session path yet). */
   onOpenFile?: ((path: string) => void) | undefined;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const foldable = files.length > COLLAPSED_ROWS;
   const rows = foldable && !expanded ? files.slice(0, COLLAPSED_ROWS) : files;
@@ -66,7 +68,7 @@ export function ChangedFilesCard({
         <button
           type="button"
           className={styles.header}
-          aria-label="在右侧栏预览本轮改动"
+          aria-label={t("editedFiles.previewAll")}
           onClick={() => {
             const target = targetOf(headerTarget);
             if (target !== null) onOpenFile?.(target);
@@ -115,10 +117,10 @@ export function ChangedFilesCard({
           type="button"
           className={styles.toggle}
           aria-expanded={expanded}
-          aria-label={expanded ? "收起改动文件" : `展开全部 ${files.length} 个改动文件`}
+          aria-label={expanded ? t("editedFiles.collapseAll") : `展开全部 ${files.length} 个改动文件`}
           onClick={() => setExpanded((value) => !value)}
         >
-          <span>{expanded ? "收起" : `全部 ${files.length} 个文件`}</span>
+          <span>{expanded ? t("common.collapse") : `全部 ${files.length} 个文件`}</span>
           <ChevronIcon width={14} height={14} />
         </button>
       ) : null}

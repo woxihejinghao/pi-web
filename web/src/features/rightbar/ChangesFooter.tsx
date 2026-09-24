@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { ArrowUpIcon } from "../../components/icons.tsx";
 import type { GitLogEntry, GitStatusView } from "../../lib/types.ts";
 import styles from "./ChangesTab.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * The commit box and the push button.
@@ -27,6 +28,7 @@ export function CommitBar({
   onCommit(message: string): Promise<boolean>;
   onPush(): void;
 }) {
+  const t = useT();
   const [message, setMessage] = useState("");
   const stagedCount = view.staged.length;
   const canCommit = stagedCount > 0 && message.trim().length > 0 && !busy;
@@ -58,10 +60,10 @@ export function CommitBar({
         spellCheck={false}
         placeholder={
           stagedCount > 0
-            ? "提交信息 (Ctrl+Enter)"
-            : "先暂存改动，再写提交信息"
+            ? t("footer.commitPlaceholder")
+            : t("footer.stageFirst")
         }
-        aria-label="提交信息"
+        aria-label={t("footer.commitLabel")}
         onChange={(event) => setMessage(event.target.value)}
         onKeyDown={onKeyDown}
       />
@@ -80,7 +82,7 @@ export function CommitBar({
           disabled={busy || view.detached || view.branch === null}
           title={
             view.upstream === null
-              ? "这个分支还没有上游，推送会把它发布到远端"
+              ? t("footer.noUpstreamHint")
               : `推送到 ${view.upstream}`
           }
           onClick={onPush}
@@ -103,11 +105,12 @@ export function CommitBar({
  * a glance whether the branch they are on is the one at the top.
  */
 export function HistoryList({ log }: { log: GitLogEntry[] }) {
+  const t = useT();
   if (log.length === 0) return null;
   return (
     <div className={styles.history}>
       <div className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>历史</span>
+        <span className={styles.sectionTitle}>{t("footer.history")}</span>
       </div>
       {log.map((entry) => (
         <div className={styles.logRow} key={entry.hash}>

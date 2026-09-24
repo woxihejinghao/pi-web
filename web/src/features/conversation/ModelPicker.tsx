@@ -4,6 +4,7 @@ import { CheckIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import type { ComposerModel } from "../../lib/types.ts";
 import styles from "./ModelPicker.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 export interface ModelPickerProps {
   /** The model the session is on; null when it has not chosen one yet. */
@@ -46,6 +47,7 @@ export function ModelPicker({
   onRequestModels,
   onSelect,
 }: ModelPickerProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const rootRef = useRef<HTMLSpanElement>(null);
@@ -135,7 +137,7 @@ export function ModelPicker({
     }
   };
 
-  const label = model === null ? "选择模型" : (model.name ?? model.id);
+  const label = model === null ? t("model.choose") : (model.name ?? model.id);
 
   return (
     <span className={styles.anchor} ref={rootRef}>
@@ -146,7 +148,7 @@ export function ModelPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`模型：${label}`}
-        title={model === null ? "选择模型" : `${model.provider}/${model.id}`}
+        title={model === null ? t("model.choose") : `${model.provider}/${model.id}`}
         onClick={openMenu}
       >
         <span className={styles.triggerLabel}>{label}</span>
@@ -158,15 +160,15 @@ export function ModelPicker({
           ref={listRef}
           className={styles.menu}
           role="listbox"
-          aria-label="模型"
+          aria-label={t("model.label")}
           tabIndex={-1}
           onKeyDown={onKeyDown}
         >
           <div className={styles.viewport}>
             {models === null ? (
-              <div className={styles.empty}>{loading ? "正在载入模型列表…" : "模型列表不可用"}</div>
+              <div className={styles.empty}>{loading ? t("model.loading") : t("model.unavailable")}</div>
             ) : flat.length === 0 ? (
-              <div className={styles.empty}>没有可用的模型。在设置 → 模型中添加。</div>
+              <div className={styles.empty}>{t("model.empty")}</div>
             ) : (
               groups.map((group) => (
                 <Fragment key={group.provider}>

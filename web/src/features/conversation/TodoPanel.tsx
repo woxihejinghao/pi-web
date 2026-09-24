@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Glyph } from "../../components/dsh-icons.tsx";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import { TodoList } from "./TodoList.tsx";
 import {
@@ -43,6 +43,7 @@ export function TodoPanel({
   todos: readonly TodoItem[];
   projectPath: string | null;
 }) {
+  const t = useT();
   const state = useStore(appStore);
   const [collapsed, setCollapsed] = useState(true);
   const [installing, setInstalling] = useState(false);
@@ -73,14 +74,14 @@ export function TodoPanel({
 
   return (
     <div className={styles.dock}>
-      <section className={styles.root} aria-label="任务清单">
+      <section className={styles.root} aria-label={t("todo.panelTitle")}>
         {rows.length === 0 ? (
           <>
             <div className={styles.notice}>
               <span className={styles.lead} aria-hidden>
                 <Glyph name="checklist" />
               </span>
-              <span className={styles.noticeText}>任务清单需要 rpiv-todo 扩展</span>
+              <span className={styles.noticeText}>{t("todo.installNotice")}</span>
               <button
                 type="button"
                 className={styles.noticeAction}
@@ -88,17 +89,15 @@ export function TodoPanel({
                 title="pi install npm:@juicesharp/rpiv-todo"
                 onClick={install}
               >
-                {installing ? "安装中…" : "安装"}
+                {installing ? t("todo.installing") : t("todo.install")}
               </button>
               <button
                 type="button"
                 className={styles.noticeClose}
                 disabled={installing}
-                title="不再提示；之后可以在设置 → 插件里安装"
+                title={t("todo.dismissTitle")}
                 onClick={() => void actions.dismissTodoNotice()}
-              >
-                不再提示
-              </button>
+              >{t("todo.dismiss")}</button>
             </div>
             {installError !== null ? (
               <p className={styles.noticeError}>{installError}</p>
@@ -115,7 +114,7 @@ export function TodoPanel({
               <span className={styles.lead} aria-hidden>
                 <Glyph name="checklist" />
               </span>
-              <span className={styles.title}>任务</span>
+              <span className={styles.title}>{t("todo.title")}</span>
               {/* The counts are chrome: the reader who cares about which task is
                   running is one click away from the rows themselves. */}
               <span className={styles.progress}>{progressLabel(summarizeTodos(todos))}</span>

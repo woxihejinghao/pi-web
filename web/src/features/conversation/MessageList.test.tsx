@@ -1,9 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentMessage, AssistantMessage, ContentBlock } from "../../lib/types.ts";
 import { MessageList } from "./MessageList.tsx";
 import { EMPTY_TIMING, sessionStats } from "./stats-model.ts";
 import type { ConversationView } from "./useConversation.ts";
+
+// Interface copy resolves through `useT`, and the default `system` preference
+// lands on English without a navigator (node test environment). Several
+// assertions below pin the Chinese wording, so fix the host locale here.
+vi.stubGlobal("navigator", { language: "zh-CN" });
 
 const CWD = "/Users/dev/proj";
 const noop = (): void => {};

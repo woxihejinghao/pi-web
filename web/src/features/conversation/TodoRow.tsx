@@ -13,6 +13,7 @@ import {
 } from "./todo-model.ts";
 import type { ToolExecution } from "./useConversation.ts";
 import styles from "./TodoRow.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * One `todo` call as a disclosure row.
@@ -35,6 +36,7 @@ export function TodoRow({
   call: ToolCallBlock;
   execution: ToolExecution | undefined;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const state = execution?.isError ? "error" : execution?.running ? "running" : "ok";
   const running = execution?.running ?? false;
@@ -52,15 +54,15 @@ export function TodoRow({
   const body =
     snapshot === null
       ? running
-        ? "运行中…"
-        : "没有清单快照"
+        ? t("common.runningEllipsis")
+        : t("todo.noSnapshot")
       : rows.length === 0
-        ? "清单为空"
+        ? t("todo.empty")
         : null;
 
   return (
     <div className={styles.root} data-tool={call.name} data-state={state}>
-      {running ? <span className={styles.visuallyHidden}>运行中</span> : null}
+      {running ? <span className={styles.visuallyHidden}>{t("common.running")}</span> : null}
 
       <DisclosureRow
         rowClassName={styles.row}
@@ -69,7 +71,7 @@ export function TodoRow({
         chevronClassName={styles.chevron}
         // A rejected call keeps its own glyph convention: the error dot.
         icon={state === "error" ? <StateDot state="error" /> : <Glyph name="checklist" />}
-        title="任务清单"
+        title={t("todo.panelTitle")}
         open={open}
         expandable
         expandOnRowClick

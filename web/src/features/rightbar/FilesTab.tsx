@@ -7,6 +7,7 @@ import { FileIcon, TreeChevronIcon } from "./rightbar-icons.tsx";
 import { PathLabel } from "./rightbar-path.tsx";
 import pane from "./Pane.module.css";
 import styles from "./FilesTab.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 interface Level {
   status: "loading" | "ready" | "failed";
@@ -34,6 +35,7 @@ export function FilesTab({
   rootLabel: string;
   onOpenFile(path: string): void;
 }) {
+  const t = useT();
   const [levels, setLevels] = useState<Record<string, Level>>({});
   const [expanded, setExpanded] = useState<Record<string, true>>({ "": true });
 
@@ -111,16 +113,12 @@ export function FilesTab({
     }
     if (level.status === "loading" && level.entries.length === 0) {
       return [
-        <div key={`${path}:loading`} className={styles.rowNote} style={indent(depth)}>
-          加载中…
-        </div>,
+        <div key={`${path}:loading`} className={styles.rowNote} style={indent(depth)}>{t("common.loading")}</div>,
       ];
     }
     if (level.entries.length === 0) {
       return [
-        <div key={`${path}:empty`} className={styles.rowNote} style={indent(depth)}>
-          空目录
-        </div>,
+        <div key={`${path}:empty`} className={styles.rowNote} style={indent(depth)}>{t("files.empty")}</div>,
       ];
     }
 
@@ -172,9 +170,7 @@ export function FilesTab({
     }
     if (level.truncated) {
       rows.push(
-        <div key={`${path}:truncated`} className={styles.rowNote} style={indent(depth)}>
-          条目过多，仅显示前 500 项
-        </div>,
+        <div key={`${path}:truncated`} className={styles.rowNote} style={indent(depth)}>{t("files.tooMany")}</div>,
       );
     }
     return rows;
@@ -189,8 +185,8 @@ export function FilesTab({
         <button
           type="button"
           className={pane.action}
-          title="刷新"
-          aria-label="刷新文件树"
+          title={t("common.refresh")}
+          aria-label={t("files.refreshLabel")}
           onClick={reload}
         >
           <RefreshIcon width={14} height={14} />

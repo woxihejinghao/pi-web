@@ -4,6 +4,7 @@ import { ArrowUpIcon, CloseIcon, FolderIcon } from "../../components/icons.tsx";
 import { api } from "../../lib/api.ts";
 import type { DirListing, StartLocation } from "../../lib/types.ts";
 import styles from "./DirectoryPicker.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 export interface DirectoryPickerProps {
   open: boolean;
@@ -20,6 +21,7 @@ export interface DirectoryPickerProps {
  * location — so the folder listing comes from the same machine over `/api/fs`.
  */
 export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProps) {
+  const t = useT();
   const [listing, setListing] = useState<DirListing | null>(null);
   const [locations, setLocations] = useState<StartLocation[]>([]);
   const [address, setAddress] = useState("");
@@ -83,12 +85,12 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
         className={styles.dialog}
         role="dialog"
         aria-modal="true"
-        aria-label="选择项目目录"
+        aria-label={t("picker.title")}
         onClick={(event) => event.stopPropagation()}
       >
         <header className={styles.header}>
-          <h2 className={styles.title}>选择项目目录</h2>
-          <button type="button" className={styles.close} onClick={onClose} aria-label="关闭">
+          <h2 className={styles.title}>{t("picker.title")}</h2>
+          <button type="button" className={styles.close} onClick={onClose} aria-label={t("settings.autoCompaction.off")}>
             <CloseIcon />
           </button>
         </header>
@@ -114,7 +116,7 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
             className={styles.address}
             value={address}
             spellCheck={false}
-            aria-label="当前路径"
+            aria-label={t("picker.currentPath")}
             placeholder="/absolute/path"
             onChange={(event) => setAddress(event.target.value)}
             onKeyDown={onAddressKeyDown}
@@ -124,12 +126,10 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
             className={styles.go}
             onClick={() => void load(address)}
             disabled={busy}
-          >
-            跳转
-          </button>
+          >{t("picker.go")}</button>
         </div>
 
-        <div className={styles.list} role="listbox" aria-label="子目录">
+        <div className={styles.list} role="listbox" aria-label={t("picker.subdirs")}>
           {listing?.parent ? (
             <button
               type="button"
@@ -139,15 +139,15 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
               <span className={clsx(styles.glyph, styles.glyphMuted)}>
                 <ArrowUpIcon />
               </span>
-              <span className={styles.entryName}>上级目录</span>
+              <span className={styles.entryName}>{t("picker.parent")}</span>
             </button>
           ) : null}
 
-          {busy && !listing ? <p className={styles.hint}>载入中…</p> : null}
+          {busy && !listing ? <p className={styles.hint}>{t("picker.loading")}</p> : null}
           {error ? <p className={styles.error}>{error}</p> : null}
 
           {listing && !error && listing.entries.length === 0 ? (
-            <p className={styles.hint}>这个目录下没有子目录。</p>
+            <p className={styles.hint}>{t("picker.empty")}</p>
           ) : null}
 
           {listing?.entries.map((entry) => (
@@ -180,16 +180,14 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
             {listing ? listing.path : "—"}
           </span>
           <div className={styles.footerActions}>
-            <button type="button" className={styles.secondary} onClick={onClose}>
-              取消
-            </button>
+            <button type="button" className={styles.secondary} onClick={onClose}>{t("common.cancel")}</button>
             <button
               type="button"
               className={styles.primary}
               disabled={!listing || choosing || busy}
               onClick={() => void choose()}
             >
-              {choosing ? "添加中…" : "选择此目录"}
+              {choosing ? t("picker.adding") : t("picker.choose")}
             </button>
           </div>
         </footer>

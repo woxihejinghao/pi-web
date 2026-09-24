@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { DisclosureRow } from "./DisclosureRow.tsx";
 import styles from "./TurnProcessGroup.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * A finished turn's process rows (thinking + tool calls) collapsed into one row,
@@ -23,13 +24,14 @@ export function TurnProcessGroup({
   count: number;
   children: ReactNode;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   return (
     <DisclosureRow
       className={styles.root}
       icon={<Glyph name="sparkle" size={14} />}
-      title="执行过程"
+      title={t("turn.process")}
       open={open}
       expandable
       expandOnRowClick

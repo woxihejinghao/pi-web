@@ -32,6 +32,7 @@ import { textFromContent, type ConversationView, type ToolExecution } from "./us
 import { useDelayedFlag } from "../../lib/use-delayed-flag.ts";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import styles from "./MessageList.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /** Workspace root and home dir, threaded down so paths can be shortened for display. */
 interface PathContext {
@@ -386,6 +387,7 @@ export function MessageList({
    */
   onOpenFile?: (path: string) => void;
 } & PathContext) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   // Follow new output only while the user is already at the bottom.
   const stickRef = useRef(true);
@@ -640,10 +642,10 @@ export function MessageList({
       />
 
       <div className={styles.column}>
-        {showLoading ? <p className={styles.hint}>正在载入会话…</p> : null}
+        {showLoading ? <p className={styles.hint}>{t("message.loading")}</p> : null}
 
         {!view.loading && railItems.length === 0 && !hasPartial ? (
-          <p className={styles.hint}>还没有消息。在下面输入开始对话。</p>
+          <p className={styles.hint}>{t("message.empty")}</p>
         ) : null}
 
         {railItems.map((group) => {
@@ -798,8 +800,8 @@ export function MessageList({
           <button
             type="button"
             className={styles.jump}
-            aria-label="滚动到底部"
-            title="滚动到底部"
+            aria-label={t("message.scrollToBottom")}
+            title={t("message.scrollToBottom")}
             onClick={jumpToBottom}
           >
             <Glyph name="chevronDown" size={20} />

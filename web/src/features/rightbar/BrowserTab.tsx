@@ -5,6 +5,7 @@ import { ExternalIcon, BackIcon, ForwardIcon } from "./rightbar-icons.tsx";
 import { normalizeUrl, rightbarActions, type RightbarTab } from "./rightbar-state.ts";
 import pane from "./Pane.module.css";
 import styles from "./BrowserTab.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * A sandboxed page beside the conversation — a local dev server, most of the
@@ -17,6 +18,7 @@ import styles from "./BrowserTab.module.css";
  * way out of that, not a proxy.
  */
 export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: RightbarTab }) {
+  const t = useT();
   const [draft, setDraft] = useState(tab.target);
   const [error, setError] = useState<string | null>(null);
   const [sandboxed, setSandboxed] = useState(true);
@@ -39,7 +41,7 @@ export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: Rig
     event.preventDefault();
     const url = normalizeUrl(draft);
     if (url === null) {
-      setError("请输入 http(s) 网址，例如 localhost:5173");
+      setError(t("browser.badUrl"));
       return;
     }
     setError(null);
@@ -53,8 +55,8 @@ export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: Rig
           type="button"
           className={pane.action}
           disabled={!canBack}
-          title="后退"
-          aria-label="后退"
+          title={t("browser.back")}
+          aria-label={t("browser.back")}
           onClick={() => rightbarActions.stepBrowserHistory(sessionPath, tab.id, -1)}
         >
           <BackIcon width={14} height={14} />
@@ -63,8 +65,8 @@ export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: Rig
           type="button"
           className={pane.action}
           disabled={!canForward}
-          title="前进"
-          aria-label="前进"
+          title={t("browser.forward")}
+          aria-label={t("browser.forward")}
           onClick={() => rightbarActions.stepBrowserHistory(sessionPath, tab.id, 1)}
         >
           <ForwardIcon width={14} height={14} />
@@ -73,8 +75,8 @@ export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: Rig
           type="button"
           className={pane.action}
           disabled={tab.target.length === 0}
-          title="重新载入"
-          aria-label="重新载入页面"
+          title={t("pane.reload")}
+          aria-label={t("browser.reloadLabel")}
           onClick={() => setFrameKey((value) => value + 1)}
         >
           <RefreshIcon width={14} height={14} />
@@ -87,19 +89,17 @@ export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: Rig
           value={draft}
           spellCheck={false}
           autoComplete="off"
-          placeholder="输入网址，例如 localhost:5173"
-          aria-label="网址"
+          placeholder={t("browser.placeholder")}
+          aria-label={t("browser.addressLabel")}
           onChange={(event) => setDraft(event.target.value)}
         />
-        <button type="submit" className={styles.go} disabled={draft.trim().length === 0}>
-          打开
-        </button>
+        <button type="submit" className={styles.go} disabled={draft.trim().length === 0}>{t("browser.open")}</button>
         <button
           type="button"
           className={pane.action}
           disabled={tab.target.length === 0}
-          title="在系统浏览器中打开"
-          aria-label="在系统浏览器中打开"
+          title={t("browser.openSystem")}
+          aria-label={t("browser.openSystem")}
           onClick={() => {
             // `noopener` keeps the opened page from reaching back into this app
             // through `window.opener`.
@@ -114,8 +114,7 @@ export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: Rig
 
       <div className={styles.frameWrap}>
         {tab.target.length === 0 ? (
-          <div className={styles.empty}>
-            输入网址打开网页，例如 <code>localhost:5173</code>。
+          <div className={styles.empty}>{t("browser.emptyHint")}<code>localhost:5173</code>。
           </div>
         ) : (
           <iframe
@@ -142,12 +141,12 @@ export function BrowserTab({ sessionPath, tab }: { sessionPath: string; tab: Rig
           type="button"
           className={clsx(styles.sandboxToggle, !sandboxed && styles.sandboxOff)}
           aria-pressed={!sandboxed}
-          title={sandboxed ? "关闭沙箱（仅本次）" : "重新启用沙箱"}
+          title={sandboxed ? t("browser.disableSandbox") : t("browser.enableSandbox")}
           onClick={() => setSandboxed((value) => !value)}
         >
-          {sandboxed ? "已启用沙箱" : "沙箱已关闭"}
+          {sandboxed ? t("browser.sandboxOn") : t("browser.sandboxOff")}
         </button>
-        <span className={styles.hint}>部分站点禁止被嵌入，可改用系统浏览器打开。</span>
+        <span className={styles.hint}>{t("browser.embedHint")}</span>
       </div>
     </div>
   );

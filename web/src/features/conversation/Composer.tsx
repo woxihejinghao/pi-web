@@ -14,6 +14,7 @@ import { ModelPicker } from "./ModelPicker.tsx";
 import { SlashMenu } from "./SlashMenu.tsx";
 import { useSlashCompletion } from "./useSlashCompletion.ts";
 import styles from "./Composer.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * The session's model, switchable list and context figures, supplied by
@@ -82,6 +83,7 @@ export function Composer({
   onSend,
   onAbort,
 }: ComposerProps) {
+  const t = useT();
   const [text, setText] = useState("");
   /** The pictures going with the text; see `useImageDraft` for why they are a hook. */
   const draft = useImageDraft();
@@ -170,9 +172,9 @@ export function Composer({
           spellCheck={false}
           disabled={disabled}
           placeholder={
-            disabled ? "选择或新建一个会话" : "输入消息，可粘贴或拖入图片，/ 调用命令，Enter 发送"
+            disabled ? t("composer.chooseOrCreate") : t("composer.placeholder")
           }
-          aria-label="消息输入"
+          aria-label={t("composer.inputLabel")}
           onChange={(event) => {
             setText(event.target.value);
             completion.sync();
@@ -185,27 +187,23 @@ export function Composer({
 
         <div className={styles.toolbar}>
           {isStreaming ? (
-            <div className={styles.modes} role="radiogroup" aria-label="发送方式">
+            <div className={styles.modes} role="radiogroup" aria-label={t("composer.sendMode")}>
               <button
                 type="button"
                 role="radio"
                 aria-checked={busyMode === "steer"}
                 className={busyMode === "steer" ? styles.modeActive : styles.mode}
                 onClick={() => setBusyMode("steer")}
-                title="打断当前步骤，优先处理这条消息"
-              >
-                引导
-              </button>
+                title={t("composer.steerTitle")}
+              >{t("composer.steer")}</button>
               <button
                 type="button"
                 role="radio"
                 aria-checked={busyMode === "queue"}
                 className={busyMode === "queue" ? styles.modeActive : styles.mode}
                 onClick={() => setBusyMode("queue")}
-                title="等当前任务结束后再处理"
-              >
-                追问
-              </button>
+                title={t("composer.followUpTitle")}
+              >{t("composer.followUp")}</button>
             </div>
           ) : null}
 
@@ -248,8 +246,8 @@ export function Composer({
               type="button"
               className={styles.stop}
               onClick={onAbort}
-              aria-label="停止生成"
-              title="停止生成"
+              aria-label={t("composer.stop")}
+              title={t("composer.stop")}
             >
               <StopIcon />
             </button>
@@ -259,8 +257,8 @@ export function Composer({
               className={styles.send}
               disabled={disabled || sending || (text.trim().length === 0 && draft.images.length === 0)}
               onClick={() => void submit()}
-              aria-label="发送"
-              title="发送"
+              aria-label={t("composer.send")}
+              title={t("composer.send")}
             >
               <SendIcon />
             </button>

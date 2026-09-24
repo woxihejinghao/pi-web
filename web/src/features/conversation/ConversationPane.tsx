@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { AlertIcon, RefreshIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { api } from "../../lib/api.ts";
-import { actions, appStore, isDraftSession } from "../../lib/app-state.ts";
+import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import { rightbarActions, rightbarStore } from "../rightbar/rightbar-state.ts";
 import { PanelRightIcon } from "../rightbar/rightbar-icons.tsx";
@@ -20,6 +20,7 @@ import { useConversation } from "./useConversation.ts";
 import styles from "./ConversationPane.module.css";
 
 export function ConversationPane() {
+  const t = useT();
   const state = useStore(appStore);
   const [treeOpen, setTreeOpen] = useState(false);
   // A draft has no pi process yet, so the conversation runs without a path
@@ -154,10 +155,10 @@ export function ConversationPane() {
   }
 
   const headerSub = draft
-    ? "正在准备会话…"
+    ? t("pane.preparing")
     : sessionPath
-      ? (session?.title ?? "会话")
-      : "未选择会话";
+      ? (session?.title ?? t("pane.session"))
+      : t("pane.noSession");
 
   return (
     <div className={styles.pane}>
@@ -171,16 +172,14 @@ export function ConversationPane() {
             className={styles.headerAction}
             onClick={() => setTreeOpen(true)}
           >
-            <Glyph name="branch" size={14} />
-            话题树
-          </button>
+            <Glyph name="branch" size={14} />{t("pane.topicTree")}</button>
         ) : null}
         {sessionPath !== null && !draft && !rightbarOpen ? (
           <button
             type="button"
             className={styles.headerPanelAction}
-            title="打开右侧栏"
-            aria-label="打开右侧栏"
+            title={t("pane.openRightbar")}
+            aria-label={t("pane.openRightbar")}
             onClick={() => rightbarActions.open(sessionPath)}
           >
             <PanelRightIcon width={14} height={14} />
@@ -204,13 +203,9 @@ export function ConversationPane() {
           <span className={styles.bannerIcon}>
             <AlertIcon />
           </span>
-          <span className={styles.bannerText}>
-            这个会话被其他进程（例如终端的 pi）修改过，当前内容可能已过期。
-          </span>
+          <span className={styles.bannerText}>{t("pane.stale")}</span>
           <button type="button" className={styles.bannerAction} onClick={() => void reload()}>
-            <RefreshIcon />
-            重新载入
-          </button>
+            <RefreshIcon />{t("pane.reload")}</button>
         </div>
       ) : null}
 

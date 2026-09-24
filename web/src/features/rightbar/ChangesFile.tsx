@@ -6,6 +6,8 @@ import { PlusIcon } from "../../components/icons.tsx";
 import { MinusIcon, TreeChevronIcon, UndoIcon } from "./rightbar-icons.tsx";
 import { PathLabel } from "./rightbar-path.tsx";
 import styles from "./ChangesTab.module.css";
+import { useT } from "../../lib/app-state.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 /** Hunk lines a file opens with before its own diffs start collapsed. */
 const HUNK_OPEN_LINES = 80;
@@ -19,14 +21,21 @@ const STATUS_LABEL: Record<GitFileEntry["status"], string> = {
   conflicted: "!",
 };
 
-const STATUS_TITLE: Record<GitFileEntry["status"], string> = {
-  modified: "已修改",
-  added: "新增",
-  deleted: "已删除",
-  renamed: "重命名",
-  untracked: "未跟踪",
-  conflicted: "冲突",
-};
+/**
+ * The words behind the one-letter status pill. Built per render rather than kept
+ * as a module constant: a constant would freeze whichever language was active
+ * when this module was first imported.
+ */
+function statusTitles(t: Translate): Record<GitFileEntry["status"], string> {
+  return {
+    modified: t("changeStatus.modified"),
+    added: t("changeStatus.added"),
+    deleted: t("changeStatus.deleted"),
+    renamed: t("changeStatus.renamed"),
+    untracked: t("changeStatus.untracked"),
+    conflicted: t("changeStatus.conflicted"),
+  };
+}
 
 /**
  * One file on one side of the change set.
@@ -57,6 +66,7 @@ export function ChangesFile({
   onStage(path: string, staged: boolean): void;
   onDiscard(path: string): void;
 }) {
+  const t = useT();
   const parsed = useMemo(() => parseUnifiedDiff(file.patch), [file.patch]);
   const [open, setOpen] = useState(false);
 
@@ -77,7 +87,7 @@ export function ChangesFile({
           </span>
           <span
             className={clsx(styles.badge, styles[`badge_${file.status}`])}
-            title={STATUS_TITLE[file.status]}
+            title={statusTitles(t)[file.status]}
           >
             {STATUS_LABEL[file.status]}
           </span>
@@ -97,7 +107,7 @@ export function ChangesFile({
             type="button"
             className={styles.rowAction}
             disabled={busy}
-            title="暂存这个文件"
+            title={t("fileDiff.stageTitle")}
             aria-label={`暂存 ${file.path}`}
             onClick={() => onStage(file.path, true)}
           >
@@ -108,7 +118,7 @@ export function ChangesFile({
             type="button"
             className={styles.rowAction}
             disabled={busy}
-            title="取消暂存"
+            title={t("fileDiff.unstageTitle")}
             aria-label={`取消暂存 ${file.path}`}
             onClick={() => onStage(file.path, false)}
           >
@@ -120,7 +130,7 @@ export function ChangesFile({
             type="button"
             className={clsx(styles.rowAction, styles.rowActionDanger)}
             disabled={busy}
-            title="还原到已提交状态"
+            title={t("fileDiff.restoreTitle")}
             aria-label={`还原 ${file.path}`}
             onClick={() => onDiscard(file.path)}
           >
@@ -146,17 +156,18 @@ function FilePatch({
   file: GitFileEntry;
   parsed: ReturnType<typeof parseUnifiedDiff>;
 }) {
+  const t = useT();
   if (file.binary) {
-    return <div className={styles.fileNote}>二进制文件，无法显示差异。</div>;
+    return <div className={styles.fileNote}>{t("fileDiff.binary")}</div>;
   }
   if (file.status === "untracked") {
-    return <div className={styles.fileNote}>未跟踪的新文件，git 没有它的差异。</div>;
+    return <div className={styles.fileNote}>{t("fileDiff.untracked")}</div>;
   }
   if (file.truncated) {
-    return <div className={styles.fileNote}>改动过大，补丁已截断。</div>;
+    return <div className={styles.fileNote}>{t("fileDiff.truncated")}</div>;
   }
   if (parsed.hunks.length === 0) {
-    return <div className={styles.fileNote}>没有可显示的差异。</div>;
+    return <div className={styles.fileNote}>{t("fileDiff.empty")}</div>;
   }
   return (
     <div className={styles.patch}>

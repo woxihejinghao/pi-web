@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import clsx from "clsx";
 import { ChevronIcon, FolderIcon, SendIcon } from "../../components/icons.tsx";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import { AttachmentInput, AttachmentStrip, AttachButton } from "./AttachmentStrip.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
@@ -13,6 +13,7 @@ import styles from "./NewSessionHero.module.css";
 
 /** Workspace chooser shown above the composer. */
 function WorkspaceSelect() {
+  const t = useT();
   const state = useStore(appStore);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -47,7 +48,7 @@ function WorkspaceSelect() {
         <span className={styles.selectorGlyph}>
           <FolderIcon />
         </span>
-        {current ? current.title : "选择工作区"}
+        {current ? current.title : t("hero.chooseWorkspace")}
         <span className={styles.selectorCaret}>
           <ChevronIcon />
         </span>
@@ -56,7 +57,7 @@ function WorkspaceSelect() {
       {open ? (
         <div className={styles.menu} role="listbox">
           {state.projects.length === 0 ? (
-            <p className={styles.warning}>还没有工作区</p>
+            <p className={styles.warning}>{t("hero.noWorkspace")}</p>
           ) : (
             state.projects.map((project) => (
               <button
@@ -107,6 +108,7 @@ function WorkspaceSelect() {
  * so no process has to exist for the choice to be offered.
  */
 export function NewSessionHero() {
+  const t = useT();
   const state = useStore(appStore);
   const [text, setText] = useState("");
   const draft = useImageDraft();
@@ -172,8 +174,8 @@ export function NewSessionHero() {
           <span className={styles.mark} aria-hidden>
             π
           </span>
-          <h1 className={styles.title}>开始新的会话</h1>
-          <span className={styles.badge}>预览版</span>
+          <h1 className={styles.title}>{t("hero.title")}</h1>
+          <span className={styles.badge}>{t("hero.badge")}</span>
         </div>
 
         <div className={styles.selectors}>
@@ -207,8 +209,8 @@ export function NewSessionHero() {
             rows={2}
             spellCheck={false}
             disabled={!project}
-            placeholder={project ? "描述你想要完成的任务，/ 调用命令" : "先添加一个工作区"}
-            aria-label="新会话的第一条消息"
+            placeholder={project ? t("hero.placeholder") : t("sidebar.newSessionNoProject")}
+            aria-label={t("hero.firstMessageLabel")}
             onChange={(event) => {
               setText(event.target.value);
               completion.sync();
@@ -224,7 +226,7 @@ export function NewSessionHero() {
               inputRef={draft.fileInputRef}
               onFiles={(files) => void draft.attach(files)}
             />
-            <span className={styles.toolbarHint}>Enter 发送 · Shift+Enter 换行</span>
+            <span className={styles.toolbarHint}>{t("hero.keyboardHint")}</span>
             {project ? (
               <ModelPicker
                 model={composer.state?.model ?? null}
@@ -240,8 +242,8 @@ export function NewSessionHero() {
               disabled={
                 !project || (text.trim().length === 0 && draft.images.length === 0)
               }
-              aria-label="开始会话"
-              title="开始会话"
+              aria-label={t("hero.start")}
+              title={t("hero.start")}
               onClick={submit}
             >
               <SendIcon />

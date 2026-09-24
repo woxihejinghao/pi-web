@@ -10,6 +10,7 @@ import {
   type SessionStats as SessionStatsData,
 } from "./stats-model.ts";
 import styles from "./SessionStats.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /** Which pill's panel is open. One at a time, as dsh's `openPill` does it. */
 type OpenPanel = "time" | "usage" | null;
@@ -24,6 +25,7 @@ type OpenPanel = "time" | "usage" | null;
  * wall times (a session loaded from disk); dsh renders the same fallback.
  */
 export function SessionStats({ stats }: { stats: SessionStatsData }) {
+  const t = useT();
   const [open, setOpen] = useState<OpenPanel>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +78,7 @@ function TimePill({
   open: boolean;
   onOpen: (open: boolean) => void;
 }) {
+  const t = useT();
   const { timing } = stats;
   const counts = `${String(stats.turns)} 轮 ${String(stats.steps)} 步`;
   const tps =
@@ -123,22 +126,22 @@ function TimePill({
         {label}
       </button>
       {open ? (
-        <StatPanel icon={<Glyph name="clock" size={14} />} title="会话统计">
+        <StatPanel icon={<Glyph name="clock" size={14} />} title={t("stats.title")}>
           {timing.llmMs > 0 ? (
-            <StatRow label="模型用时" value={formatRunDuration(timing.llmMs)} />
+            <StatRow label={t("stats.modelTime")} value={formatRunDuration(timing.llmMs)} />
           ) : null}
           {timing.toolMs > 0 ? (
-            <StatRow label="工具调用用时" value={formatRunDuration(timing.toolMs)} />
+            <StatRow label={t("stats.toolTime")} value={formatRunDuration(timing.toolMs)} />
           ) : null}
           {timing.ttftSteps > 0 ? (
             <StatRow
-              label="首 token 平均（TTFT）"
+              label={t("stats.ttft")}
               value={formatLatencySeconds(timing.ttftMs / timing.ttftSteps)}
             />
           ) : null}
           {timing.decodeMs > 0 ? (
             <StatRow
-              label="输出速度（TPS）"
+              label={t("stats.tps")}
               value={`${formatTokensPerSecond(stats.tokensPerSecond ?? 0)} tok/s`}
             />
           ) : null}
@@ -157,6 +160,7 @@ function UsagePill({
   open: boolean;
   onOpen: (open: boolean) => void;
 }) {
+  const t = useT();
   const total = `${formatTokens(stats.totalTokens)} tok`;
   const cacheHit = stats.cacheHitPercent === null ? null : `缓存命中 ${stats.cacheHitPercent}%`;
   const { usage } = stats;
@@ -187,17 +191,17 @@ function UsagePill({
       {open ? (
         <StatPanel
           icon={<Glyph name="database" size={14} />}
-          title="Token 用量"
+          title={t("stats.tokenUsage")}
           value={`用量 ${total}`}
         >
-          {stats.model === null ? null : <StatRow label="提供方 / 模型" value={stats.model} route />}
+          {stats.model === null ? null : <StatRow label={t("stats.providerModel")} value={stats.model} route />}
           {stats.cacheHitPercent === null ? null : (
-            <StatRow label="缓存命中" value={`${stats.cacheHitPercent}%`} />
+            <StatRow label={t("stats.cacheHit")} value={`${stats.cacheHitPercent}%`} />
           )}
-          <StatRow label="未缓存输入" value={tok(usage.input)} />
-          <StatRow label="缓存读取" value={tok(usage.cacheRead)} />
-          <StatRow label="缓存写入" value={tok(usage.cacheWrite)} />
-          <StatRow label="输出" value={tok(usage.output)} />
+          <StatRow label={t("stats.uncachedInput")} value={tok(usage.input)} />
+          <StatRow label={t("stats.cacheRead")} value={tok(usage.cacheRead)} />
+          <StatRow label={t("stats.cacheWrite")} value={tok(usage.cacheWrite)} />
+          <StatRow label={t("stats.output")} value={tok(usage.output)} />
         </StatPanel>
       ) : null}
     </span>

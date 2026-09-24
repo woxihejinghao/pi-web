@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RailTurn } from "./turn-rail.ts";
 import styles from "./TurnNavigator.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /** Fixed pitch between neighbouring marks; overflow scrolls inside the frame. */
 const TURN_SPACING_PX = 10;
@@ -115,6 +116,7 @@ function TurnNavigatorRail({
   bandHeight,
   onNavigate,
 }: TurnNavigatorProps) {
+  const t = useT();
   const [previewTurn, setPreviewTurn] = useState<number | null>(null);
   const [scrollState, setScrollState] = useState<RailScrollState>(RAIL_AT_REST);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -187,7 +189,7 @@ function TurnNavigatorRail({
       <nav
         className={styles.frame}
         style={frameStyle(items.length, scrollState.top, bandHeight)}
-        aria-label="轮次导航"
+        aria-label={t("turn.navigator")}
         onClick={navigateAtPointer}
         onPointerMove={previewAtPointer}
         onPointerEnter={() => {

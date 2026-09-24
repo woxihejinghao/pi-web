@@ -3,6 +3,7 @@ import { Glyph } from "../../components/dsh-icons.tsx";
 import { DisclosureRow } from "./DisclosureRow.tsx";
 import { firstNonBlankLine, lastNonBlankLine } from "./row-model.ts";
 import styles from "./ThinkingBlock.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * One reasoning block as dsh's Think row.
@@ -20,6 +21,7 @@ import styles from "./ThinkingBlock.module.css";
  * instead of the whole line re-ellipsising on every token.
  */
 export function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   // pi emits empty reasoning blocks — interrupted thinking, or a turn where the
@@ -37,7 +39,7 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming?: b
       data-state={running ? "running" : "ok"}
       data-expanded={open || undefined}
     >
-      {running ? <span className={styles.visuallyHidden}>运行中</span> : null}
+      {running ? <span className={styles.visuallyHidden}>{t("common.running")}</span> : null}
 
       <DisclosureRow
         rowClassName={styles.row}
@@ -45,7 +47,7 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming?: b
         titleClassName={styles.title}
         chevronClassName={styles.chevron}
         icon={<Glyph name="think" />}
-        title="思考"
+        title={t("thinking.title")}
         open={open}
         expandable
         expandOnRowClick

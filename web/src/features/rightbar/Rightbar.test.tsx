@@ -1,8 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appStore, resetAppState } from "../../lib/app-state.ts";
 import { Rightbar } from "./Rightbar.tsx";
 import { resetRightbarState, rightbarActions } from "./rightbar-state.ts";
+
+// Panel copy renders through `useT`; without a navigator the default `system`
+// preference resolves to English. These assertions pin the Chinese wording, so
+// fix the host locale for the file.
+vi.stubGlobal("navigator", { language: "zh-CN" });
 
 /**
  * Server-rendered covers for the shell.

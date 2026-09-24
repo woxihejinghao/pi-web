@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { secondsUntil } from "../../lib/duration.ts";
 import type { RetryState } from "./useConversation.ts";
 import styles from "./RetryNotice.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * The line that explains a silent stretch while pi retries a failed model
@@ -18,6 +19,7 @@ import styles from "./RetryNotice.module.css";
  * only the attempt counter.
  */
 export function RetryNotice({ retry }: { retry: RetryState }) {
+  const t = useT();
   const [remaining, setRemaining] = useState(() => secondsUntil(retry.deadline));
   const waiting = remaining > 0;
 
@@ -30,7 +32,7 @@ export function RetryNotice({ retry }: { retry: RetryState }) {
     return () => window.clearInterval(id);
   }, [retry.deadline]);
 
-  const label = waiting ? "等待重试模型请求" : "正在重试模型请求";
+  const label = waiting ? t("retry.waiting") : t("retry.retrying");
   const counter = `${retry.attempt}/${retry.maxAttempts}`;
 
   return (
@@ -42,12 +44,12 @@ export function RetryNotice({ retry }: { retry: RetryState }) {
       </summary>
       <div className={styles.retryDetails}>
         <div>
-          <span className={styles.retryDetailLabel}>重试延迟：</span>
+          <span className={styles.retryDetailLabel}>{t("retry.delay")}</span>
           {`${Math.round(retry.delayMs)}毫秒`}
         </div>
         {retry.errorMessage ? (
           <div>
-            <span className={styles.retryDetailLabel}>失败原因：</span>
+            <span className={styles.retryDetailLabel}>{t("retry.reason")}</span>
             {retry.errorMessage}
           </div>
         ) : null}

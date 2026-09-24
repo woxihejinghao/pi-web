@@ -8,6 +8,7 @@ import { CommitBar, HistoryList } from "./ChangesFooter.tsx";
 import { TreeChevronIcon } from "./rightbar-icons.tsx";
 import pane from "./Pane.module.css";
 import styles from "./ChangesTab.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * The project's changes, with the four things a git panel is for: committing,
@@ -30,6 +31,7 @@ export function ChangesTab({
   projectId: string;
   onOpenFile(path: string): void;
 }) {
+  const t = useT();
   const [view, setView] = useState<GitStatusView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -151,12 +153,12 @@ export function ChangesTab({
         </>
       ) : (
         <div className={pane.header}>
-          <span className={styles.summaryMuted}>工作区改动</span>
+          <span className={styles.summaryMuted}>{t("changes.workspace")}</span>
           <button
             type="button"
             className={pane.action}
-            title="刷新"
-            aria-label="刷新改动"
+            title={t("common.refresh")}
+            aria-label={t("changes.refresh")}
             onClick={() => void load()}
           >
             <RefreshIcon width={14} height={14} />
@@ -168,40 +170,40 @@ export function ChangesTab({
         {loadError !== null ? (
           <div className={pane.error}>{loadError}</div>
         ) : view === null ? (
-          <div className={pane.note}>读取改动…</div>
+          <div className={pane.note}>{t("changes.loading")}</div>
         ) : !repository ? (
-          <div className={pane.note}>{view.error ?? "这个目录不是 git 仓库。"}</div>
+          <div className={pane.note}>{view.error ?? t("changes.notGit")}</div>
         ) : (
           <>
             <FileSection
-              title="已暂存"
+              title={t("changes.staged")}
               count={staged.length}
               action={
                 staged.length > 0
-                  ? { label: "全部取消暂存", onClick: () => stage(null, false) }
+                  ? { label: t("changes.unstageAll"), onClick: () => stage(null, false) }
                   : null
               }
               files={staged}
               side="staged"
               busy={busy}
-              emptyText="没有已暂存的改动"
+              emptyText={t("changes.noStaged")}
               onStage={stage}
               onDiscard={discard}
               onOpenFile={onOpenFile}
             />
 
             <FileSection
-              title="未暂存"
+              title={t("changes.unstaged")}
               count={unstaged.length}
               action={
                 unstaged.length > 0
-                  ? { label: "全部暂存", onClick: () => stage(null, true) }
+                  ? { label: t("changes.stageAll"), onClick: () => stage(null, true) }
                   : null
               }
               files={unstaged}
               side="unstaged"
               busy={busy}
-              emptyText="没有未暂存的改动"
+              emptyText={t("changes.noUnstaged")}
               onStage={stage}
               onDiscard={discard}
               onOpenFile={onOpenFile}
@@ -235,6 +237,7 @@ function BranchRow({
   onRefresh(): void;
   onCheckout(branch: string): void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -255,7 +258,7 @@ function BranchRow({
           type="button"
           className={styles.branchButton}
           disabled={busy || view.detached}
-          title={view.detached ? "HEAD 处于游离状态" : "切换分支"}
+          title={view.detached ? t("changes.detached") : t("changes.switchBranch")}
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
@@ -287,7 +290,7 @@ function BranchRow({
 
       <span className={styles.summary}>
         {view.upstream === null ? (
-          <span className={styles.summaryMuted}>未设置上游</span>
+          <span className={styles.summaryMuted}>{t("changes.noUpstream")}</span>
         ) : (
           <>
             <span className={styles.summaryMuted}>{view.upstream}</span>
@@ -300,8 +303,8 @@ function BranchRow({
       <button
         type="button"
         className={pane.action}
-        title="刷新"
-        aria-label="刷新改动"
+        title={t("common.refresh")}
+        aria-label={t("changes.refresh")}
         onClick={onRefresh}
       >
         <RefreshIcon width={14} height={14} />
@@ -334,6 +337,7 @@ function FileSection({
   onDiscard(path: string): void;
   onOpenFile(path: string): void;
 }) {
+  const t = useT();
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
@@ -368,9 +372,7 @@ function FileSection({
                 type="button"
                 className={styles.openFile}
                 onClick={() => onOpenFile(file.path)}
-              >
-                查看文件
-              </button>
+              >{t("changes.viewFile")}</button>
             ) : null}
           </div>
         ))

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { CloseIcon, PlusIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
-import { appStore } from "../../lib/app-state.ts";
+import { appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import { BrowserTab } from "./BrowserTab.tsx";
 import { ChangesTab } from "./ChangesTab.tsx";
@@ -46,6 +46,7 @@ function TabIcon({ kind }: { kind: RightbarTabKind }) {
  * tree or a preview to belong to.
  */
 export function Rightbar() {
+  const t = useT();
   const state = useStore(rightbarStore);
   const app = useStore(appStore);
   const sessionPath = app.selectedSessionPath ?? "";
@@ -67,7 +68,7 @@ export function Rightbar() {
     <aside
       className={clsx(styles.panel, surface.mode === "fullscreen" && styles.fullscreen)}
       style={surface.mode === "fullscreen" ? undefined : { width: `${String(surface.width)}px` }}
-      aria-label="右侧栏"
+      aria-label={t("rightbar.title")}
     >
       {surface.mode === "push" ? (
         <ResizeHandle sessionPath={sessionPath} width={surface.width} />
@@ -112,8 +113,8 @@ export function Rightbar() {
         <button
           type="button"
           className={styles.panelControl}
-          title={surface.mode === "fullscreen" ? "回到右栏" : "全屏显示"}
-          aria-label={surface.mode === "fullscreen" ? "回到右栏" : "全屏显示"}
+          title={surface.mode === "fullscreen" ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen")}
+          aria-label={surface.mode === "fullscreen" ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen")}
           onClick={() =>
             rightbarActions.setMode(sessionPath, surface.mode === "fullscreen" ? "push" : "fullscreen")
           }
@@ -127,8 +128,8 @@ export function Rightbar() {
         <button
           type="button"
           className={styles.panelControl}
-          title="收起右栏"
-          aria-label="收起右栏"
+          title={t("rightbar.collapse")}
+          aria-label={t("rightbar.collapse")}
           onClick={() => rightbarActions.close(sessionPath)}
         >
           <PanelRightIcon width={14} height={14} />
@@ -170,6 +171,7 @@ export function Rightbar() {
  * handle, which it does immediately.
  */
 function ResizeHandle({ sessionPath, width }: { sessionPath: string; width: number }) {
+  const t = useT();
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   return (
@@ -177,7 +179,7 @@ function ResizeHandle({ sessionPath, width }: { sessionPath: string; width: numb
       className={styles.resizeHandle}
       role="separator"
       aria-orientation="vertical"
-      aria-label="调整右栏宽度"
+      aria-label={t("rightbar.resize")}
       onPointerDown={(event) => {
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -207,6 +209,7 @@ function ResizeHandle({ sessionPath, width }: { sessionPath: string; width: numb
 
 /** The strip's "+": the tab kinds a user can add directly. */
 function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser") => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -226,8 +229,8 @@ function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser"
       <button
         type="button"
         className={styles.addButton}
-        title="新建标签页"
-        aria-label="新建标签页"
+        title={t("rightbar.newTab")}
+        aria-label={t("rightbar.newTab")}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -244,9 +247,7 @@ function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser"
               onPick("files");
             }}
           >
-            <Glyph name="checklist" size={13} />
-            文件
-          </button>
+            <Glyph name="checklist" size={13} />{t("tab.files")}</button>
           <button
             type="button"
             className={styles.menuItem}
@@ -256,9 +257,7 @@ function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser"
               onPick("changes");
             }}
           >
-            <DiffIcon width={13} height={13} />
-            文件变更
-          </button>
+            <DiffIcon width={13} height={13} />{t("tab.changes")}</button>
           <button
             type="button"
             className={styles.menuItem}
@@ -268,9 +267,7 @@ function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser"
               onPick("browser");
             }}
           >
-            <Glyph name="browse" size={13} />
-            浏览器
-          </button>
+            <Glyph name="browse" size={13} />{t("tab.browser")}</button>
         </div>
       ) : null}
     </div>

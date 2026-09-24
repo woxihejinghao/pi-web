@@ -4,6 +4,7 @@ import { formatTokens } from "../../lib/duration.ts";
 import type { ComposerContext } from "../../lib/types.ts";
 import { StatPanel, StatRow } from "./StatPanel.tsx";
 import styles from "./ContextMeter.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /** Radius and circumference of the ring in its 16px viewBox. */
 const RADIUS = 6.4;
@@ -33,6 +34,7 @@ export interface ContextMeterProps {
  * no model to describe.
  */
 export function ContextMeter({ context, onRequestLive }: ContextMeterProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLSpanElement>(null);
 
@@ -61,8 +63,8 @@ export function ContextMeter({ context, onRequestLive }: ContextMeterProps) {
         <button
           type="button"
           className={styles.button}
-          aria-label="上下文用量未知"
-          title="上下文用量未知"
+          aria-label={t("context.unknown")}
+          title={t("context.unknown")}
           onClick={() => {
             const next = !open;
             setOpen(next);
@@ -72,8 +74,8 @@ export function ContextMeter({ context, onRequestLive }: ContextMeterProps) {
           <Ring percent={null} />
         </button>
         {open ? (
-          <StatPanel align="end" icon={<Ring percent={null} />} title="上下文" note="这个会话还没有可用的上下文用量。">
-            <StatRow label="上下文窗口" value="未知" />
+          <StatPanel align="end" icon={<Ring percent={null} />} title={t("context.title")} note={t("context.emptyNote")}>
+            <StatRow label={t("context.window")} value={t("context.unknownValue")} />
           </StatPanel>
         ) : null}
       </span>
@@ -83,7 +85,7 @@ export function ContextMeter({ context, onRequestLive }: ContextMeterProps) {
   const percent = context.percent;
   const label =
     percent === null || context.tokens === null
-      ? "上下文用量未知"
+      ? t("context.unknown")
       : `上下文 ${formatPercent(percent)}% · ${formatTokens(context.tokens)} / ${formatTokens(context.contextWindow)}`;
 
   return (
@@ -107,30 +109,30 @@ export function ContextMeter({ context, onRequestLive }: ContextMeterProps) {
         <StatPanel
           align="end"
           icon={<Ring percent={percent} />}
-          title="上下文"
+          title={t("context.title")}
           value={
             context.tokens === null
               ? undefined
               : `${formatTokens(context.tokens)} / ${formatTokens(context.contextWindow)}`
           }
-          note="已用是 pi 的估算：最后一次模型回复上报的用量，加上其后每条消息的字符估算。刚压缩完时会短暂显示为未知，直到下一次回复。"
+          note={t("context.note")}
         >
-          <StatRow label="上下文窗口" value={`${formatTokens(context.contextWindow)} tok`} />
+          <StatRow label={t("context.window")} value={`${formatTokens(context.contextWindow)} tok`} />
           <StatRow
-            label="已用"
+            label={t("context.used")}
             value={
               context.tokens === null
-                ? "未知"
+                ? t("context.unknownValue")
                 : percent === null
                   ? `${formatTokens(context.tokens)} tok`
                   : `${formatTokens(context.tokens)} tok（${formatPercent(percent)}%）`
             }
           />
           <StatRow
-            label="剩余"
+            label={t("context.remaining")}
             value={
               context.tokens === null
-                ? "未知"
+                ? t("context.unknownValue")
                 : `${formatTokens(Math.max(0, context.contextWindow - context.tokens))} tok`
             }
           />

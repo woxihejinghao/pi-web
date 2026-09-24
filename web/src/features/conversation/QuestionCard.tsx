@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type
 import clsx from "clsx";
 import { CloseIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
-import { actions, type PendingUiRequest } from "../../lib/app-state.ts";
+import { actions, type PendingUiRequest, useT } from "../../lib/app-state.ts";
 import { api } from "../../lib/api.ts";
 import { Markdown } from "./Markdown.tsx";
 import {
@@ -42,6 +42,7 @@ export interface QuestionCardProps {
 }
 
 export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionCardProps) {
+  const t = useT();
   const { request } = pending;
   const options = questionOptions(request);
   const confirm = request.method === "confirm";
@@ -153,19 +154,19 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
     typeof request.title === "string" && request.title.length > 0
       ? request.title
       : confirm
-        ? "请确认"
+        ? t("question.confirm")
         : textField
-          ? "请输入"
-          : "请选择";
+          ? t("question.input")
+          : t("question.select");
   const detail = typeof request.message === "string" ? request.message : "";
-  const placeholder = typeof request.placeholder === "string" ? request.placeholder : "输入回答…";
+  const placeholder = typeof request.placeholder === "string" ? request.placeholder : t("question.placeholder");
   const disabled = busy !== null;
   // `confirm` is a two-action question rather than a list — pi answers it with a
   // boolean, so the rows are ours and the token is translated back on submit.
   const rows = confirm
     ? [
-        { value: CONFIRM_YES, label: "是", recommended: false },
-        { value: CONFIRM_NO, label: "否", recommended: false },
+        { value: CONFIRM_YES, label: t("question.yes"), recommended: false },
+        { value: CONFIRM_NO, label: t("question.no"), recommended: false },
       ]
     : options;
 
@@ -214,9 +215,7 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
               <div className={styles.eyebrow}>
                 <span className={styles.eyebrowText}>{sessionLabel}</span>
                 {onOpenSession ? (
-                  <button type="button" className={styles.eyebrowAction} onClick={onOpenSession}>
-                    前往
-                  </button>
+                  <button type="button" className={styles.eyebrowAction} onClick={onOpenSession}>{t("question.goTo")}</button>
                 ) : null}
               </div>
             ) : null}
@@ -227,8 +226,8 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
               type="button"
               className={styles.iconButton}
               aria-expanded={!minimized}
-              aria-label={minimized ? "展开问题" : "收起问题"}
-              title={minimized ? "展开问题" : "收起问题"}
+              aria-label={minimized ? t("question.expand") : t("question.collapse")}
+              title={minimized ? t("question.expand") : t("question.collapse")}
               disabled={disabled}
               onClick={() => setMinimized((current) => !current)}
             >
@@ -239,8 +238,8 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
             <button
               type="button"
               className={styles.iconButton}
-              aria-label="取消"
-              title="取消（Esc）"
+              aria-label={t("common.cancel")}
+              title={t("question.cancelTitle")}
               disabled={disabled}
               onClick={cancel}
             >
@@ -299,7 +298,7 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
                         <span className={styles.optionCopy}>
                           <span className={styles.optionLabel}>{option.label}</span>
                           {option.recommended ? (
-                            <span className={styles.badge}>推荐</span>
+                            <span className={styles.badge}>{t("question.recommended")}</span>
                           ) : null}
                         </span>
                       </button>
@@ -340,9 +339,7 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
                 {error}
               </div>
               <div className={styles.footerActions}>
-                <button type="button" className={styles.secondary} disabled={disabled} onClick={cancel}>
-                  取消
-                </button>
+                <button type="button" className={styles.secondary} disabled={disabled} onClick={cancel}>{t("common.cancel")}</button>
                 {confirm ? null : (
                   <button
                     type="button"
@@ -350,7 +347,7 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
                     disabled={disabled || !canSubmit(request, choice, text)}
                     onClick={submit}
                   >
-                    {busy === "answer" ? "提交中…" : "提交"}
+                    {busy === "answer" ? t("common.submitting") : t("common.submit")}
                   </button>
                 )}
               </div>

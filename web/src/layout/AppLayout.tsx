@@ -4,7 +4,7 @@ import { ConversationPane } from "../features/conversation/ConversationPane.tsx"
 import { Rightbar } from "../features/rightbar/Rightbar.tsx";
 import { SettingsPage } from "../features/settings/SettingsPage.tsx";
 import { Sidebar } from "./Sidebar.tsx";
-import { actions, appStore } from "../lib/app-state.ts";
+import { actions, appStore, useT } from "../lib/app-state.ts";
 import { useStore } from "../lib/store.ts";
 import styles from "./AppLayout.module.css";
 
@@ -14,6 +14,7 @@ import styles from "./AppLayout.module.css";
  * per-session panel the conversation header's toggle opens.
  */
 export function AppLayout() {
+  const t = useT();
   const state = useStore(appStore);
 
   useEffect(() => {
@@ -33,7 +34,7 @@ export function AppLayout() {
       </aside>
       <main className={styles.main}>
         {state.status === "error" ? (
-          <div className={styles.empty}>无法连接服务端，请确认 API 已启动。</div>
+          <div className={styles.empty}>{t("layout.disconnected")}</div>
         ) : (
           <ConversationPane />
         )}
@@ -56,7 +57,7 @@ export function AppLayout() {
             type="button"
             className={styles.noticeDismiss}
             onClick={() => actions.setNotice(null)}
-            aria-label="关闭提示"
+            aria-label={t("layout.dismiss")}
           >
             ×
           </button>

@@ -16,6 +16,7 @@ import {
   type HighlightCarry,
 } from "./highlight.ts";
 import styles from "./CodeBlock.module.css";
+import { useT } from "../../lib/app-state.ts";
 
 /**
  * Is any part of `node` inside the viewport right now? Used once, before the
@@ -83,6 +84,7 @@ function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
 }
 
 export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+  const t = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const onScreen = useOnScreen(rootRef);
   const [copied, setCopied] = useState(false);
@@ -139,7 +141,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
       <div className={styles.banner}>
         <span className={styles.lang}>{lang ?? "text"}</span>
         <button type="button" className={styles.copy} onClick={() => void copy()}>
-          {copied ? "已复制" : "复制"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
       {/*

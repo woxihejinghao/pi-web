@@ -7,7 +7,7 @@ import {
   PlusIcon,
   TrashIcon,
 } from "../../components/icons.tsx";
-import { actions, appStore, isDraftSession } from "../../lib/app-state.ts";
+import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { formatRelativeTime } from "../../lib/format.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
@@ -45,6 +45,7 @@ function ProjectRowMenu({
   onRename: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,7 +79,7 @@ function ProjectRowMenu({
       ref={menuRef}
       className={styles.projectMenu}
       role="menu"
-      aria-label="工作区操作"
+      aria-label={t("project.actions")}
       style={{ top: anchor.top, right: anchor.right }}
     >
       <button
@@ -90,9 +91,7 @@ function ProjectRowMenu({
           onRename();
         }}
       >
-        <PencilIcon width={14} height={14} />
-        重命名
-      </button>
+        <PencilIcon width={14} height={14} />{t("project.rename")}</button>
       <button
         type="button"
         className={clsx(styles.projectMenuItem, styles.projectMenuItemDanger)}
@@ -102,9 +101,7 @@ function ProjectRowMenu({
           onRemove();
         }}
       >
-        <TrashIcon width={14} height={14} />
-        删除工作区
-      </button>
+        <TrashIcon width={14} height={14} />{t("project.delete")}</button>
     </div>,
     document.body,
   );
@@ -131,8 +128,9 @@ function SessionRow({
   /** False for a row that has no file on disk yet, so there is nothing to remove. */
   canDelete?: boolean;
 }) {
+  const t = useT();
   const rename = async (): Promise<void> => {
-    const next = window.prompt("会话名称", title);
+    const next = window.prompt(t("session.renamePrompt"), title);
     if (next === null) return;
     await actions.renameSession(sessionPath, next);
   };
@@ -164,14 +162,14 @@ function SessionRow({
       >
         {title}
       </button>
-      {external ? <span className={styles.externalDot} title="被其他进程修改" /> : null}
+      {external ? <span className={styles.externalDot} title={t("session.external")} /> : null}
       <span className={styles.sessionTime}>{time}</span>
       <div className={styles.rowActions}>
         <button
           type="button"
           className={styles.iconButton}
-          aria-label={`重命名 ${title}`}
-          title="重命名"
+          aria-label={t("session.renameLabel", { title })}
+          title={t("session.rename")}
           onClick={() => void rename()}
         >
           <PencilIcon />
@@ -180,7 +178,7 @@ function SessionRow({
           type="button"
           className={styles.iconButton}
           aria-label={`隐藏 ${title}`}
-          title="从列表中隐藏（不删除文件）"
+          title={t("session.hide")}
           onClick={() => void hide()}
         >
           <EyeOffIcon />
@@ -190,7 +188,7 @@ function SessionRow({
             type="button"
             className={styles.iconButton}
             aria-label={`删除 ${title}`}
-            title="删除会话"
+            title={t("session.delete")}
             onClick={() => void remove()}
           >
             <TrashIcon />
@@ -203,6 +201,7 @@ function SessionRow({
 
 /** One workspace and the sessions nested underneath it. */
 export function ProjectTreeItem({ node }: { node: ProjectNode }) {
+  const t = useT();
   const state = useStore(appStore);
   const project = node.project;
   const indent = node.depth * 16;
@@ -236,7 +235,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   }
 
   const renameProject = async (): Promise<void> => {
-    const next = window.prompt("工作区名称", project.title);
+    const next = window.prompt(t("project.renamePrompt"), project.title);
     if (next === null) return;
     await actions.renameProject(project.id, next);
   };
@@ -307,7 +306,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
             </span>
           </span>
           <span className={styles.projectTitle}>{project.title}</span>
-          {project.exists ? null : <span className={styles.missing}>缺失</span>}
+          {project.exists ? null : <span className={styles.missing}>{t("project.missing")}</span>}
         </button>
         <div className={styles.rowActions}>
           <button
@@ -317,7 +316,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
             aria-label={`更多操作 ${project.title}`}
             aria-haspopup="menu"
             aria-expanded={menuAt !== null}
-            title="更多操作"
+            title={t("project.more")}
             onClick={toggleMenu}
           >
             <Glyph name="ellipsis" size={16} />
@@ -326,7 +325,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
             type="button"
             className={styles.iconButton}
             aria-label={`在 ${project.title} 中新建会话`}
-            title="新建会话"
+            title={t("project.newSession")}
             onClick={() => {
               setMenuAt(null);
               // Selecting the workspace first is what points the hero (and the
@@ -355,8 +354,8 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
           {provisional && selected ? (
             <SessionRow
               sessionPath={selected}
-              title="新会话"
-              time={isDraftSession(selected) ? "准备中" : "未保存"}
+              title={t("sidebar.newSession")}
+              time={isDraftSession(selected) ? t("session.preparing") : t("session.unsaved")}
               active
               external={false}
               indent={sessionIndent}
@@ -388,9 +387,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
           ) : null}
 
           {!provisional && shown.length === 0 && !searching ? (
-            <p className={styles.emptyList} style={{ marginLeft: sessionIndent }}>
-              还没有会话。
-            </p>
+            <p className={styles.emptyList} style={{ marginLeft: sessionIndent }}>{t("session.empty")}</p>
           ) : null}
         </>
       ) : null}
