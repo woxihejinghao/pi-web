@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef } from "react";
 import clsx from "clsx";
 import type { SlashCommand } from "../../lib/types.ts";
-import { SOURCE_LABEL } from "./slash.ts";
+import { sourceLabels } from "./slash.ts";
 import styles from "./SlashMenu.module.css";
 import { useT } from "../../lib/app-state.ts";
 
@@ -32,7 +32,7 @@ export function SlashMenu({ matches, highlight, onHighlight, onSelect }: SlashMe
   const sections = useMemo(() => {
     const out: Section[] = [];
     matches.forEach((command, index) => {
-      const label = SOURCE_LABEL[command.source];
+      const label = sourceLabels(t)[command.source];
       const last = out[out.length - 1];
       if (last && last.label === label) last.items.push({ command, index });
       else out.push({ label, items: [{ command, index }] });

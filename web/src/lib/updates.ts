@@ -1,4 +1,5 @@
 import type { ExtensionUpdate, PiVersionInfo, UpdatesView } from "./types.ts";
+import type { Translate } from "./i18n/index.ts";
 
 /**
  * Pure projections of the update payload.
@@ -48,21 +49,23 @@ export function hasAnyUpdate(view: UpdatesView | null): boolean {
  * because that string is a claim about the world and these states do not know
  * it. `null` means the answer has not arrived yet.
  */
-export function piVersionStatus(info: PiVersionInfo | null): string {
-  if (info === null) return "正在检查…";
-  if (info.skipped) return "已跳过检查";
-  if (info.error !== null) return "无法检查更新";
+export function piVersionStatus(info: PiVersionInfo | null, t: Translate): string {
+  if (info === null) return t("updates.checking");
+  if (info.skipped) return t("updates.skipped");
+  if (info.error !== null) return t("updates.failed");
   if (info.available) {
-    return info.latest === null ? "有新版本可用" : `有新版本 ${info.latest}`;
+    return info.latest === null
+      ? t("updates.available")
+      : t("updates.availableVersion", { version: info.latest });
   }
-  return "已是最新";
+  return t("updates.upToDate");
 }
 
 /** The plugins summary line. Same rule about not overclaiming as above. */
-export function extensionUpdateStatus(view: UpdatesView | null): string {
-  if (view === null) return "正在检查…";
-  if (view.extensionsError !== null) return "无法检查更新";
+export function extensionUpdateStatus(view: UpdatesView | null, t: Translate): string {
+  if (view === null) return t("updates.checking");
+  if (view.extensionsError !== null) return t("updates.failed");
   const count = extensionUpdateCount(view);
-  if (count === 0) return "已是最新";
-  return `${count} 个插件可更新`;
+  if (count === 0) return t("updates.upToDate");
+  return t("updates.pluginsAvailable", { count });
 }

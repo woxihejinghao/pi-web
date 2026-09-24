@@ -426,11 +426,11 @@ export function MessageList({
   const turnFilesByTurn = useMemo(() => {
     const map = new Map<number, TurnFile[]>();
     for (const group of railItems) {
-      const files = turnFiles(group.messages, { cwd, home });
+      const files = turnFiles(group.messages, t, { cwd, home });
       if (files.length > 0) map.set(group.turn, files);
     }
     return map;
-  }, [railItems, cwd, home]);
+  }, [railItems, cwd, home, t]);
   const turnMeta = useMemo(
     () => turnMetadata(railItems, view.forkPoints),
     [railItems, view.forkPoints],

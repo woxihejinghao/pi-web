@@ -1,4 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "./i18n/index.ts";
+
+const zh = translator("zh-CN");
+const refusalNotice = (
+  refusals: Parameters<typeof refusalNoticeOf>[0],
+  overflow: number,
+): ReturnType<typeof refusalNoticeOf> => refusalNoticeOf(refusals, overflow, zh);
 import {
   MAX_IMAGES_PER_MESSAGE,
   addImages,
@@ -6,7 +13,7 @@ import {
   imageDataUrl,
   isAcceptedImageType,
   isImageBlock,
-  refusalNotice,
+  refusalNotice as refusalNoticeOf,
 } from "./image-attachments.ts";
 import type { ContentBlock, ImageBlock } from "./types.ts";
 

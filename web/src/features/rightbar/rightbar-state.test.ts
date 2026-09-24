@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { translator } from "../../lib/i18n/index.ts";
 import {
   WIDTH_DEFAULT,
   WIDTH_MAX,
@@ -8,7 +9,12 @@ import {
   resetRightbarState,
   rightbarActions,
   rightbarStore,
+  tabTitle,
 } from "./rightbar-state.ts";
+
+// The assertions below pin the Chinese wording, so the translator is resolved
+// here rather than from whatever locale the test host happens to have.
+const zh = translator("zh-CN");
 
 const KEY = "session-a";
 
@@ -96,7 +102,10 @@ describe("tabs", () => {
     rightbarActions.openChangesTab(KEY);
     const changes = surface().tabs.filter((tab) => tab.kind === "changes");
     expect(changes).toHaveLength(1);
-    expect(changes[0]?.title).toBe("文件变更");
+    // A fixed-kind tab carries no title of its own; the strip asks the table for
+    // it at render time, which is what keeps a language switch from leaving an
+    // old title behind on an already-open tab.
+    expect(changes[0] === undefined ? "" : tabTitle(changes[0], zh)).toBe("文件变更");
     expect(surface().activeTabId).toBe(changes[0]?.id);
   });
 
@@ -208,7 +217,7 @@ describe("persistence", () => {
     rightbarActions.ensureSurface(KEY);
     const restored = surface();
     expect(restored.tabs).toEqual([
-      expect.objectContaining({ kind: "changes", title: "文件变更", target: "" }),
+      expect.objectContaining({ kind: "changes", title: "", target: "" }),
     ]);
   });
 });

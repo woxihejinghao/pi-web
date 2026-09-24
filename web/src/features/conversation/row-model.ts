@@ -6,6 +6,8 @@
  * the table. Kept separate from the component so the summary rules — which are
  * the part that silently rots — can be tested directly.
  */
+import type { Translate } from "../../lib/i18n/index.ts";
+
 
 /** Row variant: decides both the glyph and the title. */
 export type Variant = "bash" | "read" | "write" | "edit" | "search" | "code" | "others";
@@ -22,16 +24,22 @@ export const TOOL_VARIANTS: Record<string, Variant> = {
   ls: "search",
 };
 
-/** dsh's `VARIANT_TITLE_KEYS`, resolved to the strings its zh-CN table carries. */
-export const VARIANT_TITLES: Record<Variant, string> = {
-  bash: "Bash",
-  read: "读取",
-  write: "写入",
-  edit: "编辑",
-  search: "搜索",
-  code: "代码",
-  others: "工具调用",
-};
+/**
+ * The row title per variant — dsh's `VARIANT_TITLE_KEYS`, resolved through the
+ * message table rather than frozen at module load: switching the interface
+ * language has to re-label rows that are already on screen.
+ */
+export function variantTitles(t: Translate): Record<Variant, string> {
+  return {
+    bash: "Bash",
+    read: t("tool.read"),
+    write: t("tool.write"),
+    edit: t("tool.edit"),
+    search: t("tool.search"),
+    code: t("tool.code"),
+    others: t("tool.others"),
+  };
+}
 
 /** Which argument best describes the call, in priority order — dsh's SUMMARY_KEYS. */
 export const SUMMARY_KEYS: Record<Variant, string[]> = {

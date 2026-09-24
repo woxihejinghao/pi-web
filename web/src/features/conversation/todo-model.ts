@@ -17,6 +17,7 @@
  */
 
 import type { AgentMessage, TodoView, ToolResultMessage } from "../../lib/types.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 export type TodoStatus = "pending" | "in_progress" | "completed" | "deleted";
 
@@ -261,16 +262,16 @@ export function todoArgsSummary(args: Record<string, unknown> | undefined): stri
  * The separator is an en space on each side (U+2002) rather than an ASCII
  * space, which HTML would collapse — dsh's wording and its reason.
  */
-export function progressLabel(summary: TodoSummary): string {
+export function progressLabel(summary: TodoSummary, t: Translate): string {
   return [
-    ...(summary.done > 0 ? [`${String(summary.done)} 已完成`] : []),
-    ...(summary.active > 0 ? [`${String(summary.active)} 进行中`] : []),
-    ...(summary.pending > 0 ? [`${String(summary.pending)} 待处理`] : []),
+    ...(summary.done > 0 ? [t("todo.summaryDone", { count: summary.done })] : []),
+    ...(summary.active > 0 ? [t("todo.summaryActive", { count: summary.active })] : []),
+    ...(summary.pending > 0 ? [t("todo.summaryPending", { count: summary.pending })] : []),
   ].join("\u2002·\u2002");
 }
 
 /** The collapsed row's summary, matching dsh's `{done}/{total} 已完成 · 当前项`. */
-export function rowSummary(summary: TodoSummary): string {
-  const head = `${String(summary.done)}/${String(summary.total)} 已完成`;
+export function rowSummary(summary: TodoSummary, t: Translate): string {
+  const head = t("todo.summaryHead", { done: summary.done, total: summary.total });
   return summary.activeSubject === null ? head : `${head} · ${summary.activeSubject}`;
 }

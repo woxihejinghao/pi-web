@@ -1,4 +1,5 @@
 import type { ContentBlock, ImageBlock } from "./types.ts";
+import type { Translate } from "./i18n/index.ts";
 
 /**
  * Images, in the one shape every layer already agrees on.
@@ -96,24 +97,33 @@ export interface ImageReadResult {
  * left out and why. Read failures (a revoked file handle, say) answer the same
  * way rather than rejecting, so one bad file cannot abort a paste.
  */
-export async function readImageFile(file: File): Promise<ImageReadResult> {
-  const name = file.name.length > 0 ? file.name : "图片";
+export async function readImageFile(file: File, t: Translate): Promise<ImageReadResult> {
+  const name = file.name.length > 0 ? file.name : t("attach.nameFallback");
   if (!isAcceptedImageType(file.type)) {
     return {
       image: null,
-      refusal: { name, reason: file.type.length > 0 ? `不支持的格式 ${file.type}` : "不是图片文件" },
+      refusal: {
+        name,
+        reason:
+          file.type.length > 0
+            ? t("attach.unsupportedType", { type: file.type })
+            : t("attach.notAnImage"),
+      },
     };
   }
   if (file.size > MAX_IMAGE_BYTES) {
-    return { image: null, refusal: { name, reason: `超过 ${megabytes(MAX_IMAGE_BYTES)}MB` } };
+    return {
+      image: null,
+      refusal: { name, reason: t("attach.overLimit", { size: megabytes(MAX_IMAGE_BYTES) }) },
+    };
   }
   try {
     const url = await readAsDataUrl(file);
     const comma = url.indexOf(",");
-    if (comma < 0) return { image: null, refusal: { name, reason: "读取失败" } };
+    if (comma < 0) return { image: null, refusal: { name, reason: t("attach.readFailed") } };
     return { image: { type: "image", data: url.slice(comma + 1), mimeType: file.type }, refusal: null };
   } catch {
-    return { image: null, refusal: { name, reason: "读取失败" } };
+    return { image: null, refusal: { name, reason: t("attach.readFailed") } };
   }
 }
 
@@ -135,10 +145,19 @@ export function addImages(
   return { images: [...current, ...accepted], overflow: incoming.length - accepted.length };
 }
 
-/** One line for the composer's refusal notice. */export function refusalNotice(refusals: ImageRefusal[], overflow: number): string | null {
-  const parts = refusals.map((refusal) => `${refusal.name}：${refusal.reason}`);
-  if (overflow > 0) parts.push(`${String(overflow)} 张超出 ${String(MAX_IMAGES_PER_MESSAGE)} 张上限`);
-  return parts.length > 0 ? parts.join("；") : null;
+/** One line for the composer's refusal notice. */
+export function refusalNotice(
+  refusals: ImageRefusal[],
+  overflow: number,
+  t: Translate,
+): string | null {
+  const parts = refusals.map((refusal) =>
+    t("attach.refusalLine", { name: refusal.name, reason: refusal.reason }),
+  );
+  if (overflow > 0) {
+    parts.push(t("attach.overflow", { count: overflow, max: MAX_IMAGES_PER_MESSAGE }));
+  }
+  return parts.length > 0 ? parts.join(t("attach.refusalSeparator")) : null;
 }
 
 /**

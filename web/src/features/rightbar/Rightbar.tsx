@@ -19,6 +19,7 @@ import {
   WIDTH_DEFAULT,
   rightbarActions,
   rightbarStore,
+  tabTitle,
   type RightbarTab,
   type RightbarTabKind,
 } from "./rightbar-state.ts";
@@ -85,16 +86,16 @@ export function Rightbar() {
               <button
                 type="button"
                 className={styles.chipBody}
-                title={tab.title}
+                title={tabTitle(tab, t)}
                 onClick={() => rightbarActions.selectTab(sessionPath, tab.id)}
               >
                 <TabIcon kind={tab.kind} />
-                <span className={styles.chipTitle}>{tab.title}</span>
+                <span className={styles.chipTitle}>{tabTitle(tab, t)}</span>
               </button>
               <button
                 type="button"
                 className={styles.chipClose}
-                aria-label={`关闭 ${tab.title}`}
+                aria-label={t("rightbar.closeTab", { title: tabTitle(tab, t) })}
                 onClick={() => rightbarActions.closeTab(sessionPath, tab.id)}
               >
                 <CloseIcon width={11} height={11} />

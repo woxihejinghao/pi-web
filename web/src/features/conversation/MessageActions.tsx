@@ -4,7 +4,7 @@ import { Glyph } from "../../components/dsh-icons.tsx";
 import { formatMessageTime, formatTokens, formatTurnDuration } from "../../lib/duration.ts";
 import type { MessageUsage } from "../../lib/types.ts";
 import styles from "./MessageActions.module.css";
-import { useT } from "../../lib/app-state.ts";
+import { useLanguage, useT } from "../../lib/app-state.ts";
 
 /**
  * The row of actions dsh draws under a message: copy, fork, and — for an
@@ -44,6 +44,7 @@ export function MessageActions({
   align?: "start" | "end";
 }) {
   const t = useT();
+  const language = useLanguage();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -70,7 +71,7 @@ export function MessageActions({
        * third arrangement: the two rows are read in the order they happened.
        */}
       {align === "end" && timestamp != null && (
-        <span className={clsx(styles.stat, styles.time)}>{formatMessageTime(timestamp)}</span>
+        <span className={clsx(styles.stat, styles.time)}>{formatMessageTime(timestamp, language)}</span>
       )}
 
       <button
@@ -105,12 +106,12 @@ export function MessageActions({
       {durationMs != null && (
         <span className={styles.stat} title={t("message.durationTitle")}>
           <Glyph name="clock" size={14} className={styles.statIcon} />
-          用时 {formatTurnDuration(durationMs)}
+          {t("message.duration", { duration: formatTurnDuration(durationMs, t) })}
         </span>
       )}
 
       {timestamp != null && align !== "end" && (
-        <span className={clsx(styles.stat, styles.time)}>{formatMessageTime(timestamp)}</span>
+        <span className={clsx(styles.stat, styles.time)}>{formatMessageTime(timestamp, language)}</span>
       )}
 
       {copied && <span className={styles.copied}>{t("common.copied")}</span>}

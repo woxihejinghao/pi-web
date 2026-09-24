@@ -14,6 +14,7 @@ import {
   refusalNotice,
   type ImageRefusal,
 } from "../../lib/image-attachments.ts";
+import { useT } from "../../lib/app-state.ts";
 
 export interface ImageDraft {
   /** Pictures waiting to be sent, in the order they were attached. */
@@ -54,6 +55,7 @@ export interface ImageDraft {
  * of those ran while a read was in flight.
  */
 export function useImageDraft(): ImageDraft {
+  const t = useT();
   const [images, setImages] = useState<ImageBlock[]>([]);
   const imagesRef = useRef<ImageBlock[]>([]);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -68,7 +70,7 @@ export function useImageDraft(): ImageDraft {
   const attach = useCallback(
     async (files: File[]): Promise<void> => {
       if (files.length === 0) return;
-      const results = await Promise.all(files.map(readImageFile));
+      const results = await Promise.all(files.map((file) => readImageFile(file, t)));
       const incoming = results
         .map((result) => result.image)
         .filter((image): image is ImageBlock => image !== null);
@@ -77,7 +79,7 @@ export function useImageDraft(): ImageDraft {
         .filter((item): item is ImageRefusal => item !== null);
       const merged = addImages(imagesRef.current, incoming);
       apply(merged.images);
-      setRefusal(refusalNotice(refusals, merged.overflow));
+      setRefusal(refusalNotice(refusals, merged.overflow, t));
     },
     [apply],
   );

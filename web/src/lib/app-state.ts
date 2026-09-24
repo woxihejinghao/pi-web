@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { api } from "./api.ts";
-import { resolveLanguage, translator, type Translate } from "./i18n/index.ts";
+import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
 import { createEmitter, createStore, useStore, type Emitter, type Store } from "./store.ts";
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
@@ -185,6 +185,14 @@ export const appStore: Store<AppState> = createStore(initialState);
 export function useT(): Translate {
   const preference = useStore(appStore).settings.language;
   return useMemo(() => translator(resolveLanguage(preference)), [preference]);
+}
+
+/**
+ * The language the settings currently resolve to, for the few labels that need
+ * a format rather than a message (a date reading `9月17日` or `Sep 17`).
+ */
+export function useLanguage(): UiLanguage {
+  return resolveLanguage(useStore(appStore).settings.language);
 }
 
 /** High-frequency session events, delivered outside React state. */

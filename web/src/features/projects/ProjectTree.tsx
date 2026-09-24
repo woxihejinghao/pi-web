@@ -368,7 +368,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               key={session.path}
               sessionPath={session.path}
               title={session.title}
-              time={formatRelativeTime(session.modified)}
+              time={formatRelativeTime(session.modified, t)}
               active={session.path === selected}
               external={Boolean(state.externalChanged[session.path])}
               indent={sessionIndent}

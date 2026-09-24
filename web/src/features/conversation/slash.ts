@@ -1,4 +1,5 @@
 import type { SlashCommand } from "../../lib/types.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 /** Where an in-progress `/command` started and what follows the slash. */
 export interface SlashTrigger {
@@ -67,12 +68,16 @@ export function filterCommands(commands: SlashCommand[], query: string): SlashCo
 }
 
 /** Human labels for the badge shown next to each command. */
-export const SOURCE_LABEL: Record<SlashCommand["source"], string> = {
-  builtin: "内置",
-  skill: "技能",
-  prompt: "模板",
-  extension: "扩展",
-};
+/** Source labels for the command menu, built from `t` for the same reason as
+ * every other table here: the wording has to follow the language setting. */
+export function sourceLabels(t: Translate): Record<SlashCommand["source"], string> {
+  return {
+    builtin: t("slash.builtin"),
+    skill: t("slash.skill"),
+    prompt: t("slash.prompt"),
+    extension: t("slash.extension"),
+  };
+}
 
 /**
  * Split `/<name> <args>` when `name` is a built-in command this UI can run.

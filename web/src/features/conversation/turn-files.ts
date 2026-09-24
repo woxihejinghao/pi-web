@@ -1,5 +1,6 @@
 import type { AgentMessage, AssistantMessage, ToolCallBlock } from "../../lib/types.ts";
-import { VARIANT_TITLES, classify, relativizeToCwd, shortenPath } from "./row-model.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
+import { classify, relativizeToCwd, shortenPath, variantTitles } from "./row-model.ts";
 
 /**
  * One file a turn's own tool calls wrote.
@@ -70,6 +71,7 @@ function relativeToProject(path: string, cwd: string | undefined): string | null
  */
 export function turnFiles(
   messages: readonly AgentMessage[],
+  t: Translate,
   paths: { cwd?: string | undefined; home?: string | undefined } = {},
 ): TurnFile[] {
   const files = new Map<string, TurnFile>();
@@ -85,7 +87,7 @@ export function turnFiles(
 
       const relative = relativeToProject(path, paths.cwd);
       const key = relative ?? path;
-      const label = VARIANT_TITLES[classify(call.name)];
+      const label = variantTitles(t)[classify(call.name)];
       const existing = files.get(key);
       if (existing !== undefined) {
         existing.calls += 1;

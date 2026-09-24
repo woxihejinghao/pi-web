@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "./i18n/index.ts";
+
+// These assertions pin the Chinese wording, so the translator is passed in
+// rather than resolved from whatever locale the test host happens to have.
+const zh = translator("zh-CN");
+const piVersionStatus = (info: PiVersionInfo | null): string => piVersionStatusOf(info, zh);
+const extensionUpdateStatus = (view: UpdatesView | null): string => extensionUpdateStatusOf(view, zh);
 import type { ExtensionUpdate, PiVersionInfo, UpdatesView } from "./types.ts";
 import {
   extensionUpdateCount,
-  extensionUpdateStatus,
+  extensionUpdateStatus as extensionUpdateStatusOf,
   hasAnyUpdate,
-  piVersionStatus,
+  piVersionStatus as piVersionStatusOf,
   updateForSource,
 } from "./updates.ts";
 

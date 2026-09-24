@@ -228,6 +228,17 @@ export const zhCN = {
   "tree.forkableTitle": "可在消息操作行中从此处分叉",
   "tree.forkable": "可分叉",
 
+  // --- time and durations ---------------------------------------------------
+  "time.justNow": "刚刚",
+  "time.minutes": "{count}分钟",
+  "time.hours": "{count}小时",
+  "time.days": "{count}天",
+  "time.months": "{count}个月",
+  "time.years": "{count}年",
+  "duration.seconds": "{seconds}秒",
+  "duration.secondsDecimal": "{seconds}秒",
+  "duration.minutesSeconds": "{minutes}分{seconds}秒",
+
   // --- rightbar -------------------------------------------------------------
   "rightbar.title": "右侧栏",
   "rightbar.closeTab": "关闭 {title}",
@@ -304,6 +315,23 @@ export const zhCN = {
   "browser.enableSandbox": "重新启用沙箱",
   "browser.disableSandbox": "关闭沙箱（仅本次）",
   "browser.embedHint": "部分站点禁止被嵌入，可改用系统浏览器打开。",
+
+  // --- updates / attachments ------------------------------------------------
+  "updates.checking": "正在检查…",
+  "updates.skipped": "已跳过检查",
+  "updates.failed": "无法检查更新",
+  "updates.available": "有新版本可用",
+  "updates.availableVersion": "有新版本 {version}",
+  "updates.upToDate": "已是最新",
+  "updates.pluginsAvailable": "{count} 个插件可更新",
+  "attach.nameFallback": "图片",
+  "attach.unsupportedType": "不支持的格式 {type}",
+  "attach.notAnImage": "不是图片文件",
+  "attach.overLimit": "超过 {size}MB",
+  "attach.readFailed": "读取失败",
+  "attach.overflow": "{count} 张超出 {max} 张上限",
+  "attach.refusalLine": "{name}：{reason}",
+  "attach.refusalSeparator": "；",
 
   // --- projects / layout ----------------------------------------------------
   "picker.title": "选择项目目录",
@@ -555,6 +583,16 @@ export const en: Record<MessageKey, string> = {
   "tree.forkableTitle": "Fork from here in the message action row",
   "tree.forkable": "Forkable",
 
+  "time.justNow": "just now",
+  "time.minutes": "{count}m",
+  "time.hours": "{count}h",
+  "time.days": "{count}d",
+  "time.months": "{count}mo",
+  "time.years": "{count}y",
+  "duration.seconds": "{seconds}s",
+  "duration.secondsDecimal": "{seconds}s",
+  "duration.minutesSeconds": "{minutes}m {seconds}s",
+
   "rightbar.title": "Sidebar",
   "rightbar.closeTab": "Close {title}",
   "rightbar.fullscreen": "Fullscreen",
@@ -630,6 +668,22 @@ export const en: Record<MessageKey, string> = {
   "browser.enableSandbox": "Re-enable the sandbox",
   "browser.disableSandbox": "Turn the sandbox off (this time only)",
   "browser.embedHint": "Some sites refuse to be embedded; use the system browser instead.",
+
+  "updates.checking": "Checking…",
+  "updates.skipped": "Check skipped",
+  "updates.failed": "Could not check for updates",
+  "updates.available": "An update is available",
+  "updates.availableVersion": "Version {version} is available",
+  "updates.upToDate": "Up to date",
+  "updates.pluginsAvailable": "{count} extensions can update",
+  "attach.nameFallback": "Image",
+  "attach.unsupportedType": "Unsupported format {type}",
+  "attach.notAnImage": "Not an image file",
+  "attach.overLimit": "Over {size}MB",
+  "attach.readFailed": "Could not read the file",
+  "attach.overflow": "{count} over the {max} limit",
+  "attach.refusalLine": "{name}: {reason}",
+  "attach.refusalSeparator": "; ",
 
   "picker.title": "Choose a project directory",
   "picker.currentPath": "Current path",

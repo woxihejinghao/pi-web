@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { actions, appStore } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import {
   extensionUpdateCount,
@@ -31,6 +31,7 @@ export function UpdateSection({
   projectPath: string | null;
   onOpenPlugins?: () => void;
 }) {
+  const t = useT();
   const state = useStore(appStore);
   const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -83,7 +84,7 @@ export function UpdateSection({
               info !== null && info.error !== null && styles.statusError,
             )}
           >
-            {piVersionStatus(info)}
+            {piVersionStatus(info, t)}
           </span>
           {info !== null && info.available ? (
             <button
@@ -104,7 +105,7 @@ export function UpdateSection({
       <SettingsRow title="插件更新" description="已安装 pi 包与上游版本的比较">
         <div className={styles.control}>
           <span className={clsx(styles.status, count > 0 && styles.statusNew)}>
-            {extensionUpdateStatus(view)}
+            {extensionUpdateStatus(view, t)}
           </span>
           {count > 0 && onOpenPlugins !== undefined ? (
             <button type="button" className={styles.ghost} onClick={onOpenPlugins}>

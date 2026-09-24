@@ -1,4 +1,5 @@
 import { createStore, type Store } from "../../lib/store.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 /**
  * The right sidebar's state, mirroring dsh's per-session surface.
@@ -183,8 +184,22 @@ function nextTabId(kind: RightbarTabKind): string {
   return `${kind}-${String(tabCounter)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+const TAB_TITLE_KEYS = { files: "tab.files", changes: "tab.changes", browser: "tab.browser" } as const;
+
+/**
+ * A tab's display name.
+ *
+ * The three fixed kinds are named by the message table instead of by a title
+ * stored on the tab: the strip outlives a language switch, and a title captured
+ * when the tab was created would come back in the old language. A preview tab
+ * keeps its file name, which reads the same in either language.
+ */
+export function tabTitle(tab: RightbarTab, t: Translate): string {
+  return tab.kind === "preview" ? tab.title : t(TAB_TITLE_KEYS[tab.kind]);
+}
+
 export function makeFilesTab(): RightbarTab {
-  return { id: nextTabId("files"), kind: "files", title: "文件", target: "" };
+  return { id: nextTabId("files"), kind: "files", title: "", target: "" };
 }
 
 export function makePreviewTab(path: string): RightbarTab {
@@ -193,11 +208,11 @@ export function makePreviewTab(path: string): RightbarTab {
 }
 
 export function makeChangesTab(): RightbarTab {
-  return { id: nextTabId("changes"), kind: "changes", title: "文件变更", target: "" };
+  return { id: nextTabId("changes"), kind: "changes", title: "", target: "" };
 }
 
 export function makeBrowserTab(url: string): RightbarTab {
-  const title = url.length > 0 ? hostOf(url) : "浏览器";
+  const title = url.length > 0 ? hostOf(url) : "";
   return {
     id: nextTabId("browser"),
     kind: "browser",

@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../../lib/i18n/index.ts";
+
+const zh = translator("zh-CN");
+const formatLatencySeconds = (ms: number): string => formatLatencySecondsOf(ms, zh);
 import type { AgentMessage, AssistantMessage, ToolResultMessage, UserMessage } from "../../lib/types.ts";
 import {
   EMPTY_TIMING,
   billedInputTokens,
   formatCacheHitPercent,
   formatExactCount,
-  formatLatencySeconds,
+  formatLatencySeconds as formatLatencySecondsOf,
   formatTokensPerSecond,
   sessionStats,
 } from "./stats-model.ts";

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatRunDuration } from "../../lib/duration.ts";
+import { useT } from "../../lib/app-state.ts";
 import styles from "./TurnStatus.module.css";
 
 /**
@@ -18,6 +19,7 @@ import styles from "./TurnStatus.module.css";
  *   so it costs no layout and keeps the line-height of ordinary text.
  */
 export function TurnStatus({ startTime }: { startTime?: number | undefined }) {
+  const t = useT();
   const [mountedAt] = useState(() => Date.now());
   const anchor = startTime ?? mountedAt;
   const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor));
@@ -38,7 +40,7 @@ export function TurnStatus({ startTime }: { startTime?: number | undefined }) {
         // Announced state is the shimmer text; a ticking number would make
         // screen readers re-announce every second.
         <span className={styles.turnStatusClock} aria-hidden>
-          {formatRunDuration(elapsedMs)}
+          {formatRunDuration(elapsedMs, t)}
         </span>
       ) : null}
     </div>

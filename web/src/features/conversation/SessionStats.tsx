@@ -128,15 +128,15 @@ function TimePill({
       {open ? (
         <StatPanel icon={<Glyph name="clock" size={14} />} title={t("stats.title")}>
           {timing.llmMs > 0 ? (
-            <StatRow label={t("stats.modelTime")} value={formatRunDuration(timing.llmMs)} />
+            <StatRow label={t("stats.modelTime")} value={formatRunDuration(timing.llmMs, t)} />
           ) : null}
           {timing.toolMs > 0 ? (
-            <StatRow label={t("stats.toolTime")} value={formatRunDuration(timing.toolMs)} />
+            <StatRow label={t("stats.toolTime")} value={formatRunDuration(timing.toolMs, t)} />
           ) : null}
           {timing.ttftSteps > 0 ? (
             <StatRow
               label={t("stats.ttft")}
-              value={formatLatencySeconds(timing.ttftMs / timing.ttftSteps)}
+              value={formatLatencySeconds(timing.ttftMs / timing.ttftSteps, t)}
             />
           ) : null}
           {timing.decodeMs > 0 ? (

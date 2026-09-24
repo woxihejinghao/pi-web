@@ -47,7 +47,7 @@ export function TodoRow({
   // Until the snapshot lands — and for a call whose payload was rejected — the
   // arguments are the only description of what happened.
   const summary = snapshot === null ? null : summarizeTodos(tasks);
-  const text = summary === null ? todoArgsSummary(args) : rowSummary(summary);
+  const text = summary === null ? todoArgsSummary(args) : rowSummary(summary, t);
   const extra = summary?.activeExtra ?? 0;
 
   const rows = visibleTodos(tasks);

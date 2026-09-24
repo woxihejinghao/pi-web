@@ -5,7 +5,7 @@ import type { ContentBlock, TextBlock, ToolCallBlock } from "../../lib/types.ts"
 import { DisclosureRow } from "./DisclosureRow.tsx";
 import { ImageThumb } from "../../components/ImageLightbox.tsx";
 import { imageBlocksOf } from "../../lib/image-attachments.ts";
-import { VARIANT_TITLES, classify, deriveSummary, shortenPath, type Variant } from "./row-model.ts";
+import { classify, deriveSummary, shortenPath, variantTitles, type Variant } from "./row-model.ts";
 import type { ToolExecution } from "./useConversation.ts";
 import styles from "./ToolCallRow.module.css";
 import { useT } from "../../lib/app-state.ts";
@@ -82,7 +82,7 @@ export function ToolCallRow({
   // dsh falls back to a generic "工具调用" title for tools it does not know.
   // pi's own tool names carry more than that, so an unrecognised tool is titled
   // by its own name instead.
-  const title = variant === "others" ? call.name : VARIANT_TITLES[variant];
+  const title = variant === "others" ? call.name : variantTitles(t)[variant];
 
   return (
     <div className={styles.root} data-variant={variant} data-tool={call.name} data-state={state}>

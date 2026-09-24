@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../../lib/i18n/index.ts";
+import type { TodoSummary } from "./todo-model.ts";
+
+const zh = translator("zh-CN");
+const progressLabel = (summary: TodoSummary): string => progressLabelOf(summary, zh);
+const rowSummary = (summary: TodoSummary): string => rowSummaryOf(summary, zh);
 import type { AgentMessage, TodoView } from "../../lib/types.ts";
 import {
   limitCompleted,
   parseTodoSnapshot,
-  progressLabel,
+  progressLabel as progressLabelOf,
   projectTodos,
-  rowSummary,
+  rowSummary as rowSummaryOf,
   shouldOfferTodoInstall,
   summarizeTodos,
   todoArgsSummary,

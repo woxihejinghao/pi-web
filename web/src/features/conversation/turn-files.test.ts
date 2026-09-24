@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, AssistantMessage, ContentBlock } from "../../lib/types.ts";
-import { turnFiles } from "./turn-files.ts";
+import { translator } from "../../lib/i18n/index.ts";
+import { turnFiles as turnFilesOf, type TurnFile } from "./turn-files.ts";
+
+// The assertions below name the Chinese row labels, so the translator is pinned
+// here instead of being resolved from the host locale.
+const zh = translator("zh-CN");
+type TurnFilesParams = Parameters<typeof turnFilesOf>;
+const turnFiles = (
+  messages: TurnFilesParams[0],
+  paths: TurnFilesParams[2] = {},
+): ReturnType<typeof turnFilesOf> => turnFilesOf(messages, zh, paths);
 
 /** One assistant message holding the given content blocks. */
 function assistant(blocks: ContentBlock[]): AssistantMessage {

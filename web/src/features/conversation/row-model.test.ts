@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../../lib/i18n/index.ts";
+
+// These assertions pin the Chinese wording, so the table is resolved for zh-CN
+// here rather than depending on whatever locale the test host happens to have.
+const zh = translator("zh-CN");
+const VARIANT_TITLES = variantTitles(zh);
 import {
   SUMMARY_KEYS,
   TOOL_VARIANTS,
-  VARIANT_TITLES,
+  variantTitles,
   abbreviateHomePath,
   classify,
   deriveSummary,

@@ -18,6 +18,7 @@
  * can be tested directly.
  */
 import type { AgentMessage, AssistantMessage } from "../../lib/types.ts";
+import type { Translate } from "../../lib/i18n/index.ts";
 
 /** The three disjoint prompt-side buckets plus the completion. */
 export interface UsageTotals {
@@ -103,10 +104,10 @@ export function formatTokensPerSecond(tps: number): string {
  * seconds above it. dsh's `formatLatencySeconds` + its `duration.seconds`
  * template, which is how the TTFT row reads.
  */
-export function formatLatencySeconds(ms: number): string {
+export function formatLatencySeconds(ms: number, t: Translate): string {
   const seconds = Math.max(0, ms) / 1000;
   const shown = seconds < 10 ? Math.round(seconds * 10) / 10 : Math.round(seconds);
-  return `${String(shown)}秒`;
+  return t("stats.seconds", { seconds: shown });
 }
 
 /** Exact counts with thousands separators, as dsh's dialog shows them. */

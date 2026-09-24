@@ -117,7 +117,7 @@ export function TodoPanel({
               <span className={styles.title}>{t("todo.title")}</span>
               {/* The counts are chrome: the reader who cares about which task is
                   running is one click away from the rows themselves. */}
-              <span className={styles.progress}>{progressLabel(summarizeTodos(todos))}</span>
+              <span className={styles.progress}>{progressLabel(summarizeTodos(todos), t)}</span>
               <span className={styles.chevron} aria-hidden>
                 <Glyph name="chevronDown" className={collapsed ? styles.chevronCollapsed : undefined} />
               </span>
