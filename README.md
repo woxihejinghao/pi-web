@@ -68,6 +68,14 @@ pnpm typecheck   # 前后端类型检查
 pnpm test        # 前后端测试（vitest）
 ```
 
+## 更多文档
+
+- [设计说明](./docs/design-notes.md)——为什么是这样：架构、与 pi CLI 并存、每个面板的实现取舍与踩过的坑。
+- [已知限制](./docs/known-limitations.md)——目前做不到什么，以及那些行为背后的取舍；装之前值得扫一遍。
+- [环境变量](./docs/configuration.md)——全部可选，含默认值。
+- [网络与隐私](./docs/network-and-privacy.md)——它连不连网、数据放在哪、为什么不能暴露到公网。
+- [安全策略](./SECURITY.md)——报告漏洞的渠道，以及按设计存在、不算漏洞的行为。
+
 ## 许可证
 
 MIT，见 [LICENSE](./LICENSE)。

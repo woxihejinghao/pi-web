@@ -114,6 +114,20 @@ interface TurnStep {
   block: ContentBlock;
   messageIndex: number;
   blockIndex: number;
+  /**
+   * Part of the message being streamed right now.
+   *
+   * Such a step is never folded into a compact group, and only the last of them
+   * renders as running. Every committed step stays `undefined` even when the
+   * turn it belongs to is still live.
+   */
+  live?: boolean;
+  /**
+   * The last block of the message being streamed — the only one whose own
+   * rendering depends on the stream still being open (the reasoning row tracks
+   * its last line while running and its first line once settled).
+   */
+  tail?: boolean;
 }
 
 /**
@@ -145,13 +159,13 @@ function TurnBody({
    */
   compact: boolean;
 } & PathContext) {
-  const renderStep = (step: TurnStep, isLast: boolean) => (
+  const renderStep = (step: TurnStep) => (
     <BlockView
       key={`${String(step.messageIndex)}-${String(step.blockIndex)}`}
       block={step.block}
       executions={executions}
       results={results}
-      streaming={streaming && isLast}
+      streaming={streaming && step.tail === true}
       cwd={cwd}
       home={home}
     />
@@ -159,9 +173,7 @@ function TurnBody({
 
   if (!compact) {
     return (
-      <div className={styles.assistantTurn}>
-        {steps.map((step, index) => renderStep(step, index === steps.length - 1))}
-      </div>
+      <div className={styles.assistantTurn}>{steps.map((step) => renderStep(step))}</div>
     );
   }
 
@@ -170,7 +182,7 @@ function TurnBody({
     <div className={styles.assistantTurn}>
       {process.length > 0 ? (
         <TurnProcessGroup count={process.length}>
-          {process.map((step) => renderStep(step, false))}
+          {process.map((step) => renderStep(step))}
         </TurnProcessGroup>
       ) : null}
       {answers.map((step, index) => (
@@ -181,7 +193,7 @@ function TurnBody({
           key={`${String(step.messageIndex)}-${String(step.blockIndex)}`}
           data-turn-process-answer={index === 0 || undefined}
         >
-          {renderStep(step, streaming && index === answers.length - 1)}
+          {renderStep(step)}
         </div>
       ))}
     </div>
@@ -473,7 +485,16 @@ export function MessageList({
     scheduleActiveTurn();
   }, [scheduleActiveTurn, railItems.length]);
 
-  useEffect(() => {
+  /**
+   * Keep the pinned reader at the bottom, before the browser paints.
+   *
+   * This is a layout effect on purpose: streamed output grows the transcript
+   * several times a second, and an effect that runs after paint shows that
+   * growth for one frame with the old scroll offset — the whole column visibly
+   * jumps up and then snaps back, on every delta. Scrolling inside the commit
+   * that added the content means the reader only ever sees the settled frame.
+   */
+  useLayoutEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
     if (stickRef.current) {
@@ -590,15 +611,30 @@ export function MessageList({
   const partial = view.partial;
   const hasPartial = partial !== null && partial.length > 0;
   const lastTurn = railItems.at(-1)?.turn ?? null;
-  // The turn still being produced is the one whose mark should pulse.
-  const busyTurn = view.isStreaming ? lastTurn : null;
+  /**
+   * The turn still being produced. Its rail mark pulses, and its changed-files
+   * card is held back: a card describes a whole turn, and dsh only draws it once
+   * the turn is over — landing it mid-turn would grow the row count under the
+   * reader with every round-trip that writes another file.
+   */
+  const liveTurn = view.isStreaming ? lastTurn : null;
+  /**
+   * Whether the streaming blocks can be rendered inside the live turn's row.
+   *
+   * They always can when there is a live turn: pi appends the committed
+   * assistant message to the end of the transcript, so the partial's slot in
+   * the *last* turn is exactly the slot the message will occupy once
+   * `message_end` lands. The turn rendering below relies on that and appends the
+   * partial with the index the real message is about to get.
+   */
+  const partialMerged = hasPartial && liveTurn !== null;
 
   return (
     <div className={styles.scroll} ref={scrollRef} onScroll={onScroll}>
       <TurnNavigator
         items={railItems}
         activeTurn={activeTurn}
-        busyTurn={busyTurn}
+        busyTurn={liveTurn}
         bandHeight={bandHeight}
         onNavigate={navigateToTurn}
       />
@@ -622,6 +658,32 @@ export function MessageList({
               steps.push({ block, messageIndex, blockIndex });
             });
           });
+
+          /**
+           * The streaming message, appended to the turn it will land in rather
+           * than rendered after the whole rail.
+           *
+           * The two renderings have to be the same React elements in the same
+           * parent with the same keys, or `message_end` unmounts every block of
+           * the answer and mounts an identical copy a moment later: code fences
+           * re-highlight from scratch, a reasoning row collapses itself, and the
+           * reader sees the tail of every step blink as the turn is committed.
+           * `group.messages.length` is the index the committed message will
+           * have (pi appends it), so the keys line up exactly.
+           */
+          const isLiveTurn = group.turn === liveTurn;
+          if (isLiveTurn && hasPartial) {
+            const messageIndex = group.messages.length;
+            partial.forEach((block, blockIndex) => {
+              steps.push({
+                block,
+                messageIndex,
+                blockIndex,
+                live: true,
+                tail: blockIndex === partial.length - 1,
+              });
+            });
+          }
 
           return (
             <div key={group.turn} className={styles.turn} data-turn={group.turn}>
@@ -651,7 +713,11 @@ export function MessageList({
                   steps={steps}
                   executions={view.toolExecutions}
                   results={results}
-                  streaming={false}
+                  // Only the live turn can carry a running step; every step in
+                  // it still has to ask (`step.tail`) before it renders as such.
+                  streaming={isLiveTurn}
+                  // The live turn folds on the same setting as any other; its
+                  // streamed steps are kept out of the group by `step.live`.
                   compact={compactTranscript}
                   cwd={cwd}
                   home={home}
@@ -659,8 +725,9 @@ export function MessageList({
               ) : null}
               {/* The turn's own edits, between the answer and the action row —
                   dsh's turn tail, where the card belongs to the turn that
-                  caused it rather than to the transcript as a whole. */}
-              {turnFilesByTurn.has(group.turn) ? (
+                  caused it rather than to the transcript as a whole, and like
+                  dsh it waits for that turn to end (see `liveTurn`). */}
+              {group.turn !== liveTurn && turnFilesByTurn.has(group.turn) ? (
                 <ChangedFilesCard
                   files={turnFilesByTurn.get(group.turn) ?? []}
                   {...(onOpenFile === undefined ? {} : { onOpenFile })}
@@ -680,9 +747,20 @@ export function MessageList({
           );
         })}
 
-        {hasPartial ? (
+        {/*
+         * The fallback path for a stream with no turn to attach to — a session
+         * whose first event is an assistant message, before any prompt is in
+         * the transcript. Everything else is rendered by the live turn above.
+         */}
+        {hasPartial && !partialMerged ? (
           <TurnBody
-            steps={partial.map((block, blockIndex) => ({ block, messageIndex: -1, blockIndex }))}
+            steps={partial.map((block, blockIndex) => ({
+              block,
+              messageIndex: -1,
+              blockIndex,
+              live: true,
+              tail: blockIndex === partial.length - 1,
+            }))}
             executions={view.toolExecutions}
             results={results}
             streaming={view.isStreaming}

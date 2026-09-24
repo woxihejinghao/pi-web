@@ -127,8 +127,6 @@ Web 不会静默合并两边的写入 —— 那样会互相覆盖 leaf 指针�
 
 **diff 的文本理解只发生在一处。** 前端 `diff-parse.ts` 是个纯函数：把 git 的 unified diff 解析成 hunk 列表，按 `@@ -a,b +c,d @@` 的起点给两侧分别编号，并把 `+`/`-`/上下文行归到自己的轨道上。文件头里的 `+N -M` 就是这次解析数出来的 —— 统计与绘制共享同一遍扫描，它们不可能互相矛盾。**文件默认是折叠的**：一个变更集常常很多文件，第一眼该看到的是它的形状（哪些文件、各改了多少），补丁就隔一次点击；打开面板本身不等于要求把所有行都画出来。展开之后还有第二层折叠（按 hunk）：一个文件可以带好几段相隔很远的改动，而往往最有意思的那段最短；超过 80 行的 hunk 默认收起，并把行数写在 hunk 头上，不静默藏东西。解析器有 9 个用例盖住多 hunk、`/dev/null`、二进制、空补丁、空上下文行与 `\ No newline at end of file`。
 
-**补丁的文本理解只发生在一处。** 前端 `diff-parse.ts` 是个纯函数：把 git 的 unified diff 解析成 hunk 列表，按 `@@ -a,b +c,d @@` 的起点给两侧分别编号，并把 `+`/`-`/上下文行归到自己的轨道上。文件头里的 `+N -M` 就是这次解析数出来的 —— 统计与绘制共享同一遍扫描，它们不可能互相矛盾。解析器有 9 个用例盖住多 hunk、`/dev/null`、二进制、空补丁、空上下文行与 `\ No newline at end of file`。
-
 **`+` 菜单曾经被标签条裁掉。** 第一版把 `overflow-x: auto` 放在 `.strip` 上，于是锚在条内的绝对定位菜单被滚动容器裁成 0 高——a11y 树里还在、点不到。现在滚动只发生在内层 `.chips` 上，`.strip` 自己不裁剪，控件永远不被裁。标签 chip 也给了 72px 最小宽度：四个标签挤在 420px 里时，与其把每个标题压成「REA…」，不如让 chips 横向滚动。
 
 **新会话页是一个独立的空状态**：未选中会话时不再是一个「请选择会话」的占位，而是 dsh 风格的居中页 —— 品牌标记 + 标题 + 「预览版」标签、工作区选择器、大圆角输入框，以及输入框右下角的模型选择器。在这里输入第一句话会同时完成两件事：立即切到 draft，并把这句话排队交给即将就绪的会话；如果提前选了模型，这个选择随同一条请求交给新会话（不选就让 pi 用它自己的默认模型）。
@@ -235,9 +233,15 @@ Web 不会静默合并两边的写入 —— 那样会互相覆盖 leaf 指针�
 
 **语言表照抄 dsh，因为「支持哪些语言」是一个产品决定，不是 shiki 的决定。** 26 种语言、43 个别名（`ts` / `js` / `jsx` → `typescript`，`bash` / `sh` / `zsh` → `shellscript`，`yml` → `yaml`…），其中 `typescript` / `shellscript` / `json` 随入口 chunk 一起到（dsh 的 `Lm`），其余 23 种走动态 `import()`。不在表里的语言渲染纯文本——dsh 对 `diff`、`text` 也是这样，而 shiki 的 web bundle 认得它们，所以这曾经是「本项目比 dsh 高亮得多」的一处。
 
-**grammar 是「先进视口，再按需到货」。** 代码块进入视口才请求 grammar（照 dsh 的 `useLangReady`，一个只触发一次的 IntersectionObserver），首帧是纯文本，`import()` 落地后由 `useSyncExternalStore` 订阅重渲染上色——dsh 用的是同一套两段式（`n8` / `yo`），而不是每个代码块各维护一个 async 状态机，也不会为长转录里没滚到的代码块拉语言 chunk。
+**grammar 是「先进视口，再按需到货」。** 代码块进入视口才请求 grammar（照 dsh 的 `useLangReady`，一个只触发一次的 IntersectionObserver），`import()` 落地后由 `useSyncExternalStore` 订阅重渲染上色——dsh 用的是同一套两段式（`n8` / `yo`），而不是每个代码块各维护一个 async 状态机，也不会为长转录里没滚到的代码块拉语言 chunk。**首帧的可见性是本项目补的**：IntersectionObserver 要等到下一个任务才回答，照搬的话一块已经显示在屏幕上的栅栏会先画一帧纯文本、下一帧才上色，每个代码块都闪一下。所以进观察之前先用 `useLayoutEffect` 同步量一次 `getBoundingClientRect()`——布局副作用在绘制之前跑完，这次翻转落在屏幕之外，读者只看得到上色之后的样子。纯文本与高亮两态也共用同一个 `.code` 盒子：grammar 到货只换掉盒子里那个 `<pre>`，容器自己不被卸载，块不位移，水平滚动位置也不丢。
 
-**唯一的偏离是流式路径。** dsh 的 CodeBlock 在流式期间改用增量 tokenizer（`codeToTokensBase` 接上一次的 `grammarState`，按行追加），所以它没有长度上限；本项目每次重渲染都全量 `codeToHtml`（与 dsh 的静态路径同构），因此留了 2 万字符的上限兜底——200 行 typescript 实测单次 33ms，而增量路径不会有这个代价。
+**流式路径也是增量的，和 dsh 走同一条路。** dsh 的 CodeBlock 在流式期间用 `codeToTokensBase` 接上一次的 `grammarState` 按行追加；`highlightStep` 移植的就是这套机制：把「最后一个换行符之前」当作冻结前缀，连同它的 `grammarState` 和已经渲染好的 HTML 一起传给下一次，每个新 delta 只重新 tokenize 正在写的那一行——TextMate 的 tokenize 单位就是行，行内没有可续接的点。一批 200 行 typescript（约 9 KB）实测：全量一次 101ms，而续接之后重算最后一行 0.6ms、追加一整行 0.45ms、把 200 行已冻结的 HTML 拼起来 0.02ms——每帧的成本从 O（整块）降到 O（行）。HTML 是自己拼的（`renderToken` + `wrapHtml`），因为这条路径只需要 shiki 的 token、不需要它的 hast；`getTokenStyleObject` 负责把 fontStyle 位掩码翻成 `font-style:italic` 这样的真 CSS，`mergeWhitespace` 则照搬了 shiki 在拼 hast 之前那一步（把纯空白 token 并进后一个 token），不照搬的话每个词间空格都会是自己的一个 `<span>`，代码块的 DOM 大概翻倍。冻结只发生在「完整行」上，未完结的最后一行每帧都用冻结点的状态重算，所以块注释或模板串里那种跳行结构在流式期间颜色也是对的。
+
+**单行长度上限不是保守，是必需。** JS 正则引擎的单行成本非常非线性：一行两万个字符实测要 **52 秒**，整页在这期间都是死的（原生 Oniguruma 不会这样，dsh 因此没有这道闸）。所以每次 tokenize 都带 `tokenizeMaxLineLength: 2000`——超过这个长度的行不参与分词、以纯文本渲染，栅栏本身照常显示。两千字符已经远超手写代码的任何一行，而更长的行本来就是压缩产物或数据倾倒，给它们上色不值得冻住页面。整块另有 2 万字符的上限，只作用于全量路径（见「已知限制」）。
+
+**预热不再只覆盖入口语言，因为没预热的 grammar 会「先粗后细」。** JS 引擎的 pattern 是用到才编译的（`lazyCompileLength: Infinity`），一个从未跑过的 grammar 第一次 tokenize 出来的 token 比之后每一次都粗——同一块代码第二次绘制时颜色会变，正是这次要消灭的那类闪烁。所以 `warmUpLanguage` 在每条 tokenize 路径前被调用：动态 `import()` 的 grammar 落地后、在通知重渲染之前先跑一遍 `WARMUP_SAMPLES`（注释、字符串、数字、函数、标签、SQL 各一），保证第一次真实渲染就已经稳定。
+
+**流式期间的「闪」和「跳」是另一组问题，按四个来源分别收拾。** （1）`message_update` 每个 token 触发一次 `setState`，比屏幕刷新快得多，`useConversation` 用 `requestAnimationFrame` 把它合并成每帧最多一次发布——`slotRef` 照常累积，落到的那一帧带着期间所有 delta，于是快流不再掉帧、跟随滚动也不再一顿一顿。（2）流式中的 assistant 消息**渲染在它即将落进的那一轮里**，而不是接在整条转录后面：pi 把提交后的消息追加到转录末尾，所以 partial 在最后一轮里的槽位正好就是它提交后要占的槽位（`group.messages.length`），React 于是在 `message_end` 时复用整棵 DOM，而不是把每个代码栅栏和思考行丢掉、再挂一份一模一样的（那会让代码块重新上色、思考行自己折回去）。只有转录里还没有任何一轮可挂靠时才退回独立渲染。（3）跟随滚动挪进 `useLayoutEffect`，滚动容器上关掉 `overflow-anchor`——原来在 paint 之后才贴底，每一帧都能看见「内容先跳上去、再弹回底部」，而浏览器的滚动锚定又在同时做反向修正。（4）`.code` 用 `scrollbar-gutter: stable` 预留横条位置：流式里一行会一个个字符地长过容器宽度，经典滚动条冒出来的那一下等于整块长高约 15px，下面所有东西跟着下移。另外 `Markdown` 按 `text` 记忆化、高亮结果按「语法 + 源码」缓存：前者让每个 delta 不再重新解析整个转录（包括几屏前早就定稿的答案），后者让 partial 变提交消息、折叠组展开收起这些「同样的文本再渲染一次」不再重新 tokenize。
 
 **字号只写一个变量，其余靠 CSS 派生。** dsh 的字号是 12–17 的整数（`Schema.number().step(1).min(12).max(17).default(14)`）。`--dsh-content-font-size` 由设置页写成 `documentElement` 上的内联属性，而 `--dsh-content-font-delta` / `-secondary` / `-delta-secondary` 在 `gradient-shadow-text.css` 的 `body` 块里用 `calc` / `min` / `max` 从它派生——那份是 dsh 原件，本项目一直就有。**本项目的默认值是 15，不是 dsh 的 14**（`server/src/store.ts` 的 `FONT_SIZE_DEFAULT`，前端 `DEFAULT_SETTINGS` 跟着它）。同一个值也写在 `:root` 的 `--dsh-content-font-size` 上：第一帧的绘制发生在 `/api/settings` 返回之前，两处不一致的话会先闪一下 14px 再跳成 15px。变量自己的 `14px` 回退保留不动——那是 dsh 原件里的写法，只在根本没有声明该变量时才生效，而上面这一行恰好把那种情况排除掉了。
 
@@ -421,6 +425,8 @@ auth.json    { <id>: { type: "api_key", key: "..." } }
 **一行一个文件，按首次出现的顺序**。去重键是**项目内相对路径**，所以 `./a.ts`、`a.ts` 和 `/proj/a.ts` 会折成同一行；工具徽章来自已有那张表（`VARIANT_TITLES`，`编辑` / `写入`），没有第二份标签。项目外的路径（比如写到 `~/.pi/settings.json`）**照样列出但不做成按钮**：右侧栏预览走的是项目内相对路径，给它一个只能失败的可点行，比不给更糟。折叠阈值是 3 行（dsh 的「结尾消息」高度），超过时底部出现「全部 N 个文件」。
 
 **位置在答案与操作行之间**（`MessageList` 的轮次末尾），和 dsh 的 turn tail 一致：卡片属于造成它的那一轮，不属于整个转录。每个轮次的文件在 `useMemo` 里一次性算好（键是已经缓存过的 `railItems`），所以流式增量不会重新扫全量消息。点击走的是变更面板同一个入口 `rightbarActions.openPreviewTab`——面板若收起会自己打开，点了一定看得见。
+
+**卡片等到那一轮结束才出现**（`liveTurn`）。一轮里的每个 assistant 消息在 `message_end` 时就会连同它的 `write`/`edit` 调用落进转录，而这一轮可能还要再跑好几轮工具往返，所以只看「这个轮次有文件吗」的话，卡片会在生成过程中就亮出来——第一次工具往返先亮出一行，之后每写一个文件再长一行，抖动的正好是读者盯着的那块地方。dsh 也是轮次结束才落卡，于是 `isStreaming` 命中的那一轮不画卡（它本来就在等一张会变的表，而不是一份结论），已经结束的轮次照常立刻显示。
 
 **路径做了一次缩短**：摘要若是工作区内的绝对路径就先转相对，再对 home 下的路径显示成 `~/…`（`shortenPath`，照 dsh 的 `relativizeToCwd` + `abbreviateHomePath`）。两者都只在整个字符串以根开头时才生效，所以 `cd /long/path && …` 这样的命令不会被改写。本机 5716 次文件类调用里 95% 是 home 下的绝对路径。
 

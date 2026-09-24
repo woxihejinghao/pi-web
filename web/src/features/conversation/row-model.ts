@@ -174,15 +174,22 @@ function isProcessBlock(block: { type?: string }): boolean {
  * followed by both texts. That is the trade the mode asks for, and the
  * alternative (one group per interleaving run) would produce several
  * near-identical rows for a single turn.
+ *
+ * A `live` step (see `TurnStep`) is the exception: it always stays an answer, so
+ * a turn's already-finished process rows fold while the block being streamed
+ * stays open beside them.
  */
-export function splitForCompact<T extends { block: { type?: string } }>(steps: T[]): {
+export function splitForCompact<T extends { block: { type?: string }; live?: boolean }>(steps: T[]): {
   process: T[];
   answers: T[];
 } {
   const process: T[] = [];
   const answers: T[] = [];
   for (const step of steps) {
-    (isProcessBlock(step.block) ? process : answers).push(step);
+    // A step that is still streaming is never folded, whatever it holds: it is
+    // what the reader is watching arrive, and a group would hide it behind a
+    // row they have no reason to open. Committed steps take the normal split.
+    (step.live === true || !isProcessBlock(step.block) ? answers : process).push(step);
   }
   return { process, answers };
 }

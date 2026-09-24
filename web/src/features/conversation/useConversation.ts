@@ -287,8 +287,25 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const timingRef = useRef<TimingState>(emptyTiming());
   /** Guards the one-time "this session now exists on disk" sidebar refresh. */
   const persistedNotifiedRef = useRef(false);
+  /**
+   * A repaint already scheduled for the streaming update, or null.
+   *
+   * pi emits a `message_update` per token — far faster than the screen refreshes
+   * — and every one of them republishes the whole view: the markdown being
+   * written is re-parsed and the transcript re-rendered. Coalescing the deltas
+   * into one publish per frame is what keeps a fast stream from dropping frames,
+   * which the reader sees as the column stuttering and the follow-scroll landing
+   * in fits. `slotRef` keeps accumulating in the meantime, so the frame that
+   * does run carries every delta that arrived since the last one.
+   */
+  const frameRef = useRef<number | null>(null);
 
   const publish = useCallback(() => {
+    // This publish supersedes any frame that was waiting to do the same thing.
+    if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
     const slot = slotRef.current;
     setView({
       messages: messagesRef.current,
@@ -308,6 +325,24 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       stats: sessionStats(messagesRef.current, { ...timingRef.current.totals }),
     });
   }, []);
+
+  /**
+   * Republish on the next frame, at most once per frame.
+   *
+   * `requestAnimationFrame` is absent in test environments; publishing inline
+   * there keeps the observable behaviour the same.
+   */
+  const schedulePublish = useCallback(() => {
+    if (typeof requestAnimationFrame === "undefined") {
+      publish();
+      return;
+    }
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      publish();
+    });
+  }, [publish]);
 
   const handleEvent = useCallback(
     (event: SessionEvent) => {
@@ -358,7 +393,9 @@ export function useConversation(sessionPath: string | null): ConversationApi {
             timingRef.current.firstTokenAt = Date.now();
           }
           applyDelta(slotRef.current, delta);
-          break;
+          // One repaint per frame rather than one per token; see `frameRef`.
+          schedulePublish();
+          return;
         }
 
         case "message_end": {
@@ -442,7 +479,10 @@ export function useConversation(sessionPath: string | null): ConversationApi {
               running: true,
             },
           };
-          break;
+          // A chatty command streams its output per chunk just like the model
+          // streams tokens; the same one-repaint-per-frame coalescing applies.
+          schedulePublish();
+          return;
         }
 
         case "tool_execution_end": {
@@ -478,7 +518,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       }
       publish();
     },
-    [publish],
+    [publish, schedulePublish],
   );
 
   const load = useCallback(
@@ -535,7 +575,14 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       if (payload.sessionPath !== sessionPath) return;
       handleEvent(payload.event);
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      // A frame queued by this session must not repaint the next one.
+      if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
   }, [sessionPath, load, handleEvent, publish]);
 
   const send = useCallback<ConversationApi["send"]>(

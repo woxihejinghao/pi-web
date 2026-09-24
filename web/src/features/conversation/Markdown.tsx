@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./CodeBlock.tsx";
@@ -6,8 +7,14 @@ import styles from "./Markdown.module.css";
 /**
  * Markdown renderer for assistant output and user turns. Fenced blocks go
  * through shiki; inline code stays plain so it inherits theme tokens.
+ *
+ * Memoized on `text`, which is the whole point during a stream: every delta
+ * republishes the conversation view, and without this the *entire* transcript
+ * would be re-parsed and re-rendered for each token — a settled answer four
+ * screens up is the same string it was a moment ago, and re-deriving it can
+ * only cost frames in the one moment the reader is watching output arrive.
  */
-export function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className={styles.markdown}>
       <ReactMarkdown
@@ -41,4 +48,4 @@ export function Markdown({ text }: { text: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});

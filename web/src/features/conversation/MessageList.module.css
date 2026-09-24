@@ -3,6 +3,13 @@
   min-height: 0;
   overflow-y: auto;
   /*
+   * The transcript already scrolls itself to the bottom on every delta. Browser
+   * scroll anchoring then tries to hold the reader's current element steady
+   * while that same content changes, so the two corrections fight and the
+   * column drifts/lurches during a stream. Following is this component's job.
+   */
+  overflow-anchor: none;
+  /*
    * No block padding here on purpose. The rail's slot is a zero-height sticky
    * child, so any padding on the scrollport shifts that slot down by the same
    * amount and the rail stops being centred in the visible area. The padding

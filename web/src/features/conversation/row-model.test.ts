@@ -215,6 +215,20 @@ describe("splitForCompact", () => {
     expect(answers.map((step) => step.at)).toEqual(["img"]);
   });
 
+  it("never folds a step that is still streaming", () => {
+    // The reader is watching the streamed block arrive, so it stays an answer
+    // even though its type is normally process — a folded group would hide it
+    // behind a row nobody has a reason to open.
+    const steps: { block: { type?: string }; at: string; live?: boolean }[] = [
+      { block: { type: "thinking" }, at: "settled" },
+      { block: { type: "thinking" }, at: "live", live: true },
+      { block: { type: "toolCall" }, at: "call" },
+    ];
+    const { process, answers } = splitForCompact(steps);
+    expect(process.map((step) => step.at)).toEqual(["settled", "call"]);
+    expect(answers.map((step) => step.at)).toEqual(["live"]);
+  });
+
   it("handles a turn that is all process or all answer", () => {
     expect(splitForCompact([call("a"), call("b")]).answers).toEqual([]);
     expect(splitForCompact([text("hi")]).process).toEqual([]);

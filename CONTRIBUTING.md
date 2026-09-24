@@ -14,7 +14,7 @@ pnpm install
 pnpm dev
 ```
 
-开发模式下前端在 `127.0.0.1:5319`、后端 API 在 `127.0.0.1:4319`，浏览器打开的仍是 5319。完整说明（含环境变量表）见 [README 的「从源码开发」](./README.md#从源码开发)。
+开发模式下前端在 `127.0.0.1:5319`、后端 API 在 `127.0.0.1:4319`，浏览器打开的仍是 5319。完整说明见 [README 的「从源码开发」](./README.md#从源码开发)，环境变量表见 [docs/configuration.md](./docs/configuration.md)。
 
 ## 提交前必须通过
 
@@ -65,9 +65,10 @@ server/    API + pi RPC 子进程管理 + 会话/项目/git/MCP 读写
 web/       React 前端（Vite）
 bench/     基准脚本（进程开销、流式、前端渲染成本），不随 npm 包发布
 scripts/   发布前的仓库级闸门
+docs/      设计说明、已知限制、环境变量、网络与隐私
 ```
 
-更细的架构说明与设计取舍见 [设计说明](./docs/design-notes.md) 与 [PLAN.md](./docs/PLAN.md)。
+更细的架构说明与设计取舍见 [设计说明](./docs/design-notes.md)。
 
 ## 许可证
 

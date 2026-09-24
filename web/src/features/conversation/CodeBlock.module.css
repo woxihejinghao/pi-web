@@ -33,21 +33,40 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/*
+ * The fence's text box. The plain and highlighted states both sit inside this
+ * element (see `CodeBlock.tsx`), so the padding, measure and scroll port do not
+ * change when a grammar arrives — only the contents do.
+ */
 .code {
-  margin: 0;
   padding: 10px 12px;
   overflow-x: auto;
+  /*
+   * Keep the horizontal scrollbar's channel reserved. A streamed line grows past
+   * the container one character at a time, and on a platform with classic
+   * scrollbars the bar appearing is the whole block gaining ~15px of height —
+   * which shoves everything below it down in the middle of a stream.
+   */
+  scrollbar-gutter: stable;
   font-family: var(--ds-font-family-code);
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--dsw-alias-label-primary);
 }
 
-.code :global(pre) {
+/* `pre`/`code` carry their own UA styles; both states have to read as the same
+   text, so they inherit the box's metrics instead of shiki's. */
+.code pre,
+.code code {
   margin: 0;
-  background: transparent !important;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
-.code :global(code) {
-  font-family: inherit;
+/* shiki inlines the theme's background on its `<pre>`, so this needs the
+   override; the plain state has none to begin with. */
+.code pre {
+  background: transparent !important;
 }
