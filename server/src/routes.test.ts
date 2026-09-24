@@ -196,6 +196,10 @@ describe("git api", () => {
         { encoding: "utf8" },
       );
     await git("-c", "init.defaultBranch=main", "init", "-q");
+    // The api commits through `gitCommit`, which passes no `-c`: the repository
+    // itself has to know who is committing. CI runners have no global identity.
+    await git("config", "user.email", "t@e");
+    await git("config", "user.name", "T");
     await writeFile(join(project.path, "a.txt"), "one\n", "utf8");
     await git("add", "-A");
     await git("commit", "-qm", "init");

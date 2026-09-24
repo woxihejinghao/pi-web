@@ -33,6 +33,11 @@ async function initRepo(name: string): Promise<string> {
   const path = join(root, name);
   await mkdir(path, { recursive: true });
   await git(path, "-c", "init.defaultBranch=main", "init", "-q");
+  // `gitCommit` shells out to `git commit` without `-c`, so it relies on the
+  // repository's own identity. CI runners carry none, and deriving one from the
+  // environment is not something a test should depend on — record it here.
+  await git(path, "config", "user.email", "test@example.com");
+  await git(path, "config", "user.name", "Test");
   return path;
 }
 
