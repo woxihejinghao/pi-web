@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { api } from "./api.ts";
 import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
+import { showNotification } from "./notifications.ts";
 import { createEmitter, createStore, useStore, type Emitter, type Store } from "./store.ts";
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
@@ -35,6 +36,7 @@ const DEFAULT_SETTINGS: WebSettings = {
   transcriptDisplay: "normal",
   busySendBehavior: "queue",
   todoNoticeDismissed: false,
+  browserNotifications: false,
 };
 
 /** A blocking extension dialog waiting on the user. */
@@ -214,6 +216,23 @@ export const appStore: Store<AppState> = createStore(initialState);
  */
 function tr(): Translate {
   return translator(resolveLanguage(appStore.get().settings.language));
+}
+
+/**
+ * The title of a session, wherever its project happens to be listed.
+ *
+ * Titles live in the per-project session lists while a settle event only names
+ * a path, so this is the one lookup a completion notice needs. A missing title
+ * is not an error: a session that just settled is by definition in the list, but
+ * a not-yet-loaded project would otherwise turn a notice into a crash.
+ */
+function findSessionTitle(state: AppState, sessionPath: string): string | null {
+  for (const sessions of Object.values(state.sessions)) {
+    for (const session of sessions) {
+      if (session.path === sessionPath) return session.title;
+    }
+  }
+  return null;
 }
 
 export function useT(): Translate {
@@ -938,13 +957,44 @@ export const actions = {
    * "completed" dot they would clear with their next click.
    */
   markSessionSettled(sessionPath: string): void {
-    const watching = appStore.get().selectedSessionPath === sessionPath;
+    const before = appStore.get();
+    const watching = before.selectedSessionPath === sessionPath;
+    // Only a task that was actually running can finish. Adopting a session that
+    // settles without this tab having seen it start (a reload mid-run, a
+    // session running elsewhere) is not a state change, and announcing it would
+    // be inventing one.
+    const wasRunning = before.sessionActivity[sessionPath] === "ongoing";
     appStore.update((state) => {
       const sessionActivity = { ...state.sessionActivity };
       if (watching) delete sessionActivity[sessionPath];
       else sessionActivity[sessionPath] = "done";
       return { ...state, sessionActivity };
     });
+
+    // The completion *notice* asks whether the user can see the session; the
+    // sidebar's "done" dot asks whether they might look at it next. They
+    // coincide here: nothing to announce about a result already on screen.
+    if (!watching && wasRunning) actions.notifyTaskFinished(sessionPath);
+  },
+
+  /**
+   * Raise a browser notification for a finished task, when the user asked for
+   * one. The permission itself is left to `showNotification`'s guard instead of
+   * being re-read here: a preference the browser has since revoked should not
+   * silently flip itself off in the settings page.
+   */
+  notifyTaskFinished(sessionPath: string): void {
+    if (!appStore.get().settings.browserNotifications) return;
+    const state = appStore.get();
+    showNotification(
+      findSessionTitle(state, sessionPath) ?? "pi-web-simple",
+      tr()("notification.taskFinished"),
+      sessionPath,
+      () => {
+        // Opening the session is the useful answer to "which one finished?".
+        actions.selectSession(sessionPath);
+      },
+    );
   },
 
   clearSessionActivity(sessionPath: string): void {

@@ -612,6 +612,12 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
         }
         next.todoNoticeDismissed = patch.todoNoticeDismissed;
       }
+      if (patch.browserNotifications !== undefined) {
+        if (typeof patch.browserNotifications !== "boolean") {
+          throw badRequest("browserNotifications must be a boolean");
+        }
+        next.browserNotifications = patch.browserNotifications;
+      }
       return next;
     });
     json(res, 200, settings);

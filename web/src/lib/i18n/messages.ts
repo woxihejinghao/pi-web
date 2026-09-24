@@ -40,6 +40,15 @@ export const zhCN = {
   "settings.autoCompaction.description": "上下文接近上限时自动压缩较早的对话",
   "settings.autoCompaction.on": "开启",
   "settings.autoCompaction.off": "关闭",
+  "settings.browserNotifications.title": "浏览器通知",
+  "settings.browserNotifications.description":
+    "会话任务完成时发送系统通知；开启时浏览器会请求通知权限",
+  "settings.browserNotifications.denied":
+    "浏览器已拒绝通知权限，请在浏览器设置里允许后重试",
+  "settings.browserNotifications.unsupported": "当前浏览器不支持系统通知",
+
+  // --- notifications --------------------------------------------------------
+  "notification.taskFinished": "会话任务已完成",
 
   // --- sidebar --------------------------------------------------------------
   "sidebar.newSession": "新会话",
@@ -548,6 +557,7 @@ export const zhCN = {
   "notice.enabled": "已启用 {name}，下一条消息生效。",
   "notice.disabled": "已停用 {name}，下一条消息生效。",
   "notice.todoInstalled": "已安装 @juicesharp/rpiv-todo，下一条消息生效。",
+  "notice.notificationsDenied": "浏览器未授予通知权限，开关保持关闭。",
   "notice.mcpAdapterInstalled": "已安装 pi-mcp-adapter。",
   "notice.mcpImported": "已导入 {kinds} 的 MCP 配置，重启后生效。",
   "notice.kindsSeparator": "、",
@@ -629,6 +639,15 @@ export const en: Record<MessageKey, string> = {
     "Compact earlier conversation automatically as the context fills up",
   "settings.autoCompaction.on": "On",
   "settings.autoCompaction.off": "Off",
+  "settings.browserNotifications.title": "Browser notifications",
+  "settings.browserNotifications.description":
+    "Send a system notification when a session's task finishes; turning it on asks the browser for permission",
+  "settings.browserNotifications.denied":
+    "The browser has denied notification permission. Allow it in the browser's settings and try again.",
+  "settings.browserNotifications.unsupported":
+    "This browser does not support system notifications.",
+
+  "notification.taskFinished": "The session task has finished",
 
   "sidebar.newSession": "New session",
   "sidebar.newSessionIn": "New session in “{title}”",
@@ -1121,6 +1140,8 @@ export const en: Record<MessageKey, string> = {
   "notice.enabled": "Enabled {name}; it takes effect with the next message.",
   "notice.disabled": "Disabled {name}; it takes effect with the next message.",
   "notice.todoInstalled": "Installed @juicesharp/rpiv-todo; it takes effect with the next message.",
+  "notice.notificationsDenied":
+    "The browser did not grant notification permission, so this stays off.",
   "notice.mcpAdapterInstalled": "Installed pi-mcp-adapter.",
   "notice.mcpImported": "Imported MCP config from {kinds}; it applies after a restart.",
   "notice.kindsSeparator": ", ",

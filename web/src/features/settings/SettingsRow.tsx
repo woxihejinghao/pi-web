@@ -174,3 +174,37 @@ export function SettingsStepper({
     </div>
   );
 }
+
+/**
+ * A boolean row control.
+ *
+ * A switch rather than a checkbox: the row is a piece of state the user flips,
+ * and `role="switch"` is what makes a screen reader announce it that way. The
+ * title is passed as the accessible name so the control is not "unlabeled
+ * button", which the row's own visible text would otherwise leave it as.
+ */
+export function SettingsSwitch({
+  checked,
+  onChange,
+  disabled,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={checked ? `${styles.switch} ${styles.switchOn}` : styles.switch}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    >
+      <span className={styles.switchKnob} />
+    </button>
+  );
+}

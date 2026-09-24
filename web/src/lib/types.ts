@@ -376,6 +376,11 @@ export interface WebSettings {
   busySendBehavior: BusySendBehavior;
   /** The user closed the task panel's "install rpiv-todo" notice. */
   todoNoticeDismissed: boolean;
+  /**
+   * Whether a finished session task raises a browser notification. Off by
+   * default; turning it on is what requests the browser permission.
+   */
+  browserNotifications: boolean;
 }
 
 /**

@@ -1068,6 +1068,7 @@ describe("settings", () => {
       transcriptDisplay: "normal",
       busySendBehavior: "queue",
       todoNoticeDismissed: false,
+      browserNotifications: false,
     });
   });
 
@@ -1085,6 +1086,7 @@ describe("settings", () => {
       transcriptDisplay: "normal",
       busySendBehavior: "queue",
       todoNoticeDismissed: false,
+      browserNotifications: false,
     });
 
     const reread = await api("/api/settings");
@@ -1102,6 +1104,30 @@ describe("settings", () => {
     // The whole point of storing it here: closing the notice must survive a
     // reload, or the panel would ask again on every visit.
     expect((await api("/api/settings")).body.todoNoticeDismissed).toBe(true);
+  });
+
+  it("persists the browser-notification preference", async () => {
+    const patched = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ browserNotifications: true }),
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.browserNotifications).toBe(true);
+    // Permission lives in the browser, but the user's choice to use it must
+    // survive a reload — otherwise every visit re-asks for the permission.
+    expect((await api("/api/settings")).body.browserNotifications).toBe(true);
+  });
+
+  it("rejects a non-boolean browser-notification preference", async () => {
+    const res = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ browserNotifications: "yes" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("browserNotifications");
+    expect((await api("/api/settings")).body.browserNotifications).toBe(false);
   });
 
   it("round-trips the interface language", async () => {

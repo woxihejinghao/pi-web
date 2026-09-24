@@ -50,6 +50,28 @@ function deferredCreate() {
 
 const REAL_PATH = "/home/me/.pi/agent/sessions/proj-abc/one.jsonl";
 
+/**
+ * A stand-in for the browser API, capturing every construction. Only the parts
+ * `notifications.ts` touches are here: the permission, the constructor, and the
+ * click handler it wires up.
+ */
+const shownNotifications: FakeNotification[] = [];
+
+class FakeNotification {
+  static permission: NotificationPermission = "granted";
+  static requestPermission = vi.fn(async (): Promise<NotificationPermission> => "granted");
+  onclick: (() => void) | null = null;
+  close = vi.fn();
+  readonly title: string;
+  readonly options?: NotificationOptions;
+
+  constructor(title: string, options?: NotificationOptions) {
+    this.title = title;
+    this.options = options;
+    shownNotifications.push(this);
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   resetAppState();
@@ -448,6 +470,127 @@ describe("session activity marks", () => {
     actions.emitSessionEvent(PATH, { type: "message_update", delta: "x" });
 
     expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
+  });
+});
+
+/**
+ * The browser-notification half of the sidebar's run-state mark: the same
+ * boundaries, surfaced outside the tab for a user who has walked away from it.
+ */
+describe("task-finished notifications", () => {
+  const PATH = "/home/me/.pi/agent/sessions/proj-abc/notify.jsonl";
+
+  /** The settings write stub, standing in for a successful `PUT /api/settings`. */
+  function setEnabled(enabled: boolean): void {
+    appStore.update((state) => ({
+      ...state,
+      settings: { ...state.settings, browserNotifications: enabled },
+    }));
+  }
+
+  function sessionView(path: string, title: string): SessionView {
+    return {
+      path,
+      id: "s1",
+      cwd: "/home/me/proj",
+      title,
+      titleSource: "session",
+      preview: "",
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-01T00:00:00.000Z",
+      messageCount: 1,
+      hidden: false,
+    };
+  }
+
+  beforeEach(() => {
+    shownNotifications.length = 0;
+    FakeNotification.permission = "granted";
+    vi.stubGlobal("Notification", FakeNotification);
+  });
+
+  afterEach(() => {
+    // `unstubAllGlobals` also removes the file-level `navigator` stub the copy
+    // assertions depend on, so it is put back here rather than left to leak
+    // English into every later describe.
+    vi.unstubAllGlobals();
+    vi.stubGlobal("navigator", { language: "zh-CN" });
+  });
+
+  it("stays silent while the preference is off", () => {
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications).toHaveLength(0);
+  });
+
+  it("announces a task that finishes out of view", () => {
+    setEnabled(true);
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications).toHaveLength(1);
+    expect(shownNotifications[0]?.options?.body).toBe("会话任务已完成");
+    // One slot per session, so a second finish replaces the first instead of
+    // stacking a duplicate of the same news.
+    expect(shownNotifications[0]?.options?.tag).toBe(PATH);
+  });
+
+  it("names the session the list knows it by", () => {
+    setEnabled(true);
+    appStore.update((state) => ({
+      ...state,
+      sessions: { "proj-abc": [sessionView(PATH, "修复登录问题")] },
+    }));
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications[0]?.title).toBe("修复登录问题");
+  });
+
+  it("falls back to the app name when no title is loaded", () => {
+    setEnabled(true);
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications[0]?.title).toBe("pi-web-simple");
+  });
+
+  it("does not announce a task the user is watching", () => {
+    setEnabled(true);
+    actions.selectSession(PATH);
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications).toHaveLength(0);
+  });
+
+  it("does not invent a finish for a task it never saw start", () => {
+    setEnabled(true);
+    // A session adopted mid-run settles without this tab having seen a start;
+    // that is not a state change, so there is nothing to report.
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications).toHaveLength(0);
+  });
+
+  it("stays silent when the browser has denied permission", () => {
+    setEnabled(true);
+    FakeNotification.permission = "denied";
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications).toHaveLength(0);
+  });
+
+  it("opens the finished session when the notice is clicked", () => {
+    setEnabled(true);
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    shownNotifications[0]?.onclick?.();
+
+    expect(appStore.get().selectedSessionPath).toBe(PATH);
   });
 });
 

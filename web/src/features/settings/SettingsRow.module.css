@@ -2,9 +2,9 @@
  * Settings row chrome, ported from dsh.
  *
  * Every row is the same shape — title, an optional one-line description, and a
- * control pinned to the right — so the three controls this page needs (a select,
- * the appearance cubes, a stepper) all share this file's `row`/`rowText`/`title`
- * and only the control differs.
+ * control pinned to the right — so the four controls this page needs (a select,
+ * the appearance cubes, a stepper, a switch) all share this file's
+ * `row`/`rowText`/`title` and only the control differs.
  *
  * The `0.5px` hairline under each row is dsh's separator; the last row in a
  * section drops it (see SettingsPage.module.css).
@@ -220,4 +220,50 @@
 .stepperArrow:disabled {
   color: var(--dsw-alias-label-caption);
   cursor: default;
+}
+
+/* --- switch ------------------------------------------------------------- */
+
+/*
+ * The same geometry as the plugin card's switch (36×20, a 16px knob) so the two
+ * screens read as one control; the rules are duplicated rather than shared
+ * because the two files are otherwise independent and a common module for four
+ * declarations would be more indirection than reuse.
+ */
+.switch {
+  flex: none;
+  box-sizing: border-box;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--dsw-alias-border-l2);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.switchOn {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-base);
+  transition: transform 0.15s ease;
+}
+
+.switchOn .switchKnob {
+  transform: translateX(16px);
 }

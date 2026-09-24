@@ -102,6 +102,12 @@ export interface WebSettings {
    * hint, and the panel must not reappear on every reload once it is closed.
    */
   todoNoticeDismissed: boolean;
+  /**
+   * Whether a finished session task raises a browser notification. Off by
+   * default: the browser only grants the permission behind a user gesture, so
+   * turning this on is what asks for it — a page load never does.
+   */
+  browserNotifications: boolean;
 }
 
 export function defaultSettings(): WebSettings {
@@ -116,6 +122,7 @@ export function defaultSettings(): WebSettings {
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
     todoNoticeDismissed: false,
+    browserNotifications: false,
   };
 }
 
@@ -200,6 +207,9 @@ function normalizeSettings(raw: unknown): WebSettings {
   }
   if (typeof raw.todoNoticeDismissed === "boolean") {
     settings.todoNoticeDismissed = raw.todoNoticeDismissed;
+  }
+  if (typeof raw.browserNotifications === "boolean") {
+    settings.browserNotifications = raw.browserNotifications;
   }
   return settings;
 }

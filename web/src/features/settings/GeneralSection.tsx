@@ -1,6 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { actions, appStore, useT } from "../../lib/app-state.ts";
 import type { Translate } from "../../lib/i18n/index.ts";
+import {
+  notificationCapability,
+  requestNotificationPermission,
+  type NotificationCapability,
+} from "../../lib/notifications.ts";
 import { useStore } from "../../lib/store.ts";
 import {
   FONT_SIZE_MAX,
@@ -16,6 +21,7 @@ import {
   SettingsRow,
   SettingsSelect,
   SettingsStepper,
+  SettingsSwitch,
 } from "./SettingsRow.tsx";
 import { UpdateSection } from "./UpdateSection.tsx";
 
@@ -93,6 +99,13 @@ export function GeneralSection({
 }) {
   const state = useStore(appStore);
   const t = useT();
+  // Read once on mount rather than on every render: the permission only changes
+  // in response to this page's own request, which updates it directly. Probing
+  // the API during render would also make the page's output depend on a value
+  // React cannot subscribe to.
+  const [notificationPermission, setNotificationPermission] = useState<NotificationCapability>(
+    () => notificationCapability(),
+  );
   const projectPath =
     state.projects.find((project) => project.id === state.selectedProjectId)?.path ??
     state.projects[0]?.path ??
@@ -178,6 +191,47 @@ export function GeneralSection({
             options={busySendOptions(t)}
             onChange={(busySendBehavior) => {
               void actions.updateSettings({ busySendBehavior });
+            }}
+          />
+        </SettingsRow>
+
+        {/*
+          A preference about this browser, not about the agent, so it sits with
+          the other shell-side rows rather than next to auto-compaction. The
+          description doubles as the failure message: a denied permission is
+          the one state where the switch cannot do what it says, and the way
+          back is only knowable in the browser's own settings.
+        */}
+        <SettingsRow
+          title={t("settings.browserNotifications.title")}
+          description={
+            notificationPermission === "unsupported"
+              ? t("settings.browserNotifications.unsupported")
+              : notificationPermission === "denied"
+                ? t("settings.browserNotifications.denied")
+                : t("settings.browserNotifications.description")
+          }
+        >
+          <SettingsSwitch
+            label={t("settings.browserNotifications.title")}
+            checked={state.settings.browserNotifications}
+            disabled={notificationPermission === "unsupported"}
+            onChange={(enabled) => {
+              if (!enabled) {
+                void actions.updateSettings({ browserNotifications: false });
+                return;
+              }
+              // The prompt has to be raised from inside the click, and its
+              // answer decides the setting: a switch left on without permission
+              // would promise a notification the browser never shows.
+              void requestNotificationPermission().then((permission) => {
+                setNotificationPermission(permission);
+                if (permission !== "granted") {
+                  actions.setNotice(t("notice.notificationsDenied"));
+                  return;
+                }
+                void actions.updateSettings({ browserNotifications: true });
+              });
             }}
           />
         </SettingsRow>
