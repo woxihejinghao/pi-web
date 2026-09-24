@@ -3,7 +3,7 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [0.1.1] - 2026-09-24
 
 ### 改进
 
@@ -51,4 +51,5 @@
 - 需要 Node.js `>= 22.19.0`。
 - pi 的 `todo` 工具与 MCP 能力分别由 `@juicesharp/rpiv-todo` 和 `pi-mcp-adapter` 扩展提供，本项目不内置；缺少时界面给出安装入口而非静默空白。
 
+[0.1.1]: https://github.com/woxihejinghao/pi-web/releases/tag/v0.1.1
 [0.1.0]: https://github.com/woxihejinghao/pi-web/releases/tag/v0.1.0

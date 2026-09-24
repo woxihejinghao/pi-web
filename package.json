@@ -1,6 +1,6 @@
 {
   "name": "pi-web-simple",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local web UI for the pi coding agent — one directory per workspace, in the shell of deepseek-harness",
   "license": "MIT",
   "type": "module",
