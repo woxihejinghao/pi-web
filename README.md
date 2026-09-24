@@ -10,6 +10,12 @@ Requires Node.js `>= 22.19.0`. Binds to `127.0.0.1` only.
 
 **Highlights** — server-side directory picker · multi-session, one idle-recycled pi process per session · SSE streaming chat with Markdown + shiki highlighting · image input · session fork and topic tree · model picker · right sidebar (file tree, preview, git changes, embedded browser) · full git panel (stage, commit, push, restore, switch branch) · model / plugin / MCP settings.
 
+| 深色主题 | 浅色主题 |
+| :---: | :---: |
+| ![深色主题下的主界面](./docs/images/overview-dark.png) | ![浅色主题下的主界面](./docs/images/overview-light.png) |
+
+*左：深色主题，右：浅色主题（默认跟随系统，也可在设置里固定）。两图是同一份会话：左栏工作区与会话，中间对话、思考过程与工具调用（读取 / 编辑 / 写入 / Bash），右栏文件变更可直接暂存、提交、推送。*
+
 > 以下为中文文档。English contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ---
