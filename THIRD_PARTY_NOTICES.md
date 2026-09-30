@@ -4,8 +4,10 @@
 许可，允许复制、修改与再分发，**前提是保留其版权声明与许可文本**——本文件即为
 履行该义务而存在，随源码一并分发，不得移除。
 
-本文件只覆盖**被复制进本仓库**的代码与设计资源。通过 npm 安装的运行时依赖
-（React、Vite、shiki 等）由各自的包分发其许可，不在本文件范围内。
+本文件只覆盖**被复制进本仓库**的代码与设计资源，以及**随安装包重新分发**的二进制。
+通过 npm 安装的运行时依赖（React、Vite、shiki 等）由各自的包分发其许可，不在本文件
+范围内；例外的只有第 4 节：桌面版安装包里带着官方 Node.js 运行时，那份二进制由本文件
+说明来源与许可。
 
 ---
 
@@ -81,3 +83,23 @@ SOFTWARE.
 
 - **shiki** 及其语法/主题数据：本项目只消费其公开 API（`@shikijs/*` 通过 `shiki` 包引入），语言表的选择是产品决定，见上表。
 - **npm 依赖树**：截至开源时的扫描结果全部为宽松许可（MIT / ISC / Apache-2.0 / BSD-3-Clause / 0BSD），无 copyleft 依赖。
+
+---
+
+## 4. 桌面版自带的 Node.js 运行时
+
+- 上游：<https://nodejs.org/>（源码：<https://github.com/nodejs/node>）
+- 版本：见 `desktop/scripts/prepare-runtime.mjs` 里的 `NODE_VERSION`（当前 `v22.23.3`）
+- 许可：MIT 及一系列第三方许可，以官方发行包自带的 `LICENSE` 为准（其中逐项列出了 V8、OpenSSL、npm 等组件）
+
+桌面版（`desktop/`）与发布在 GitHub Releases 的安装包会**重新分发**官方 Node.js 发行版中的
+`bin/node`（Windows 为 `node.exe`）。法律上这是一份二进制分发，所以：
+
+| 位置 | 内容 |
+|---|---|
+| 安装包内 `resources/runtime/node/LICENSE` | 官方发行包自带的许可证原文，逐字节复制 |
+| 本文件的第 4 节（本节） | 指明来源、版本与许可范围 |
+
+安装包内还带有本仓库的 `LICENSE` 与 `THIRD_PARTY_NOTICES.md`；应用菜单的
+Help → Third-party Notices 直接打开后者。运行时的下载/校验/解压流程见
+`desktop/scripts/prepare-runtime.mjs`（sha256 对照官方 `SHASUMS256.txt`）。

@@ -65,6 +65,27 @@ PI_WEB_SIMPLE_OPEN=0 nohup pi-web-simple >/tmp/piws.log 2>&1 &
 pkill -f 'pi-web-simple/bin/pi-web-simple.js'   # stop it
 ```
 
+### Desktop app
+
+`desktop/` wraps the *same* server and the *same* front end in an Electron shell, so mac,
+Windows and Linux installers are available from the [releases page](https://github.com/woxihejinghao/pi-web/releases):
+
+| Platform | Artifact |
+| :-- | :-- |
+| macOS (Apple silicon / Intel) | `pi-web-simple-<version>-mac-arm64.dmg` · `-mac-x64.dmg` (also `.zip`) |
+| Windows x64 | `pi-web-simple-<version>-win-x64-setup.exe` (also `.zip`) |
+| Linux x64 | `pi-web-simple-<version>-linux-x64.AppImage` / `.deb` |
+
+It ships its **own Node.js runtime**, so nothing has to be installed first: pi's RPC client
+spawns the bare command `node`, which on Windows a `.cmd` shim cannot satisfy. The installers
+are **not code signed** yet — macOS needs right-click → Open the first time, Windows shows a
+SmartScreen prompt. Build them yourself with `pnpm package:desktop` (same platform only).
+Details, troubleshooting and the trade-offs: [docs/desktop.md](./docs/desktop.md) (Chinese).
+
+The desktop app shares `~/.pi-web-simple` and `~/.pi` with the CLI, so both see the same
+projects and sessions, and it prefers port 5319 (falling back to an ephemeral port) so the two
+can run side by side.
+
 The address is the same one the dev server puts in the address bar, so there is only one port to remember. Every variable, with defaults: [environment variables](./docs/configuration.md).
 
 First run: click **+** in the left column, walk to the target directory in the picker (the shortcuts at the top jump straight to home / Desktop / Documents / Downloads / root, and a path can be pasted into the address bar), then click **Choose this directory** to add the project. Click **+** under the project to start a session.
@@ -110,6 +131,7 @@ pnpm build       # build the front end + compile the back end into server/build
 pnpm start       # start from the built output (same as npx, port 5319)
 pnpm typecheck   # typecheck the front end and the back end
 pnpm test        # front-end and back-end tests (vitest)
+pnpm dev:desktop # run the Electron shell against the checkout (pnpm build first)
 ```
 
 ## More documentation
@@ -117,6 +139,7 @@ pnpm test        # front-end and back-end tests (vitest)
 The documents linked below are currently written in Chinese.
 
 - [Design notes](./docs/design-notes.md) — why it is built this way: architecture, coexistence with the pi CLI, the trade-offs behind every panel, and the mistakes along the way.
+- [Desktop app](./docs/desktop.md) — the Electron shell: installers, the bundled Node.js runtime, building and packaging, and what it still cannot do.
 - [Known limitations](./docs/known-limitations.md) — what it cannot do yet and the trade-offs behind that behaviour; worth a skim before installing.
 - [Environment variables](./docs/configuration.md) — all optional, with their defaults.
 - [Network and privacy](./docs/network-and-privacy.md) — whether it talks to the network, where data lives, and why it must not be exposed publicly.

@@ -15,6 +15,9 @@ jobs:
     name: typecheck · build · test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # desktop/ 只在这一步做类型检查，不需要 electron 的二进制（约 100 MB）。
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
 

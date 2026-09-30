@@ -1,0 +1,23 @@
+{
+  "name": "pi-web-simple-desktop",
+  "private": true,
+  "license": "MIT",
+  "description": "Electron shell that packages pi-web-simple as a desktop app",
+  "//": "version 留在 0.0.0：打出来的桌面版版本号取仓库根 package.json（见 scripts/prepare-app.mjs），避免两处版本号各说各话。",
+  "version": "0.0.0",
+  "main": "build/main.cjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "icons": "node scripts/render-icon.mjs",
+    "dev": "tsc -p tsconfig.json && electron .",
+    "package": "node scripts/package.mjs",
+    "package:dir": "node scripts/package.mjs --dir"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "^5.7.2"
+  }
+}

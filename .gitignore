@@ -5,6 +5,11 @@ server/build/
 .vite/
 coverage/
 
+# Desktop packaging (compiled main process, staged app, downloaded runtime, installers)
+desktop/build/
+desktop/.desktop-build/
+desktop/release/
+
 # Local overrides and secrets
 *.local
 .env

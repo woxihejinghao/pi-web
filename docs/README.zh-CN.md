@@ -65,6 +65,25 @@ PI_WEB_SIMPLE_OPEN=0 nohup pi-web-simple >/tmp/piws.log 2>&1 &
 pkill -f 'pi-web-simple/bin/pi-web-simple.js'   # 停掉
 ```
 
+### 桌面版
+
+`desktop/` 把**同一个**服务端和**同一份**前端装进 Electron 壳里，mac / Windows / Linux 安装包见
+[Releases](https://github.com/woxihejinghao/pi-web/releases)：
+
+| 平台 | 产物 |
+| :-- | :-- |
+| macOS（Apple 芯片 / Intel） | `pi-web-simple-<版本>-mac-arm64.dmg` · `-mac-x64.dmg`（另有 `.zip`） |
+| Windows x64 | `pi-web-simple-<版本>-win-x64-setup.exe`（另有 `.zip`） |
+| Linux x64 | `pi-web-simple-<版本>-linux-x64.AppImage` / `.deb` |
+
+**自带 Node.js 运行时**，所以什么都不用预装（pi 的 RPC 客户端用的是裸命令 `node`，
+Windows 上 `.cmd` 垫片满足不了它）。目前**没有代码签名**：macOS 首次打开要右键→打开，
+Windows 会有一次 SmartScreen 提示。自己打：`pnpm package:desktop`（仅限当前平台）。
+安装、排错与取舍见[桌面版](./desktop.md)。
+
+桌面版与 CLI 共用 `~/.pi-web-simple` 和 `~/.pi`，看到的是同一批项目与会话；
+端口优先用 5319（被占则退到随机端口），所以两者可以同时开着。
+
 地址和下面的开发模式一致，所以不必记两个端口；全部变量及默认值见[环境变量](./configuration.md)。
 
 首次使用：点击左侧栏的 **+**，在弹出的目录选择器里逐级进入目标目录（顶部快捷位置可直达主目录 / 桌面 / 文稿 / 下载 / 根目录，地址栏也可直接粘贴路径），点 **选择此目录** 添加项目；再点项目下的 **+** 新建会话开始对话。
@@ -110,11 +129,13 @@ pnpm build       # 构建前端 + 编译后端到 server/build
 pnpm start       # 用构建产物启动（等价于 npx，端口 5319）
 pnpm typecheck   # 前后端类型检查
 pnpm test        # 前后端测试（vitest）
+pnpm dev:desktop # 用 Electron 壳跑当前仓库（先 pnpm build）
 ```
 
 ## 更多文档
 
 - [设计说明](./design-notes.md)——为什么是这样：架构、与 pi CLI 并存、每个面板的实现取舍与踩过的坑。
+- [桌面版](./desktop.md)——Electron 壳：安装包、自带的 Node 运行时、打包流程，以及它现在还做不到什么。
 - [已知限制](./known-limitations.md)——目前做不到什么，以及那些行为背后的取舍；装之前值得扫一遍。
 - [环境变量](./configuration.md)——全部可选，含默认值。
 - [网络与隐私](./network-and-privacy.md)——它连不连网、数据放在哪、为什么不能暴露到公网。
