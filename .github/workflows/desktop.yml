@@ -32,8 +32,11 @@ jobs:
             artifact: windows-x64
     env:
       # 没有签名证书；关掉自动发现，免得在 CI 上因找不到证书而失败。
-      # 这里不设 ELECTRON_SKIP_BINARY_DOWNLOAD：打包时要用本地的 electron 发行包
-      # （见 desktop/electron-builder.config.mjs 的 electronDist），跳过了就没得用。
+      # 这里不设 ELECTRON_SKIP_BINARY_DOWNLOAD（设了也没用——electron 44 起发行包
+      # 已经不含 postinstall，那个开关只在 postinstall 里起作用）。打包要用本地的
+      # electron 发行包（见 desktop/electron-builder.config.mjs 的 electronDist），
+      # 而 `pnpm install` 现在不会下它，由 scripts/package.mjs 在打包前补下载
+      # （约 100 MB，首次会算进「打包」那一步的耗时里）。
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4

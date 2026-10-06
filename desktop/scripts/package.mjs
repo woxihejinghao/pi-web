@@ -55,12 +55,31 @@ if (!existsSync(join(desktopDir, "node_modules", "electron-builder"))) {
   process.exit(1);
 }
 // electron-builder 直接用本地这一份 Electron 发行包（见 electron-builder.config.mjs），
-// 所以它必须在。装依赖时若设过 ELECTRON_SKIP_BINARY_DOWNLOAD=1 就会缺。
-if (!existsSync(join(desktopDir, "node_modules", "electron", "dist", "version"))) {
-  console.error("✗ 缺少 Electron 发行包（desktop/node_modules/electron/dist）");
-  console.error("  重新装一遍即可：pnpm install --force --filter pi-web-simple-desktop");
-  console.error("  （注意别带 ELECTRON_SKIP_BINARY_DOWNLOAD=1）");
-  process.exit(1);
+// 所以它必须在。
+//
+// 而 electron 44 起发行包里已经**没有 postinstall** 了（`pnpm view electron@44.5.0
+// scripts` 是空的，`bin.install-electron` 是它给的替代入口），二进制改成「首次
+// require('electron') 时惰性下载」——于是 `pnpm install` 之后
+// `node_modules/electron/dist` 就是空的。本地开发时跑一次 `pnpm dev:desktop`
+// 会顺手把它下下来，CI 上没人跑过 electron，四个平台就全倒在这一步（1~2 秒内退出）。
+// 这里显式补一次；install.js 自己带幂等判断（dist/version 与 path.txt 都对且可执行
+// 文件在，就直接 exit 0），所以已就位时不会白下 100 MB。
+const electronDir = join(desktopDir, "node_modules", "electron");
+const electronVersionFile = join(electronDir, "dist", "version");
+if (!existsSync(electronVersionFile)) {
+  const electronInstaller = join(electronDir, "install.js");
+  if (!existsSync(electronInstaller)) {
+    console.error("✗ 找不到 Electron 的安装脚本，先在仓库根目录跑 `pnpm install`");
+    process.exit(1);
+  }
+  console.log("· Electron 发行包缺失，先下载（约 100 MB；首次打包会多花一两分钟）");
+  const download = spawnSync(process.execPath, [electronInstaller], { stdio: "inherit" });
+  if (download.status !== 0 || !existsSync(electronVersionFile)) {
+    console.error("✗ 下载 Electron 发行包失败");
+    console.error(`  手动重试：node ${relative(repoRoot, electronInstaller)}`);
+    console.error("  装依赖时别带 ELECTRON_SKIP_BINARY_DOWNLOAD=1；网络受限时先配好代理再跑。");
+    process.exit(1);
+  }
 }
 
 // 1. 编译 —— server/build 与 web/dist 是打包的输入，必须是最新的。

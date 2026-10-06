@@ -49,7 +49,9 @@ const electronDist = join(dirname(electronPkgPath), "dist");
 if (!existsSync(join(electronDist, "version"))) {
   throw new Error(
     `electron 发行包缺失（${electronDist}）。\n` +
-      "请确认安装依赖时没有设置 ELECTRON_SKIP_BINARY_DOWNLOAD=1。",
+      "electron 44 起发行包不再带 postinstall，`pnpm install` 不会下二进制——\n" +
+      "跑 `node desktop/node_modules/electron/install.js` 补齐即可（scripts/package.mjs 正常会先补好）。\n" +
+      "若装依赖时设过 ELECTRON_SKIP_BINARY_DOWNLOAD=1，去掉它。",
   );
 }
 

@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 修复
+
+- **桌面版在 CI 上打不出安装包**（`.github/workflows/desktop.yml` 从未成功过，v0.4.x / v0.5.0 也没产出 GitHub Release）：`electron` 44 起发行包不再带 `postinstall`——二进制改成「首次 `require('electron')` 时惰性下载」，`bin.install-electron` 是它给的替代入口——所以 `pnpm install` 之后 `node_modules/electron/dist` 是空的。而 `electron-builder` 被配置成直接用本地这一份（`electronDist`，为的是省掉重复下载、并保证打包用的 Electron 和开发时跑的是同一个），打包脚本又硬要求它存在，于是四个平台全都倒在「打包」这一步、1~2 秒内退出。本地看不出问题，是因为跑过一次 `pnpm dev:desktop` 就顺手把二进下下来了，CI 上没人跑过 electron。现在 `desktop/scripts/package.mjs` 会在打包前显式补一次（`node_modules/electron/install.js`，自带幂等判断：dist 与 `path.txt` 都对就 `exit 0`，不会重复下 100 MB）；顺带把两条「重装一遍依赖即可」的旧提示改成正确的补救办法——那条建议在 electron 44 之后已经不管用了。
+
 ## [0.6.0] - 2026-10-06
 
 ### 新增
