@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 修复
+
+- **四个平台的安装包都打出来了，却挂不到 GitHub Release**：「挂到 GitHub Release」这个 job 不 checkout 源码（产物是下载下来的），所以工作目录里根本没有 git 仓库；而 `gh` 默认靠 git remote 判断「对哪个仓库操作」，于是它以 `failed to run git: fatal: not a git repository` 失败——`gh release view` 和随后的 `gh release create` 一起挂在仓库解析这一步（用本机同版本 gh 做过对照：不在 git 仓库里必然报这一句，在仓库里则会正常走到 API）。现在显式给一步 `GH_REPO`，绕开仓库解析，也因此不必为此多一次 checkout。顺带给「下载产物」那一步补上 `if-no-files-found: error`，免得日后没产物时把 `artifacts/*` 原样交给 gh、报出一条看不懂的「找不到文件」。这个 job 从加进来到 0.6.2 一直被 skip（前面的打包步骤失败），所以从没暴露过。
+
 ## [0.6.2] - 2026-10-06
 
 ### 修复

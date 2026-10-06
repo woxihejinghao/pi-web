@@ -80,11 +80,19 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+          # 没产物就早点炸，别让下一步的 `artifacts/*` 原样传给 gh 报「找不到文件」。
+          if-no-files-found: error
 
       # 用 gh 而不是第三方 action：npm 那条 Release 流程创建的东西这里一并复用。
       - name: 创建（或复用）Release 并上传安装包
         env:
           GH_TOKEN: ${{ github.token }}
+          # 这个 job 不 checkout（产物是下下来的，不需要源码），于是工作目录里根本没有
+          # git 仓库；而 gh 默认靠 git remote 判断「对哪个仓库操作」——不给 GH_REPO 就会以
+          #   failed to run git: fatal: not a git repository (or any of the parent directories): .git
+          # 失败，`gh release view` 与随后的 `gh release create` 一起挂在仓库解析这一步。
+          # 显式给出仓库就绕开了，也省掉一次没必要的 checkout。
+          GH_REPO: ${{ github.repository }}
         run: |
           tag="${GITHUB_REF_NAME}"
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes
