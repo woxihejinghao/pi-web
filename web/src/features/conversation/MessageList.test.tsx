@@ -247,6 +247,22 @@ function turnMarkup(html: string, turn: number): string {
   throw new Error(`unbalanced markup for ${marker}`);
 }
 
+/**
+ * The turn-process header's own words.
+ *
+ * The label carries its elapsed figure split across spans — the digits are the
+ * only part dsh draws in the code face — so the markup never contains the string
+ * a reader sees. Flattening the tags is what makes the assertion talk about the
+ * sentence instead of about where the spans landed.
+ */
+function processHeaderText(html: string): string {
+  const at = html.indexOf("已完成");
+  if (at === -1) throw new Error("no turn-process header in markup");
+  return html
+    .slice(html.lastIndexOf("<button", at), html.indexOf("</button>", at))
+    .replace(/<[^>]+>/g, "");
+}
+
 const thought = (value: string): ContentBlock => ({ type: "thinking", thinking: value });
 
 describe("MessageList streaming message", () => {
@@ -284,7 +300,27 @@ describe("MessageList streaming message", () => {
     expect(turnMarkup(html, 1)).toContain("正在想的");
   });
 
-  it("folds a live turn's finished steps but keeps the streamed ones open", () => {
+  it("folds a finished turn's process rows behind its completion header", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([
+          { role: "user", content: "跑一下", timestamp: 0 },
+          { role: "assistant", content: [thought("想过的东西")], timestamp: 92_000 },
+        ])}
+        cwd={CWD}
+        home="/Users/dev"
+        compactTranscript
+      />,
+    );
+
+    // The header reports the turn's own span, with the digits split out into the
+    // code face — so it is read as text once the spans are flattened away.
+    expect(processHeaderText(html)).toBe("已完成，用时 1分32秒");
+    // A collapsed group does not render its rows, so their absence is the fold.
+    expect(html).not.toContain("想过的东西");
+  });
+
+  it("keeps a live turn's rows open in the compact display", () => {
     const html = renderToStaticMarkup(
       <MessageList
         view={view([asked("跑一下"), answered([thought("已经想完的")])], {
@@ -297,12 +333,32 @@ describe("MessageList streaming message", () => {
       />,
     );
 
-    // The settled process row folded into the group — a collapsed group does not
-    // render its children, so its text being absent is what proves the fold.
-    expect(html).toContain("执行过程");
-    expect(html).not.toContain("已经想完的");
-    // The block still arriving stayed an answer, outside the group.
+    // The header is a completion report, so a turn that has not completed gets
+    // no header at all: both the settled row and the streamed one stay visible.
+    expect(html).not.toContain("已完成");
+    expect(html).toContain("已经想完的");
     expect(html).toContain("正在想的");
+  });
+
+  it("drops a settled reasoning row's summary under the compact policy", () => {
+    const transcript = (compactTranscript: boolean) =>
+      renderToStaticMarkup(
+        <MessageList
+          view={view([asked("想想"), answered([thought("已经想完的")])], {
+            partial: [thought("正在想的")],
+            isStreaming: true,
+          })}
+          cwd={CWD}
+          home="/Users/dev"
+          compactTranscript={compactTranscript}
+        />,
+      );
+
+    // dsh's `settledReasoningPreview`: the compact display leaves the text one
+    // click away, while the streaming row keeps its line — that line is the only
+    // sign of what the model is doing, so no policy may take it away.
+    expect(transcript(true).match(/data-preview/g)).toHaveLength(1);
+    expect(transcript(false).match(/data-preview/g)).toHaveLength(2);
   });
 
   it("still renders a streamed message with no turn to attach to", () => {

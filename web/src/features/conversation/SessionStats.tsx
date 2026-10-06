@@ -50,13 +50,20 @@ export function SessionStats({ stats }: { stats: SessionStatsData }) {
     };
   }, [open]);
 
-  // dsh hides the whole row until the session has a step or a token.
-  if (stats.steps === 0 && stats.totalTokens === 0) return null;
-
   const setOpenIf = (panel: Exclude<OpenPanel, null>) => (value: boolean) => {
     setOpen(value ? panel : null);
   };
 
+  // Each pill hides itself when it has nothing to report — that much is dsh's
+  // rule, and the two conditions below are it. The row does *not* hide with
+  // them, and that is a deliberate deviation: dsh's pills are entries of the
+  // composer's own dock, so an empty dock is invisible inside a box the composer
+  // already owns, while this row is a flex item of the pane's column. Unmounting
+  // it there shortens the column by the row's own height and drops the composer
+  // onto the window edge — and the transcript is momentarily empty on every
+  // session switch, because it is cleared before the file is read back. That is
+  // one slow read away from a bottom bar that jumps and is not at the bottom.
+  // `.root`'s `min-height` holds the box for the same reason.
   return (
     <div className={styles.root} ref={rootRef} data-composer-stats>
       {stats.steps > 0 ? (

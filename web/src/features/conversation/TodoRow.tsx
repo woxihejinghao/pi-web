@@ -68,7 +68,6 @@ export function TodoRow({
         rowClassName={styles.row}
         leadingClassName={styles.leading}
         titleClassName={styles.title}
-        chevronClassName={styles.chevron}
         // A rejected call keeps its own glyph convention: the error dot.
         icon={state === "error" ? <StateDot state="error" /> : <Glyph name="checklist" />}
         title={t("todo.panelTitle")}

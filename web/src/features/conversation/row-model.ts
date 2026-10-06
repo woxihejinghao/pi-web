@@ -183,9 +183,11 @@ function isProcessBlock(block: { type?: string }): boolean {
  * alternative (one group per interleaving run) would produce several
  * near-identical rows for a single turn.
  *
- * A `live` step (see `TurnStep`) is the exception: it always stays an answer, so
- * a turn's already-finished process rows fold while the block being streamed
- * stays open beside them.
+ * A `live` step (see `TurnStep`) is the exception: it always stays an answer.
+ * Since the group's header reports a completion, `MessageList` no longer hands
+ * this function a partition containing one at all — the guard stays because it
+ * is the contract this function actually promises, and it is cheaper to keep it
+ * true here than to make every future caller remember it.
  */
 export function splitForCompact<T extends { block: { type?: string }; live?: boolean }>(steps: T[]): {
   process: T[];

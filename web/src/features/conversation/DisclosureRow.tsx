@@ -14,8 +14,12 @@ import styles from "./DisclosureRow.module.css";
  * - `expandOnRowClick` makes the whole row the button (`role`, `tabIndex`, and
  *   Enter/Space) rather than just the icon. When it is off but the row is still
  *   expandable, only the icon is a real `<button>`.
- * - Once open, the leading slot pins the chevron instead of cross-fading, so the
- *   row stops advertising "click me" and starts advertising "click to close".
+ * - Once open the chevron pins and turns to point up, so the row stops
+ *   advertising "click me" and starts advertising "click to close". dsh swaps in
+ *   a second, upward glyph; this rotates the one chevron instead, because a
+ *   swapped node cannot transition and the flip is the only motion the fold has.
+ * - The row owns its colour: tertiary at rest, secondary while hovered, with the
+ *   title, the glyph, and the chevron all inheriting it.
  * - `collapsedContent` (the separator dot and summary) is dropped while open
  *   unless `keepContentWhenOpen`, because the expanded body already says it.
  */
@@ -33,7 +37,6 @@ export function DisclosureRow({
   className,
   rowClassName,
   leadingClassName,
-  chevronClassName,
   titleClassName,
 }: {
   icon: ReactNode;
@@ -49,7 +52,6 @@ export function DisclosureRow({
   className?: string;
   rowClassName?: string;
   leadingClassName?: string;
-  chevronClassName?: string;
   titleClassName?: string;
 }) {
   const clickable = expandable && expandOnRowClick;
@@ -66,22 +68,28 @@ export function DisclosureRow({
     onToggle();
   };
 
-  const idle = previewChevron ? (
+  // The chevron stays mounted in both states, which is what lets its 180deg
+  // rotation animate: dsh renders a second up-chevron element when the row opens,
+  // and a freshly mounted node has no transform to transition from, so the fold
+  // would snap. `data-chevron-preview` carries `previewChevron` down to CSS,
+  // where the hover cross-fade is the only thing it gates — it is deliberately
+  // not called `data-preview`, which is dsh's own name for whether a *reasoning
+  // row* shows its summary line.
+  const leading = (
     <>
       <span className={styles.iconIdle}>{icon}</span>
-      <Glyph name="chevronDown" className={clsx(chevronClassName, styles.chevronHover)} />
+      {expandable ? (
+        <Glyph name="chevronDown" className={styles.chevron} />
+      ) : null}
     </>
-  ) : (
-    icon
   );
-
-  const leading = open ? <Glyph name="chevronDown" className={chevronClassName} /> : idle;
 
   return (
     <div className={clsx(styles.root, className)} data-open={open || undefined}>
       <div
         className={clsx(styles.row, rowClassName)}
         data-disclosure-row
+        data-chevron-preview={expandable && previewChevron ? "true" : undefined}
         data-expandable={clickable || undefined}
         role={clickable ? "button" : undefined}
         tabIndex={clickable ? 0 : undefined}

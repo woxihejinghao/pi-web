@@ -92,7 +92,6 @@ export function ToolCallRow({
         rowClassName={styles.row}
         leadingClassName={styles.leading}
         titleClassName={styles.title}
-        chevronClassName={styles.chevron}
         // dsh swaps the glyph for a state dot when a call did not settle cleanly.
         icon={
           state === "error" ? <StateDot state="error" /> : <Glyph name={VARIANT_GLYPHS[variant]} />

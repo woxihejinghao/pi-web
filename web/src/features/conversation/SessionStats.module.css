@@ -14,6 +14,14 @@
   gap: 12px;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  /*
+   * The height of a full row, held even when it is empty, so the composer above
+   * never moves (see the note in SessionStats.tsx). The arithmetic is the row's
+   * own padding (4 + 8) plus the pill's box — its 20px line-height and the 1px
+   * it pads itself on each side — with the font-size axis carried through,
+   * because a reader who raises the content font size raises the pill with it.
+   */
+  min-height: calc(34px + var(--dsh-content-font-delta-secondary, 0px));
 }
 
 .anchor {

@@ -19,8 +19,24 @@ import { useT } from "../../lib/app-state.ts";
  * `data-follow-end` drives the streaming case: the text is right-aligned and
  * allowed to overflow to the left, so new words appear at the trailing edge
  * instead of the whole line re-ellipsising on every token.
+ *
+ * `preview` is dsh's `settledReasoningPreview`: a *settled* row only carries its
+ * one-line summary where the display policy asks for one. While the block is
+ * still streaming the preview is unconditional — that text is the only sign of
+ * what the model is doing — so a policy that turns previews off cannot take the
+ * live line away. It is a `data-` flag rather than a conditional render so the
+ * summary span keeps its identity as the policy flips.
  */
-export function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+export function ThinkingBlock({
+  text,
+  streaming,
+  preview = true,
+}: {
+  text: string;
+  streaming?: boolean;
+  /** Whether a settled row may show its one-line summary. */
+  preview?: boolean;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
 
@@ -31,6 +47,7 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming?: b
 
   const running = streaming ?? false;
   const summary = (running ? lastNonBlankLine(text) : firstNonBlankLine(text)).replaceAll("**", "");
+  const showsPreview = summary !== "" && (running || preview);
 
   return (
     <div
@@ -38,6 +55,7 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming?: b
       data-variant="think"
       data-state={running ? "running" : "ok"}
       data-expanded={open || undefined}
+      data-preview={showsPreview || undefined}
     >
       {running ? <span className={styles.visuallyHidden}>{t("common.running")}</span> : null}
 
@@ -45,7 +63,6 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming?: b
         rowClassName={styles.row}
         leadingClassName={styles.leading}
         titleClassName={styles.title}
-        chevronClassName={styles.chevron}
         icon={<Glyph name="think" />}
         title={t("thinking.title")}
         open={open}

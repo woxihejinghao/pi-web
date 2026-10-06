@@ -33,7 +33,7 @@ const DEFAULT_SETTINGS: WebSettings = {
   appearance: "system",
   language: "system",
   contentFontSize: 15,
-  transcriptDisplay: "normal",
+  transcriptDisplay: "compact",
   busySendBehavior: "queue",
   todoNoticeDismissed: false,
   browserNotifications: false,

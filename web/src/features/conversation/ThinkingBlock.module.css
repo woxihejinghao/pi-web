@@ -57,10 +57,6 @@
   flex-shrink: 0;
 }
 
-.chevron {
-  color: var(--dsw-alias-label-secondary);
-}
-
 .title {
   font-weight: 400;
 }
@@ -88,6 +84,18 @@
   text-overflow: ellipsis;
   display: block;
   overflow: hidden;
+}
+
+/*
+ * The summary is dsh's `settledReasoningPreview`. Where the policy does not ask
+ * for one, a settled row is the bare "思考" line and nothing else — the text is
+ * one click away, and a truncated first sentence beside the label mostly repeats
+ * what the label already said. The node stays mounted and is painted away here
+ * rather than dropped in React, so its identity survives the policy flip.
+ */
+.root:not([data-preview]) .separator,
+.root:not([data-preview]) .summary {
+  display: none;
 }
 
 /* While streaming, show the tail of the text and let it spill off the left. */

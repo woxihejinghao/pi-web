@@ -66,6 +66,7 @@ function BlockView({
   executions,
   results,
   streaming,
+  previewSettled,
   cwd,
   home,
 }: {
@@ -73,13 +74,21 @@ function BlockView({
   executions: Record<string, ToolExecution>;
   results: Record<string, ToolResultMessage>;
   streaming: boolean;
+  /** Whether a settled reasoning row may carry its one-line summary. */
+  previewSettled: boolean;
 } & PathContext) {
   if (block.type === "text") {
     const text = (block as TextBlock).text;
     return text.length > 0 ? <Markdown text={text} /> : null;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock text={(block as ThinkingBlockType).thinking} streaming={streaming} />;
+    return (
+      <ThinkingBlock
+        text={(block as ThinkingBlockType).thinking}
+        streaming={streaming}
+        preview={previewSettled}
+      />
+    );
   }
   if (block.type === "toolCall") {
     const call = block as ToolCallBlock;
@@ -147,6 +156,8 @@ function TurnBody({
   results,
   streaming,
   compact,
+  processDurationMs,
+  previewSettled,
   cwd,
   home,
 }: {
@@ -156,10 +167,15 @@ function TurnBody({
   streaming: boolean;
   /**
    * Collapse this turn's process steps into one group. Only ever true for a turn
-   * that already finished: folding rows while they are still arriving would hide
-   * the thing the user is waiting on.
+   * that already finished: the group's header reports a completion, so folding a
+   * turn that is still running (or one that failed) would put a summary on the
+   * one turn that has none to give.
    */
   compact: boolean;
+  /** Wall-clock span of this turn, for the group's header. */
+  processDurationMs: number | null;
+  /** Whether settled reasoning rows may carry their one-line summary. */
+  previewSettled: boolean;
 } & PathContext) {
   const renderStep = (step: TurnStep) => (
     <BlockView
@@ -168,6 +184,7 @@ function TurnBody({
       executions={executions}
       results={results}
       streaming={streaming && step.tail === true}
+      previewSettled={previewSettled}
       cwd={cwd}
       home={home}
     />
@@ -183,7 +200,7 @@ function TurnBody({
   return (
     <div className={styles.assistantTurn}>
       {process.length > 0 ? (
-        <TurnProcessGroup count={process.length}>
+        <TurnProcessGroup durationMs={processDurationMs}>
           {process.map((step) => renderStep(step))}
         </TurnProcessGroup>
       ) : null}
@@ -432,6 +449,10 @@ export function MessageList({
 } & PathContext) {
   const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The message column, watched so that a fold or an image load — anything that
+  // resizes the transcript without touching `view.messages` — still puts a
+  // following reader back on the floor.
+  const columnRef = useRef<HTMLDivElement>(null);
   // Follow new output only while the user is already at the bottom.
   const stickRef = useRef(true);
   /**
@@ -559,6 +580,50 @@ export function MessageList({
     // so the ask and the button cannot drift apart.
     applyPinned(distanceFromBottom(element) < STICK_THRESHOLD_PX);
   }, [view.messages, view.partial, applyPinned]);
+
+  /**
+   * The same correction, for every change that is not a message.
+   *
+   * The layout effect above is keyed on `view.messages` and `view.partial`,
+   * which is all a stream touches — but plenty of things resize the transcript
+   * without going near either: folding a finished turn's process group (that
+   * alone is hundreds of pixels), opening one tool row, a picture in a bubble
+   * finishing its load, the content font size changing in settings, the todo or
+   * question panel growing the composer stack under the scrollport, the window
+   * being dragged smaller. Each of them moves the bottom of the transcript away
+   * from a reader who was sitting on it, and nothing brings them back: the
+   * action row carrying the turn's cost and duration slides below the fold while
+   * `pinned` still says true, so the jump-to-bottom button stays hidden and the
+   * only way down is to scroll by hand. It reads as the row drifting out of the
+   * bottom of the window for no reason.
+   *
+   * dsh splits this exact responsibility the same way: one `ResizeObserver` over
+   * the message column, the scrollport and the composer, and a `resize` handler
+   * whose whole body is "if the reader is following the tail, follow it again"
+   * (`ChatViewport.attach` → `use-chat-scroll` → `ChatReading.onResize`).
+   *
+   * Both boxes are watched. The scrollport covers a composer stack that changed
+   * height; the column covers the transcript itself, since its own height is
+   * what a fold or an image load moves. A box change must not move a reader who
+   * is *not* following, so that branch only re-reads the distance — the same
+   * check the scroll handler makes, so the follow state and the button cannot
+   * disagree.
+   */
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stickRef.current) {
+        scroller.scrollTop = scroller.scrollHeight;
+        return;
+      }
+      applyPinned(distanceFromBottom(scroller) < STICK_THRESHOLD_PX);
+    });
+    observer.observe(scroller);
+    const column = columnRef.current;
+    if (column !== null) observer.observe(column);
+    return () => observer.disconnect();
+  }, [applyPinned]);
 
   /**
    * What actually ends a jump.
@@ -694,7 +759,7 @@ export function MessageList({
         onNavigate={navigateToTurn}
       />
 
-      <div className={styles.column}>
+      <div className={styles.column} ref={columnRef}>
         {showLoading ? <p className={styles.hint}>{t("message.loading")}</p> : null}
 
         {!view.loading && railItems.length === 0 && !hasPartial ? (
@@ -780,9 +845,17 @@ export function MessageList({
                   // Only the live turn can carry a running step; every step in
                   // it still has to ask (`step.tail`) before it renders as such.
                   streaming={isLiveTurn}
-                  // The live turn folds on the same setting as any other; its
-                  // streamed steps are kept out of the group by `step.live`.
-                  compact={compactTranscript}
+                  // A turn folds only once it has ended and only if it ended by
+                  // producing something: the group's header is a completion
+                  // report ("已完成，用时 2分33秒"), so folding a turn that is
+                  // still running would put that claim on the one turn that has
+                  // nothing to report yet — dsh refuses to fold a live, stopped,
+                  // or failed turn for the same reason.
+                  compact={compactTranscript && !isLiveTurn && failed === null}
+                  processDurationMs={turnMeta.get(group.turn)?.durationMs ?? null}
+                  // dsh's `settledReasoningPreview`: the compact display drops
+                  // the line beside "思考" and leaves the text one click away.
+                  previewSettled={!compactTranscript}
                   cwd={cwd}
                   home={home}
                 />
@@ -846,8 +919,13 @@ export function MessageList({
             results={results}
             streaming={view.isStreaming}
             // The live turn keeps its rows open regardless of the setting:
-            // folding them would hide exactly what the user is waiting on.
+            // folding them would hide exactly what the user is waiting on, and
+            // the group's header would have no completion to report.
             compact={compactTranscript && !view.isStreaming}
+            // Nothing to time: this path exists for a stream with no turn to
+            // attach to, so there is no start or end stamp anywhere.
+            processDurationMs={null}
+            previewSettled={!compactTranscript}
             cwd={cwd}
             home={home}
           />

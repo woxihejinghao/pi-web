@@ -214,11 +214,11 @@
 }
 
 /*
- * The answer that closes a compacted process window is the end of that window
- * rather than a new step, so dsh tightens the gap above it to 8px. The flag is
- * only rendered in compact mode (see TurnBody), so an ordinary answer keeps the
- * full 16px.
+ * The answer that closes a compacted process window deliberately has no rule
+ * here: it sits on the same 16px rhythm as every other row, which is dsh's own
+ * number for the pair. This used to tighten to 8px, copying a version of dsh
+ * that pulled the answer up under a collapsed group; the current one keeps the
+ * folded and the expanded transcript at the same density, so the
+ * `data-turn-process-answer` flag (see `TurnBody`) now carries semantics rather
+ * than spacing — do not give it a gap.
  */
-.assistantTurn > [data-turn-process-answer] {
-  --dsh-chat-flow-gap: 8px;
-}

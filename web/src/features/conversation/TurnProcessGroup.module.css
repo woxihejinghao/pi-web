@@ -1,44 +1,83 @@
 /*
- * The group row itself reuses DisclosureRow's chrome, so everything here is
- * either the summary decoration or the expanded body.
+ * Ported rule-for-rule from dsh's TurnProcessNodeView.module.css: the header is
+ * a full-width 33px button whose 8px of bottom padding sits inside the height,
+ * so the hairline lands on the same baseline whether the group is open or shut.
  */
+
 .root {
-  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-/* Same 2x2 dot every other collapsed row uses before its summary. */
-.sep {
-  background: var(--dsw-alias-label-caption);
-  border-radius: 1px;
-  flex: none;
-  width: 2px;
-  height: 2px;
-  margin: 0 8px;
+.header {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: calc(33px + var(--dsh-content-font-delta, 0px));
+  padding: 0 0 8px;
+  border: none;
+  /* The boundary between a turn's process and its answer. */
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size, 14px);
+  cursor: pointer;
+  text-align: left;
+  transition: color 100ms ease;
 }
 
-.count {
-  flex: auto;
+.header:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  color: inherit;
+  transition: transform 100ms ease;
+}
+
+.root[data-open] .chevron {
+  transform: rotate(180deg);
+}
+
+.label {
   min-width: 0;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-size: inherit;
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
-  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Digits only — the units stay in the row's own face, the way dsh draws them. */
+.number {
+  font-family: var(--ds-font-family-code);
+  font-variant-numeric: tabular-nums;
 }
 
 /*
- * Indented to the reasoning body's own indent, so expanding the group reads as
- * "here are the rows that were summarised" rather than as a separate list.
- *
- * The 16px between rows is dsh's chat flow gap (`--dsh-chat-flow-gap`): the
- * rows inside the window keep the spacing they have outside it, which is what
- * makes expanding feel like unfolding the transcript rather than switching to a
- * denser list.
+ * The rows inside the window keep the spacing they have outside it (16px, dsh's
+ * chat flow gap), which is what makes expanding feel like unfolding the
+ * transcript rather than switching to a denser list. No indent: the header is
+ * full-bleed with a hairline, so an indented body would line up under nothing.
  */
 .body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 6px 0 6px calc(22px + var(--dsh-content-font-delta, 0px));
+  margin-top: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header,
+  .chevron {
+    transition: none;
+  }
 }

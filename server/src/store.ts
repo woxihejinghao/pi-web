@@ -117,7 +117,10 @@ export function defaultSettings(): WebSettings {
     // before this setting existed; English is what other locales resolve to.
     language: "system",
     contentFontSize: FONT_SIZE_DEFAULT,
-    transcriptDisplay: "normal",
+    // Compact is dsh's own default, and a fresh reader has no reason to want a
+    // finished turn's every tool call spelled out. Only the *default* moves: a
+    // store that already names a mode keeps it.
+    transcriptDisplay: "compact",
     // Queueing is the safe default: steering interrupts an in-flight run, so it
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
