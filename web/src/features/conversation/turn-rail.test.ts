@@ -102,6 +102,42 @@ describe("groupTurns", () => {
     expect(turns.map((turn) => turn.prompt)).toEqual(["one", "two"]);
   });
 
+  it("keeps a queued prompt inside the turn that is still running", () => {
+    // A steer or follow-up the composer has shown but pi has not picked up yet:
+    // its turn has not begun, so the running turn is still the last one.
+    const messages = [user("first"), assistant("a"), user("queued")];
+    const turns = groupTurns(messages, 1);
+    expect(turns.map((turn) => turn.turn)).toEqual([1]);
+    expect(turns[0]!.messages).toHaveLength(3);
+    // The queued prompt is not the turn's prompt, and the answer is unchanged.
+    expect(turns[0]!.prompt).toBe("first");
+    expect(turns[0]!.response).toBe("a");
+  });
+
+  it("counts only the trailing prompts as queued", () => {
+    const withAnswer = groupTurns([user("first"), assistant("a"), user("queued")], 1);
+    expect(withAnswer).toHaveLength(1);
+
+    // Two queued prompts, and the first turn's prompt is not one of them.
+    const two = groupTurns([user("first"), assistant("a"), user("q1"), user("q2")], 2);
+    expect(two).toHaveLength(1);
+    expect(two[0]!.messages).toHaveLength(4);
+
+    // Only the last one is queued: the earlier one opened a turn.
+    const one = groupTurns([user("first"), assistant("a"), user("q1"), user("q2")], 1);
+    expect(one.map((turn) => turn.turn)).toEqual([1, 2]);
+    expect(one[1]!.prompt).toBe("q1");
+    expect(one[1]!.messages).toHaveLength(2);
+  });
+
+  it("opens a turn for a queued prompt when nothing else is open", () => {
+    // Nothing to fold it into, and dropping it would leave the rail short of a
+    // prompt the user can see in the transcript.
+    const turns = groupTurns([user("queued")], 1);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]!.prompt).toBe("queued");
+  });
+
   it("applies the preview budgets to both fields", () => {
     const turns = groupTurns([user("p".repeat(300)), assistant("r".repeat(300))]);
     expect(turns[0]!.prompt).toHaveLength(PROMPT_PREVIEW_LIMIT);

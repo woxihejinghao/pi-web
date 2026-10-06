@@ -228,6 +228,15 @@ export function ConversationPane() {
               // target the changes panel uses; the panel opens itself if it was
               // collapsed, so the click always lands somewhere visible.
               onOpenFile: (path: string) => rightbarActions.openPreviewTab(sessionPath, path),
+              // pi has no "try that turn again" RPC — its own retry loop is the
+              // only one it offers, and it runs inside a turn. Re-sending the
+              // prompt is the lever that exists, and it costs a second copy of
+              // the user's message because that is genuinely what is sent. A
+              // second `prompt` while pi is running is rejected outright, so a
+              // busy session takes the retry as a queued follow-up instead —
+              // the same choice the composer makes, minus the setting.
+              onRetry: (text: string, images: ImageBlock[]) =>
+                void conversation.send(text, conversation.isStreaming ? "followUp" : "prompt", images),
             })}
       />
       {/* Between transcript and composer, where dsh puts its plan strip: the

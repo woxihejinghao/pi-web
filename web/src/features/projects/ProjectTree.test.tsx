@@ -115,11 +115,9 @@ describe("ProjectTree workspace mark", () => {
 });
 
 /**
- * The provisional "新会话" row is pinned to the workspace that started it.
- *
- * Selecting a workspace deliberately does not close the conversation you were
- * reading, so a session opened elsewhere also fails `all.some(...)`: ownership
- * has to be named, not inferred from the path.
+ * The provisional "新会话" row is pinned to the workspace that started it, and
+ * survives the user looking elsewhere — a session whose first reply has not
+ * landed has no file yet, so this row is the only place it exists.
  */
 describe("ProjectTree new-session row", () => {
   const session = (path: string, title: string): SessionView => ({
@@ -138,7 +136,7 @@ describe("ProjectTree new-session row", () => {
   /** Render with the app store in a given shape, then put it back. */
   function renderWith(state: {
     selectedSessionPath?: string | null;
-    draftProjectId?: string | null;
+    unsavedSessions?: Record<string, string[]>;
     selectedProjectId?: string | null;
     sessions?: SessionView[];
   }): string {
@@ -148,7 +146,7 @@ describe("ProjectTree new-session row", () => {
       selectedProjectId: state.selectedProjectId ?? "p1",
       expandedProjects: { p1: true },
       selectedSessionPath: state.selectedSessionPath ?? null,
-      draftProjectId: state.draftProjectId ?? null,
+      unsavedSessions: state.unsavedSessions ?? {},
       sessions: { p1: state.sessions ?? [] },
     });
     try {
@@ -159,7 +157,10 @@ describe("ProjectTree new-session row", () => {
   }
 
   it("pins a draft under the workspace that opened it", () => {
-    const html = renderWith({ selectedSessionPath: "draft:abc", draftProjectId: "p1" });
+    const html = renderWith({
+      selectedSessionPath: "draft:abc",
+      unsavedSessions: { p1: ["draft:abc"] },
+    });
 
     expect(html).toContain(">新会话<");
     expect(html).toContain("准备中");
@@ -169,17 +170,38 @@ describe("ProjectTree new-session row", () => {
     // The real path has been swapped in but `sessions` has not refreshed yet.
     const html = renderWith({
       selectedSessionPath: "/sessions/p1/fresh.jsonl",
-      draftProjectId: "p1",
+      unsavedSessions: { p1: ["/sessions/p1/fresh.jsonl"] },
     });
 
     expect(html).toContain(">新会话<");
     expect(html).toContain("未保存");
   });
 
+  it("keeps a running session's row after the user opens another one", () => {
+    // The regression: a session whose first reply has not landed is only known
+    // to this browser, and keying the row off the selection dropped it here.
+    const html = renderWith({
+      selectedSessionPath: "/sessions/p1/other.jsonl",
+      unsavedSessions: { p1: ["/sessions/p1/running.jsonl"] },
+    });
+
+    expect(html).toContain(">新会话<");
+    expect(html).toContain("未保存");
+  });
+
+  it("keeps every unsaved session when another is started", () => {
+    const html = renderWith({
+      selectedSessionPath: "draft:second",
+      unsavedSessions: { p1: ["draft:second", "/sessions/p1/first.jsonl"] },
+    });
+
+    expect(html.match(/>新会话</g)).toHaveLength(2);
+  });
+
   it("does not claim a conversation opened in another workspace", () => {
     const html = renderWith({
       selectedSessionPath: "/sessions/p2/other.jsonl",
-      draftProjectId: "p2",
+      unsavedSessions: { p2: ["/sessions/p2/other.jsonl"] },
     });
 
     expect(html).not.toContain(">新会话<");
@@ -188,7 +210,7 @@ describe("ProjectTree new-session row", () => {
   it("leaves the row to the real session once it is in the list", () => {
     const html = renderWith({
       selectedSessionPath: "/sessions/p1/here.jsonl",
-      draftProjectId: "p1",
+      unsavedSessions: { p1: ["/sessions/p1/here.jsonl"] },
       sessions: [session("/sessions/p1/here.jsonl", "already here")],
     });
 
@@ -229,7 +251,7 @@ describe("ProjectTree session status mark", () => {
       selectedProjectId: "p1",
       expandedProjects: { p1: true },
       selectedSessionPath: null,
-      draftProjectId: null,
+      unsavedSessions: {},
       sessions: { p1: [session(PATH, "live run")] },
       sessionActivity: activity,
       pendingUiRequests: pending,

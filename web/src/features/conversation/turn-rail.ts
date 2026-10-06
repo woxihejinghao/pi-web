@@ -65,17 +65,29 @@ function assistantText(message: AssistantMessage): string {
  * what makes a rail mark mean "one thing the user asked" rather than "one
  * message".
  *
+ * `undelivered` is how many of the *trailing* user messages pi has not taken up
+ * yet: the steers and follow-ups the client is already showing for messages
+ * still sitting in pi's queue. They have not opened a turn — the agent is still
+ * working on the turn before them — so they stay inside it, and their own turn
+ * begins when pi picks them up. That is what keeps the turn in flight the *last*
+ * turn while a prompt is queued behind it (see `MessageList`, where the live
+ * turn's changed-files card hangs off exactly that).
+ *
  * Two cases pi can produce that dsh's model does not:
  * - A transcript that opens with assistant output (a resumed or forked session
  *   can start mid-turn). Those messages form turn 1 without a prompt, and the
  *   rail falls back to "第 1 轮" for the card title.
- * - Two user messages in a row (a queued message delivered before the model
- *   answered). The second one opens its own turn, which keeps the rail honest
- *   about how many prompts were actually sent.
+ * - Two user messages in a row (a queued message pi has already taken up but
+ *   not yet answered). The second one opens its own turn, which keeps the rail
+ *   honest about how many prompts were actually sent.
  */
-export function groupTurns(messages: readonly AgentMessage[]): RailTurn[] {
+export function groupTurns(messages: readonly AgentMessage[], undelivered = 0): RailTurn[] {
   const turns: RailTurn[] = [];
   let current: RailTurn | null = null;
+  // Counted up front so the queued prompts at the end can be told apart from the
+  // ones that opened a turn; everything before them is delivered.
+  let delivered =
+    messages.reduce((n, message) => (message.role === "user" ? n + 1 : n), 0) - undelivered;
 
   for (const message of messages) {
     if (message.role === "toolResult") {
@@ -84,6 +96,14 @@ export function groupTurns(messages: readonly AgentMessage[]): RailTurn[] {
       continue;
     }
     if (message.role === "user") {
+      delivered -= 1;
+      // Queued: pi has not started the turn this prompt will open, so it belongs
+      // to the turn the agent is still working on — unless nothing is open yet,
+      // in which case there is no turn to fold it into.
+      if (delivered < 0 && current !== null) {
+        current.messages.push(message);
+        continue;
+      }
       current = {
         turn: turns.length + 1,
         prompt: textFromContent((message as UserMessage).content),

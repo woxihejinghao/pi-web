@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { actions, sessionEvents, streamRestored } from "../../lib/app-state.ts";
+import { actions, appStore, sessionEvents, streamRestored } from "../../lib/app-state.ts";
+import { useStoreSelector } from "../../lib/store.ts";
 import { api } from "../../lib/api.ts";
 import type {
   AgentMessage,
@@ -50,12 +51,44 @@ export interface ConversationView {
   todos: TodoItem[];
   /** Assistant content being assembled right now, or null when idle. */
   partial: ContentBlock[] | null;
+  /**
+   * How many of `messages`' trailing user messages pi has not taken up yet —
+   * the steers and follow-ups still waiting in its queue.
+   *
+   * The composer appends a message the moment Enter is pressed, because the
+   * user has to see what they sent, but pi only *starts* the turn when it
+   * reaches the message: immediately for a prompt, after the current turn for a
+   * queued one. `MessageList` needs the difference, because a turn that has not
+   * begun cannot be over — a queued prompt counted as a turn of its own would
+   * make the running turn look finished and reveal its changed-files card
+   * while its files are still being written.
+   */
+  undeliveredPrompts: number;
   toolExecutions: Record<string, ToolExecution>;
+  /**
+   * Whether this session's agent loop is running right now.
+   *
+   * pi drives the window from `agent_start` to `agent_settled`. The flag comes
+   * from two places because either can be the one that knows: this hook's own
+   * stream (the session is open and its frames arrive here) and app state's
+   * per-session run mark (the run started while the user was reading something
+   * else, or before this hook mounted). Unioned, not replaced — see the return
+   * in `useConversation`.
+   */
   isStreaming: boolean;
   loading: boolean;
   error: string | null;
   /** An in-flight model retry, or null. */
   retry: RetryState | null;
+  /**
+   * How many automatic retries pi made before this turn's model request gave
+   * up, or 0 when it never retried (retries off in pi's settings) or when the
+   * count is simply not known — a transcript read from disk carries the failure
+   * but not the attempts that preceded it. Only ever a suffix on the failure
+   * row: the failure itself is derived from the transcript, so it survives a
+   * reload without this.
+   */
+  failedAttempts: number;
   /**
    * The figures under the composer: counts, tokens, and — while this browser
    * measured the stream itself — decode speed. See `stats-model.ts` for why the
@@ -86,16 +119,27 @@ const emptyView: ConversationView = {
   forkPoints: [],
   todos: [],
   partial: null,
+  undeliveredPrompts: 0,
   toolExecutions: {},
   isStreaming: false,
   loading: true,
   error: null,
   retry: null,
+  failedAttempts: 0,
   stats: sessionStats([], EMPTY_TIMING),
 };
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+/** How many user turns the list holds — see `deliveredUsersRef`. */
+function countUserMessages(messages: readonly AgentMessage[]): number {
+  let count = 0;
+  for (const message of messages) {
+    if (message.role === "user") count += 1;
+  }
+  return count;
 }
 
 /**
@@ -275,6 +319,20 @@ const STREAM_REPAINT_MS = 50;
 export function useConversation(sessionPath: string | null): ConversationApi {
   const [view, setView] = useState<ConversationView>(emptyView);
   /**
+   * The app-wide run mark for this session.
+   *
+   * A session keeps running while the user reads another one, and the frames
+   * that say so (`agent_start`/`agent_settled`) are delivered for every session
+   * — only the token deltas are filtered by subscription. Arming `isStreaming`
+   * from this mark, rather than only from this hook's own subscription, is what
+   * keeps the "Working..." label and the composer's Stop button from vanishing
+   * the moment the user switches away and back.
+   */
+  const running = useStoreSelector(
+    appStore,
+    (state) => sessionPath !== null && state.sessionActivity[sessionPath] === "ongoing",
+  );
+  /**
    * The path whose history `messages` currently reflects, or null while a load
    * is in flight.
    *
@@ -292,6 +350,17 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const [loadedPath, setLoadedPath] = useState<string | null>(null);
 
   const messagesRef = useRef<AgentMessage[]>([]);
+  /**
+   * How many of `messagesRef`'s user messages pi has taken up.
+   *
+   * A user message is in the transcript from the moment the composer sends it,
+   * but pi starts its turn only when it gets to the message — `message_start`
+   * for a user message is that moment, and for a queued prompt pi emits it as it
+   * takes the message out of the queue. Nothing about the text can be compared
+   * to place it instead: pi expands skill commands before it queues them, so the
+   * echo is not what was typed.
+   */
+  const deliveredUsersRef = useRef(0);
   const forkPointsRef = useRef<ForkPoint[]>([]);
   const slotRef = useRef<StreamSlot | null>(null);
   const toolsRef = useRef<Record<string, ToolExecution>>({});
@@ -299,6 +368,12 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const loadingRef = useRef(true);
   const errorRef = useRef<string | null>(null);
   const retryRef = useRef<RetryState | null>(null);
+  /**
+   * Retries pi announced for the turn in flight, so a failure that ends the
+   * turn can say how many attempts preceded it.
+   */
+  const retryAttemptRef = useRef(0);
+  const failedAttemptsRef = useRef(0);
   /** Wall-clock boundaries accumulated from the event stream; see `TimingState`. */
   const timingRef = useRef<TimingState>(emptyTiming());
   /** Guards the one-time "this session now exists on disk" sidebar refresh. */
@@ -337,11 +412,19 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       // bug than a redundant pass over a few hundred messages.
       todos: projectTodos(messagesRef.current),
       partial: slot ? [...slot.content] : null,
+      // Recomputed rather than counted as it changes: the refs are the state,
+      // and one pass over a few hundred messages is cheaper than a counter that
+      // can drift from the list it describes.
+      undeliveredPrompts: Math.max(
+        0,
+        countUserMessages(messagesRef.current) - deliveredUsersRef.current,
+      ),
       toolExecutions: { ...toolsRef.current },
       isStreaming: streamingRef.current,
       loading: loadingRef.current,
       error: errorRef.current,
       retry: retryRef.current,
+      failedAttempts: failedAttemptsRef.current,
       // Copied, not aliased: the ref keeps mutating as events arrive, and a view
       // holding the live object would compare equal to itself forever.
       stats: sessionStats(messagesRef.current, { ...timingRef.current.totals }),
@@ -386,23 +469,38 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       switch (event.type) {
         case "agent_start":
           streamingRef.current = true;
+          // A fresh run: whatever the previous turn ended with is history now.
+          retryAttemptRef.current = 0;
+          failedAttemptsRef.current = 0;
           break;
 
         // pi retries a failed model request on its own schedule. Without this
         // the turn looks frozen for the whole backoff — the reason the UI went
         // quiet is exactly what the user cannot see.
-        case "auto_retry_start":
+        case "auto_retry_start": {
+          retryAttemptRef.current = asNumber(event.attempt, 1);
+          // A retry is on its way, so this turn is not a failure yet: the row
+          // that says it is belongs to pi's *last* word, `auto_retry_end`.
+          failedAttemptsRef.current = 0;
           retryRef.current = {
-            attempt: asNumber(event.attempt, 1),
+            attempt: retryAttemptRef.current,
             maxAttempts: asNumber(event.maxAttempts, 1),
             delayMs: asNumber(event.delayMs, 0),
             errorMessage: asString(event.errorMessage),
             deadline: Date.now() + asNumber(event.delayMs, 0),
           };
           break;
+        }
 
         case "auto_retry_end":
           retryRef.current = null;
+          // pi's verdict on the turn: `success: false` means it stopped
+          // retrying and the transcript now holds a failed request, so the
+          // attempt count is the one thing the transcript cannot supply. A
+          // success clears the count and leaves no failure entry behind.
+          failedAttemptsRef.current =
+            event.success === false ? asNumber(event.attempt, retryAttemptRef.current) : 0;
+          retryAttemptRef.current = 0;
           break;
 
         case "message_start": {
@@ -411,6 +509,13 @@ export function useConversation(sessionPath: string | null): ConversationApi {
             slotRef.current = { content: [], rawArgs: {} };
             timingRef.current.stepStart = Date.now();
             timingRef.current.firstTokenAt = null;
+          } else if (message?.role === "user") {
+            // pi has taken this message up. Only ever one at a time, and never
+            // more than the transcript holds: a message sent from the terminal
+            // or another tab has no row here to confirm.
+            if (deliveredUsersRef.current < countUserMessages(messagesRef.current)) {
+              deliveredUsersRef.current += 1;
+            }
           }
           break;
         }
@@ -569,6 +674,9 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         // never shows them and they would dwarf the real conversation.
         const visible = messages.filter((message) => message.role !== "system");
         messagesRef.current = visible;
+        // Everything in the file is a message pi already took up, so the
+        // transcript starts with nothing queued behind it.
+        deliveredUsersRef.current = countUserMessages(visible);
         forkPointsRef.current = forkPoints;
         persistedNotifiedRef.current = visible.some((message) => message.role === "assistant");
         loadingRef.current = false;
@@ -587,6 +695,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
 
   useEffect(() => {
     messagesRef.current = [];
+    deliveredUsersRef.current = 0;
     slotRef.current = null;
     toolsRef.current = {};
     streamingRef.current = false;
@@ -594,8 +703,12 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     // its own clock rather than inheriting the previous one's speed.
     timingRef.current = emptyTiming();
     // A retry belongs to one turn; carrying it into another session would leave
-    // a countdown ticking for something that is no longer happening.
+    // a countdown ticking for something that is no longer happening — and the
+    // failed-attempt count belongs to that turn's transcript row, which only the
+    // session being switched away from can show.
     retryRef.current = null;
+    retryAttemptRef.current = 0;
+    failedAttemptsRef.current = 0;
     persistedNotifiedRef.current = false;
     // The history below belongs to the previous session until `load` says
     // otherwise; leaving this set would let a queued prompt skip the wait.
@@ -643,6 +756,13 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         { role: "user", content: userContent(message, images), timestamp: Date.now() },
       ];
       if (mode === "prompt") streamingRef.current = true;
+      // A prompt is sent as a prompt, so pi has taken it up the moment the call
+      // returns; counting it here keeps the turn before it from looking live for
+      // the round-trip a `message_start` would take to arrive (its changed-files
+      // card would drop out and come back). A steer or follow-up is the opposite
+      // — it waits in pi's queue, and that wait is what `undeliveredPrompts`
+      // reports until pi reaches it.
+      if (mode === "prompt") deliveredUsersRef.current += 1;
       publish();
 
       try {
@@ -653,6 +773,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       } catch (err) {
         // Roll the optimistic turn back so the failure is visible, not implied.
         messagesRef.current = messagesRef.current.slice(0, -1);
+        if (mode === "prompt") deliveredUsersRef.current -= 1;
         errorRef.current = (err as Error).message;
         streamingRef.current = false;
         publish();
@@ -677,6 +798,8 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     messagesRef.current = [];
     slotRef.current = null;
     retryRef.current = null;
+    retryAttemptRef.current = 0;
+    failedAttemptsRef.current = 0;
     await load(sessionPath);
   }, [sessionPath, load]);
 
@@ -703,7 +826,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     [sessionPath],
   );
 
-  return { ...view, send, abort, reload, fork };
+  // `view.isStreaming` is this hook's own view of the run; `running` is the
+  // app-wide one. Either being true means the turn is still moving, so the two
+  // are unioned: the ref knows about a run whose start frame this subscription
+  // missed, and the mark knows about one that started before this hook mounted.
+  return { ...view, isStreaming: view.isStreaming || running, send, abort, reload, fork };
 }
 
 export { textFromContent };

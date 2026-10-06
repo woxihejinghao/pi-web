@@ -54,6 +54,27 @@ export function isDraftSession(sessionPath: string | null): boolean {
   return typeof sessionPath === "string" && sessionPath.startsWith(DRAFT_PREFIX);
 }
 
+/**
+ * Swap one path for another (or drop it) in one workspace's unsaved list.
+ *
+ * Returns the same map when nothing matched, so a draft that was already
+ * retired does not invalidate every subscriber for no reason.
+ */
+function replacePath(
+  unsaved: Record<string, string[]>,
+  projectId: string,
+  from: string,
+  to: string | null,
+): Record<string, string[]> {
+  const paths = unsaved[projectId];
+  const index = paths?.indexOf(from) ?? -1;
+  if (paths === undefined || index < 0) return unsaved;
+  const next = [...paths];
+  if (to === null) next.splice(index, 1);
+  else next[index] = to;
+  return { ...unsaved, [projectId]: next };
+}
+
 /** A message typed while the session was still being created. */
 export interface PendingPrompt {
   sessionPath: string;
@@ -74,17 +95,21 @@ export interface AppState {
   sessions: Record<string, SessionView[]>;
   selectedSessionPath: string | null;
   /**
-   * The workspace whose new session `selectedSessionPath` may still be
-   * standing in for — a draft, or a real path the session list has not caught
-   * up with yet.
+   * Session paths this browser created that pi has not written to disk yet,
+   * keyed by the workspace that owns them and newest first.
    *
-   * Which workspace a session path belongs to cannot be inferred on the
-   * client: pi encodes the cwd into the session directory with a private
-   * scheme the server already has to mirror. Naming the workspace here is what
-   * lets a row render "新会话" for its own draft without claiming a session
-   * opened in some other workspace.
+   * pi only creates the JSONL once the first assistant reply lands, so a new
+   * session has a real path but no file for as long as its first turn runs.
+   * The session list is disk-derived and cannot show it, so without this record
+   * a running session would be visible only while it happens to be the open
+   * conversation — switching away or starting another one would drop its row
+   * out of the sidebar entirely.
+   *
+   * Which workspace a path belongs to cannot be inferred on the client: pi
+   * encodes the cwd into the session directory with a private scheme the server
+   * already has to mirror, so ownership is recorded here at creation time.
    */
-  draftProjectId: string | null;
+  unsavedSessions: Record<string, string[]>;
   /** Session files with a live pi process on the server. */
   activeSessions: string[];
   /**
@@ -169,7 +194,7 @@ const initialState: AppState = {
   selectedProjectId: null,
   sessions: {},
   selectedSessionPath: null,
-  draftProjectId: null,
+  unsavedSessions: {},
   activeSessions: [],
   sessionActivity: {},
   externalChanged: {},
@@ -729,10 +754,20 @@ export const actions = {
   async refreshSessions(projectId: string): Promise<void> {
     try {
       const sessions = await api.listSessions(projectId, true);
-      appStore.update((state) => ({
-        ...state,
-        sessions: { ...state.sessions, [projectId]: sessions },
-      }));
+      appStore.update((state) => {
+        const next = { ...state, sessions: { ...state.sessions, [projectId]: sessions } };
+        // A locally-created session whose file has landed is now a real row, so
+        // its provisional entry is retired here rather than rendered twice.
+        const unsaved = state.unsavedSessions[projectId];
+        if (unsaved === undefined) return next;
+        const onDisk = new Set(sessions.map((session) => session.path));
+        const remaining = unsaved.filter((path) => !onDisk.has(path));
+        if (remaining.length === unsaved.length) return next;
+        return {
+          ...next,
+          unsavedSessions: { ...state.unsavedSessions, [projectId]: remaining },
+        };
+      });
     } catch (err) {
       actions.setNotice((err as Error).message);
     }
@@ -853,7 +888,13 @@ export const actions = {
       ...state,
       selectedProjectId: projectId,
       selectedSessionPath: localId,
-      draftProjectId: projectId,
+      // Recorded under the workspace that started it: this is what keeps the row
+      // (and its still-running pi process) in the sidebar once the user looks
+      // somewhere else.
+      unsavedSessions: {
+        ...state.unsavedSessions,
+        [projectId]: [localId, ...(state.unsavedSessions[projectId] ?? [])],
+      },
       pendingPrompt: null,
       // Consumed here: the choice belongs to the session being created, not to
       // whatever the user does after it exists.
@@ -876,17 +917,23 @@ export const actions = {
         if (prompt.length > 0 || images.length > 0) {
           actions.queuePendingPrompt(created.sessionPath, prompt, "prompt", images);
         }
-        // Swap in the real path only if the user is still on this draft.
-        if (appStore.get().selectedSessionPath === localId) {
-          appStore.update((state) => ({ ...state, selectedSessionPath: created.sessionPath }));
-        }
+        // The draft id is replaced by the real path in place, wherever the user
+        // has navigated to by now — the row follows the session, not the view.
+        appStore.update((state) => ({
+          ...state,
+          selectedSessionPath:
+            state.selectedSessionPath === localId ? created.sessionPath : state.selectedSessionPath,
+          unsavedSessions: replacePath(state.unsavedSessions, projectId, localId, created.sessionPath),
+        }));
         return created.sessionPath;
       })
       .catch((err: unknown) => {
         actions.setNotice((err as Error).message);
-        if (appStore.get().selectedSessionPath === localId) {
-          appStore.update((state) => ({ ...state, selectedSessionPath: null }));
-        }
+        appStore.update((state) => ({
+          ...state,
+          selectedSessionPath: state.selectedSessionPath === localId ? null : state.selectedSessionPath,
+          unsavedSessions: replacePath(state.unsavedSessions, projectId, localId, null),
+        }));
         return null;
       });
   },
@@ -1024,6 +1071,27 @@ export const actions = {
     });
   },
 
+  /**
+   * Drop a locally-created session that will never reach disk.
+   *
+   * Its pi process being closed (idle sweep, capacity eviction, server
+   * shutdown) means the first assistant reply never arrived, so nothing will
+   * ever appear in the session list — leaving the row would point at a session
+   * that cannot be opened.
+   */
+  forgetUnsavedSession(sessionPath: string): void {
+    appStore.update((state) => {
+      const unsaved = { ...state.unsavedSessions };
+      let changed = false;
+      for (const [projectId, paths] of Object.entries(unsaved)) {
+        if (!paths.includes(sessionPath)) continue;
+        changed = true;
+        unsaved[projectId] = paths.filter((path) => path !== sessionPath);
+      }
+      return changed ? { ...state, unsavedSessions: unsaved } : state;
+    });
+  },
+
   /** Show the new-session hero: no conversation is selected. */
   enterNewSession(): void {
     appStore.update((state) => ({
@@ -1079,6 +1147,32 @@ export const actions = {
 
   setActiveSessions(activeSessions: string[]): void {
     appStore.update((state) => ({ ...state, activeSessions }));
+  },
+
+  /**
+   * Adopt the server's live-process list from a fresh `hello`.
+   *
+   * `hello` is the only frame that carries the whole handle list, and it
+   * arrives on every (re)connect. A session that is running necessarily holds a
+   * handle, so an "ongoing" mark with no handle lost its process while the
+   * stream was down — a server restart, most likely. Retired here, because
+   * otherwise the mark would keep the "Working..." label and the composer's
+   * Stop button up for a run that no longer exists, and no `session_closed` is
+   * coming to clear it. Distinct from `setActiveSessions`, which the
+   * `session_closed` handler calls with a list it has only *removed* from and
+   * which therefore cannot be treated as complete.
+   */
+  reconcileActiveSessions(activeSessions: string[]): void {
+    appStore.update((state) => {
+      const live = new Set(activeSessions);
+      const stale = Object.entries(state.sessionActivity).filter(
+        ([path, mark]) => mark === "ongoing" && !live.has(path),
+      );
+      if (stale.length === 0) return { ...state, activeSessions };
+      const sessionActivity = { ...state.sessionActivity };
+      for (const [path] of stale) delete sessionActivity[path];
+      return { ...state, activeSessions, sessionActivity };
+    });
   },
 
   enqueueUiRequest(pending: PendingUiRequest): void {

@@ -252,23 +252,18 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   const shown = matched.slice(0, limit);
   const remaining = matched.length - shown.length;
 
-  // A draft, or a real session whose file has not been written yet, is not in
-  // `all` — it still needs a row, pinned to the top like dsh's "新会话".
-  //
-  // `draftProjectId` is the ownership check: selecting a workspace does not
-  // close the conversation you were reading, so a session opened elsewhere
-  // also fails `all.some(...)` here. Without it, expanding any workspace while
-  // one of its neighbours holds the selection pinned a phantom "新会话" under
-  // it until a real session in that workspace was clicked.
+  // Sessions this browser created that pi has not written to disk yet are not
+  // in `all`, but they still need a row, pinned to the top like dsh's
+  // "新会话". Ownership comes from `unsavedSessions`, recorded when the session
+  // was started: a session opened elsewhere is not in this workspace's list and
+  // must not be claimed here.
   const selected = state.selectedSessionPath;
   /** True when this row's session is the one an extension is blocked on. */
   const pendingFor = (path: string | null): boolean =>
     path !== null && state.pendingUiRequests.some((item) => item.sessionPath === path);
-  const provisional =
-    selected !== null &&
-    project.id === state.selectedProjectId &&
-    state.draftProjectId === project.id &&
-    (isDraftSession(selected) || !all.some((session) => session.path === selected));
+  const unsaved = (state.unsavedSessions[project.id] ?? []).filter(
+    (path) => !all.some((session) => session.path === path),
+  );
 
   if (searching && matched.length === 0 && !project.title.toLowerCase().includes(query)) {
     return null;
@@ -391,18 +386,19 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
 
       {expanded ? (
         <>
-          {provisional && selected ? (
+          {unsaved.map((path) => (
             <SessionRow
-              sessionPath={selected}
+              key={path}
+              sessionPath={path}
               title={t("sidebar.newSession")}
-              time={isDraftSession(selected) ? t("session.preparing") : t("session.unsaved")}
-              active
+              time={isDraftSession(path) ? t("session.preparing") : t("session.unsaved")}
+              active={path === selected}
               external={false}
-              status={sessionStatus(state.sessionActivity[selected], pendingFor(selected))}
+              status={sessionStatus(state.sessionActivity[path], pendingFor(path))}
               indent={sessionIndent}
               canDelete={false}
             />
-          ) : null}
+          ))}
 
           {shown.map((session) => (
             <SessionRow
@@ -431,7 +427,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
             </button>
           ) : null}
 
-          {!provisional && shown.length === 0 && !searching ? (
+          {unsaved.length === 0 && shown.length === 0 && !searching ? (
             <p className={styles.emptyList} style={{ marginLeft: sessionIndent }}>{t("session.empty")}</p>
           ) : null}
         </>

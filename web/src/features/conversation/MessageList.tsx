@@ -23,6 +23,7 @@ import { TurnProcessGroup } from "./TurnProcessGroup.tsx";
 import { ChangedFilesCard } from "./ChangedFilesCard.tsx";
 import { turnFiles, type TurnFile } from "./turn-files.ts";
 import { RetryNotice } from "./RetryNotice.tsx";
+import { TurnFailure } from "./TurnFailure.tsx";
 import { TurnStatus } from "./TurnStatus.tsx";
 import { TurnNavigator } from "./TurnNavigator.tsx";
 import { splitForCompact } from "./row-model.ts";
@@ -217,6 +218,41 @@ function assistantTextOf(messages: AgentMessage[]): string {
 }
 
 /**
+ * The failed model request that ended a turn, if that is how it ended.
+ *
+ * Only the turn's *last* assistant message counts. pi keeps a failed message in
+ * the session file even when the retry that followed it recovered the turn
+ * ("Remove error message from agent state (keep in session for history)"), so
+ * the presence of an errored message says an attempt failed, not that the turn
+ * did — and a transcript read from disk cannot tell the two apart any other
+ * way. `stopReason` is the whole test; the reason text is what pi put on the
+ * message.
+ */
+function failedAnswerOf(messages: readonly AgentMessage[]): AssistantMessage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message === undefined || message.role !== "assistant") continue;
+    const assistant = message as AssistantMessage;
+    return assistant.stopReason === "error" ? assistant : null;
+  }
+  return null;
+}
+
+/**
+ * What re-sending a failed turn actually sends: the prompt that opened it, with
+ * the pictures it carried. Null when the turn has no prompt to re-send — pi can
+ * fail a run that a queued message or a fork started, and a turn with no user
+ * message has nothing to repeat.
+ */
+export function retryPromptOf(
+  messages: readonly AgentMessage[],
+): { text: string; images: ImageBlock[] } | null {
+  const prompt = messages.find((message): message is UserMessage => message.role === "user");
+  if (prompt === undefined) return null;
+  return { text: textFromContent(prompt.content), images: imageBlocksOf(prompt.content) };
+}
+
+/**
  * One user turn: its pictures first, then its text.
  *
  * The content arrives exactly as pi stored it — a plain string for an ordinary
@@ -376,6 +412,7 @@ export function MessageList({
   compactTranscript = false,
   onFork,
   onOpenFile,
+  onRetry,
 }: {
   view: ConversationView;
   /** Collapse finished turns' process rows into one group (see settings). */
@@ -387,6 +424,11 @@ export function MessageList({
    * changed-files card lists its rows without making them clickable.
    */
   onOpenFile?: (path: string) => void;
+  /**
+   * Send a failed turn's prompt again, with the pictures it carried. Absent
+   * means the failure row reports without offering the action.
+   */
+  onRetry?: (text: string, images: ImageBlock[]) => void;
 } & PathContext) {
   const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -416,7 +458,13 @@ export function MessageList({
   const [bandHeight, setBandHeight] = useState<number | null>(null);
   const frameRef = useRef<number | null>(null);
 
-  const railItems = useMemo(() => groupTurns(view.messages), [view.messages]);
+  const railItems = useMemo(
+    // A steer or follow-up the composer has shown but pi has not picked up yet
+    // does not open a turn, so the turn being produced stays the last one — and
+    // stays `liveTurn` below while its own files are still being written.
+    () => groupTurns(view.messages, view.undeliveredPrompts),
+    [view.messages, view.undeliveredPrompts],
+  );
   /**
    * Each turn's written files, keyed by turn number.
    *
@@ -619,6 +667,10 @@ export function MessageList({
    * card is held back: a card describes a whole turn, and dsh only draws it once
    * the turn is over — landing it mid-turn would grow the row count under the
    * reader with every round-trip that writes another file.
+   *
+   * A prompt pi has queued behind this turn is already in the transcript but
+   * does not start a turn of its own yet (see `groupTurns`), which is what keeps
+   * this pointing at the turn that is actually running.
    */
   const liveTurn = view.isStreaming ? lastTurn : null;
   /**
@@ -688,6 +740,11 @@ export function MessageList({
             });
           }
 
+          // See `failedAnswerOf`: a live turn's errored message may still be
+          // recovered by the retry pi is running.
+          const failed = isLiveTurn ? null : failedAnswerOf(group.messages);
+          const retryPrompt = failed === null ? null : retryPromptOf(group.messages);
+
           return (
             <div key={group.turn} className={styles.turn} data-turn={group.turn}>
               {group.messages.map((message, index) => {
@@ -698,6 +755,10 @@ export function MessageList({
                 const content = (message as UserMessage).content;
                 const text = textFromContent(content);
                 const meta = turnMeta.get(group.turn);
+                // The turn's fork target belongs to the prompt that opened it,
+                // and only that one is in pi's file: a queued prompt waiting
+                // further down the group has no entry to branch from yet.
+                const forkEntryId = index === 0 ? (meta?.forkEntryId ?? null) : null;
                 return (
                   <div key={key}>
                     <UserTurn content={content} />
@@ -705,7 +766,7 @@ export function MessageList({
                       align="end"
                       text={displayUserText(text)}
                       timestamp={timestampOf(message)}
-                      forkEntryId={meta?.forkEntryId ?? null}
+                      forkEntryId={forkEntryId}
                       {...(onFork === undefined ? {} : { onFork })}
                     />
                   </div>
@@ -726,6 +787,23 @@ export function MessageList({
                   home={home}
                 />
               ) : null}
+              {/* A failed request, where the answer would have been. Held back
+                  while the turn is live: pi keeps the errored message in the
+                  file during a retry, so the row would claim the turn failed
+                  while `RetryNotice` above is still saying pi is trying again. */}
+              {failed === null ? null : (
+                <TurnFailure
+                  message={failed.errorMessage ?? ""}
+                  attempts={group.turn === lastTurn ? view.failedAttempts : 0}
+                  {...(onRetry === undefined || retryPrompt === null
+                    ? {}
+                    : {
+                        onRetry: () => {
+                          onRetry(retryPrompt.text, retryPrompt.images);
+                        },
+                      })}
+                />
+              )}
               {/* The turn's own edits, between the answer and the action row —
                   dsh's turn tail, where the card belongs to the turn that
                   caused it rather than to the transcript as a whole, and like
@@ -781,8 +859,10 @@ export function MessageList({
          * drives from `agent_start` to `agent_settled`) is exactly the right
          * window. Hiding it as soon as the first token lands would leave the
          * long tool-running stretches with no sign of life.
+         * Not while a retry is up, though: a retry is a deliberate pause, and
+         * the row below says so in place of this one.
          */}
-        {view.isStreaming ? <TurnStatus /> : null}
+        {view.isStreaming && view.retry === null ? <TurnStatus /> : null}
 
         {/* A retry is a deliberate pause, so it replaces the status line rather
             than stacking under it. */}

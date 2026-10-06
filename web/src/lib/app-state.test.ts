@@ -50,6 +50,22 @@ function deferredCreate() {
 
 const REAL_PATH = "/home/me/.pi/agent/sessions/proj-abc/one.jsonl";
 
+/** A session as the server would report it, i.e. one that is already on disk. */
+function diskSession(path: string, title = "one"): SessionView {
+  return {
+    path,
+    id: path,
+    cwd: "/home/me/proj",
+    title,
+    titleSource: "session",
+    preview: "",
+    created: "2026-01-01T00:00:00.000Z",
+    modified: "2026-01-01T00:00:00.000Z",
+    messageCount: 1,
+    hidden: false,
+  };
+}
+
 /**
  * A stand-in for the browser API, capturing every construction. Only the parts
  * `notifications.ts` touches are here: the permission, the constructor, and the
@@ -111,22 +127,78 @@ describe("draft sessions", () => {
     expect(isDraftSession(appStore.get().selectedSessionPath)).toBe(false);
   });
 
-  it("remembers which workspace owns the draft", async () => {
+  it("remembers which workspace owns the draft until its file lands", async () => {
     const create = deferredCreate();
     actions.startDraftSession("project-1");
 
-    expect(appStore.get().draftProjectId).toBe("project-1");
+    const draft = appStore.get().selectedSessionPath!;
+    expect(isDraftSession(draft)).toBe(true);
+    expect(appStore.get().unsavedSessions).toEqual({ "project-1": [draft] });
 
     create.resolve({ sessionPath: REAL_PATH, sessionId: "s1", projectPath: "/home/me/proj", prewarmed: false });
 
     await vi.waitFor(() => {
       expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
     });
-    // Still project-1 after the swap: the real path stays provisional until
-    // the session list catches up with it, and `selectProject` does not clear
-    // the selection, so this is what keeps a neighbour's workspace from
-    // claiming the row.
-    expect(appStore.get().draftProjectId).toBe("project-1");
+    // The draft id is swapped for the real path in place: the session stays
+    // tracked under project-1 until the disk list includes it, which is what
+    // keeps its row in the sidebar when the user looks elsewhere.
+    expect(appStore.get().unsavedSessions).toEqual({ "project-1": [REAL_PATH] });
+  });
+
+  it("keeps a running session tracked after the user moves on", async () => {
+    const create = deferredCreate();
+    actions.startDraftSession("project-1");
+
+    // The user navigates to another conversation while the spawn is in flight.
+    actions.selectSession("/home/me/.pi/agent/sessions/proj-abc/other.jsonl");
+    create.resolve({ sessionPath: REAL_PATH, sessionId: "s1", projectPath: "/home/me/proj", prewarmed: false });
+
+    await vi.waitFor(() => {
+      expect(appStore.get().unsavedSessions).toEqual({ "project-1": [REAL_PATH] });
+    });
+    expect(appStore.get().selectedSessionPath).toBe(
+      "/home/me/.pi/agent/sessions/proj-abc/other.jsonl",
+    );
+  });
+
+  it("tracks each session started in a workspace separately", () => {
+    mocked.createSession.mockResolvedValue({
+      sessionPath: REAL_PATH,
+      sessionId: "s1",
+      projectPath: "/home/me/proj",
+      prewarmed: false,
+    });
+    actions.startDraftSession("project-1");
+    const first = appStore.get().selectedSessionPath!;
+    actions.startDraftSession("project-1");
+
+    expect(appStore.get().unsavedSessions["project-1"]).toHaveLength(2);
+    expect(appStore.get().unsavedSessions["project-1"]).toContain(first);
+  });
+
+  it("stops tracking a session once the disk list includes it", async () => {
+    const create = deferredCreate();
+    actions.startDraftSession("project-1");
+    create.resolve({ sessionPath: REAL_PATH, sessionId: "s1", projectPath: "/home/me/proj", prewarmed: false });
+    await vi.waitFor(() => {
+      expect(appStore.get().unsavedSessions).toEqual({ "project-1": [REAL_PATH] });
+    });
+
+    mocked.listSessions.mockResolvedValue([diskSession(REAL_PATH)]);
+    await actions.refreshSessions("project-1");
+
+    expect(appStore.get().unsavedSessions).toEqual({ "project-1": [] });
+  });
+
+  it("forgets a session whose process closed without a file", () => {
+    deferredCreate();
+    actions.startDraftSession("project-1");
+    const draft = appStore.get().selectedSessionPath!;
+
+    actions.forgetUnsavedSession(draft);
+
+    expect(appStore.get().unsavedSessions["project-1"]).toEqual([]);
   });
 
   it("does not steal selection back if the user moved on", async () => {
@@ -152,6 +224,8 @@ describe("draft sessions", () => {
     await vi.waitFor(() => {
       expect(appStore.get().selectedSessionPath).toBeNull();
     });
+    // No process, no file, nothing to open: the row goes with the failure.
+    expect(appStore.get().unsavedSessions["project-1"]).toEqual([]);
     expect(appStore.get().notice).toBe("pi rpc failed: boom");
   });
 
@@ -470,6 +544,35 @@ describe("session activity marks", () => {
     actions.emitSessionEvent(PATH, { type: "message_update", delta: "x" });
 
     expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
+  });
+
+  it("retires a running mark whose process a fresh hello no longer lists", () => {
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+
+    // The stream was down when the process died (a server restart), so no
+    // `session_closed` arrives; the reconnect's handle list is the news.
+    actions.reconcileActiveSessions([]);
+
+    expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
+  });
+
+  it("keeps a running mark while its process is still live", () => {
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
+
+    actions.reconcileActiveSessions([PATH]);
+
+    expect(appStore.get().sessionActivity[PATH]).toBe("ongoing");
+    expect(appStore.get().activeSessions).toEqual([PATH]);
+  });
+
+  it("leaves a completion reminder alone when its process is gone", () => {
+    // "done" is a reminder the user clears by opening the session, not a claim
+    // about a live process, so the handle list does not speak to it.
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    actions.reconcileActiveSessions([]);
+
+    expect(appStore.get().sessionActivity[PATH]).toBe("done");
   });
 });
 

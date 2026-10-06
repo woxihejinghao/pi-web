@@ -78,7 +78,9 @@ export function connectEvents(): () => void {
   source.addEventListener("hello", (raw) => {
     const data = parse<{ connectionId?: string; activeSessions: string[] }>(raw);
     if (!data) return;
-    actions.setActiveSessions(data.activeSessions);
+    // A reconnect may find processes that died while the stream was down; the
+    // run marks they left behind are retired against this fresh list.
+    actions.reconcileActiveSessions(data.activeSessions);
     connectionId = typeof data.connectionId === "string" ? data.connectionId : null;
     // A reconnect learns a fresh id, so the current session has to be declared
     // again for the new stream.
@@ -122,6 +124,9 @@ export function connectEvents(): () => void {
     // A process torn down mid-run never settles, so its running mark would
     // animate forever. The session going away clears it.
     actions.clearSessionActivity(data.sessionPath);
+    // A session that never got a first reply has no file, so it is gone for
+    // good; its provisional row must go with it.
+    actions.forgetUnsavedSession(data.sessionPath);
   });
 
   source.addEventListener("session_external_changed", (raw) => {

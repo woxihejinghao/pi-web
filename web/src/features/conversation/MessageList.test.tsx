@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentMessage, AssistantMessage, ContentBlock } from "../../lib/types.ts";
-import { MessageList } from "./MessageList.tsx";
+import type { AgentMessage, AssistantMessage, ContentBlock, ImageBlock } from "../../lib/types.ts";
+import { MessageList, retryPromptOf } from "./MessageList.tsx";
 import { EMPTY_TIMING, sessionStats } from "./stats-model.ts";
 import type { ConversationView } from "./useConversation.ts";
 
@@ -19,11 +19,13 @@ function view(messages: AgentMessage[], patch: Partial<ConversationView> = {}): 
     forkPoints: [],
     todos: [],
     partial: null,
+    undeliveredPrompts: 0,
     toolExecutions: {},
     isStreaming: false,
     loading: false,
     error: null,
     retry: null,
+    failedAttempts: 0,
     stats: sessionStats(messages, EMPTY_TIMING),
     ...patch,
   };
@@ -35,6 +37,11 @@ function asked(text: string): AgentMessage {
 
 function answered(blocks: ContentBlock[]): AssistantMessage {
   return { role: "assistant", content: blocks, timestamp: 1 };
+}
+
+/** The message pi persists when a model request fails outright. */
+function failed(errorMessage?: string): AssistantMessage {
+  return { role: "assistant", content: [], timestamp: 1, stopReason: "error", errorMessage };
 }
 
 const text = (value: string): ContentBlock => ({ type: "text", text: value });
@@ -157,6 +164,52 @@ describe("MessageList changed files", () => {
     expect(html).toContain("已编辑 1 个文件");
     expect(html).toContain("在右侧栏预览 a.ts");
     expect(html).not.toContain("在右侧栏预览 b.ts");
+  });
+
+  it("holds the running turn's card while a prompt is queued behind it", () => {
+    // Pressing Enter during a turn shows the follow-up straight away, and the
+    // running turn must not look finished because of it: pi has not started the
+    // next turn, so the card for this one is still describing work in progress.
+    const messages = [asked("第一个"), answered([text("好了"), wrote(`${CWD}/a.ts`)]), asked("第二个")];
+    const drawn = (patch: Partial<ConversationView>): string =>
+      renderToStaticMarkup(
+        <MessageList
+          view={view(messages, { isStreaming: true, ...patch })}
+          cwd={CWD}
+          home="/Users/dev"
+          onOpenFile={noop}
+        />,
+      );
+
+    // The queued prompt opens no turn of its own, so turn 1 is still the live
+    // one and its card waits for it — this is the bug being fixed.
+    expect(drawn({ undeliveredPrompts: 1 })).not.toContain("data-turn-files");
+
+    // Once pi takes the prompt up, that turn is the live one and turn 1's card
+    // lands, files and all. (Same transcript, one turn later.)
+    const delivered = drawn({ undeliveredPrompts: 0 });
+    expect(delivered).toContain("已编辑 1 个文件");
+    expect(delivered).toContain("在右侧栏预览 a.ts");
+  });
+
+  it("shows a queued prompt inside the running turn, not as a turn of its own", () => {
+    // The bubble is what the user is waiting on, so it is drawn from the first
+    // frame; it just does not get to be a turn until pi starts one.
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view(
+          [asked("第一个"), answered([text("好了"), wrote(`${CWD}/a.ts`)]), asked("第二个")],
+          { isStreaming: true, undeliveredPrompts: 1 },
+        )}
+        cwd={CWD}
+        home="/Users/dev"
+        onOpenFile={noop}
+      />,
+    );
+
+    expect(html).toContain("第二个");
+    expect(html).toContain('data-turn="1"');
+    expect(html).not.toContain('data-turn="2"');
   });
 });
 
@@ -309,5 +362,134 @@ describe("MessageList skill chip", () => {
     );
 
     expect(html).not.toContain("skillChip");
+  });
+});
+
+/**
+ * A failed model request has to be visible somewhere, and the row that reports
+ * it is read from the transcript rather than from the stream: pi persists the
+ * errored assistant message, so the row survives a reload, a session switch and
+ * a fresh page. What only the stream can add is the retry count — a session file
+ * records that the request failed, never how many times pi tried first.
+ */
+describe("MessageList model failure", () => {
+  const retry = {
+    attempt: 1,
+    maxAttempts: 3,
+    delayMs: 1000,
+    errorMessage: "overloaded",
+    deadline: Date.now() + 1000,
+  };
+
+  it("reports the failure where the answer would have been", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("改一下"), failed("401 invalid api key")])}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(turnMarkup(html, 1)).toContain("模型请求失败");
+    expect(html).toContain("401 invalid api key");
+  });
+
+  it("says how many retries preceded it", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("改一下"), failed("overloaded")], { failedAttempts: 3 })}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).toContain("已重试 3 次");
+  });
+
+  it("hides a failure the retry loop recovered from", () => {
+    // pi drops the errored message from the agent's state but keeps it in the
+    // session file, so an errored entry on its own is not a failed turn — only
+    // the turn's *last* answer being errored is.
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("改一下"), failed("overloaded"), answered([text("改好了")])])}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).not.toContain("模型请求失败");
+    expect(html).toContain("改好了");
+  });
+
+  it("does not call a turn failed before it has ended", () => {
+    // Mid-retry the transcript already holds the errored message, so the row
+    // has to wait for the turn: otherwise it would contradict the retry notice,
+    // which is still saying pi is trying again.
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("改一下"), failed("overloaded")], { isStreaming: true, retry })}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).not.toContain("模型请求失败");
+    expect(html).toContain("等待重试模型请求");
+  });
+
+  it("offers the prompt again", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("改一下"), failed("overloaded")])}
+        cwd={CWD}
+        home="/Users/dev"
+        onRetry={noop}
+      />,
+    );
+
+    expect(html).toContain(">重试</button>");
+  });
+
+  it("reports without an action when there is nobody to send it to", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("改一下"), failed("overloaded")])}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).toContain("模型请求失败");
+    expect(html).not.toContain(">重试</button>");
+  });
+
+  it("still reports a failure pi gave no reason for", () => {
+    // pi stamps `errorMessage` nearly everywhere it stamps `stopReason:
+    // "error"`, but the summarizer path does not — and a disclosure that
+    // unfolds onto nothing is worse than the bare line.
+    const html = renderToStaticMarkup(
+      <MessageList view={view([asked("改一下"), failed()])} cwd={CWD} home="/Users/dev" />,
+    );
+
+    expect(html).toContain("模型请求失败");
+    expect(html).not.toContain("失败原因");
+  });
+});
+
+describe("retryPromptOf", () => {
+  const image: ImageBlock = { type: "image", data: "AAAA", mimeType: "image/png" };
+
+  it("re-sends the turn's own prompt and pictures", () => {
+    const payload = retryPromptOf([
+      { role: "user", content: [text("看这个"), image], timestamp: 0 },
+      failed("overloaded"),
+    ]);
+
+    expect(payload).toEqual({ text: "看这个", images: [image] });
+  });
+
+  it("has nothing to re-send for a turn with no prompt", () => {
+    expect(retryPromptOf([failed("overloaded")])).toBeNull();
   });
 });

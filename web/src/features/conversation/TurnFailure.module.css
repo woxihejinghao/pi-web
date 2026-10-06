@@ -1,0 +1,104 @@
+/*
+ * Same disclosure shape as RetryNotice (both ported from dsh's
+ * MessageItem.module.css), recoloured for a failure: the error tone on the
+ * summary, and no shimmer, because nothing is happening any more.
+ */
+
+.failureRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.failureDisclosure {
+  min-width: 0;
+}
+
+.failureSummary {
+  width: fit-content;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  list-style: none;
+  display: inline-flex;
+}
+
+.failureSummary::-webkit-details-marker {
+  display: none;
+}
+
+/* The disclosure caret is drawn, not glyph, so it lines up with the text. */
+.failureSummary::after {
+  content: "";
+  opacity: 0.8;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+  width: 6px;
+  height: 6px;
+  transition: transform 0.12s;
+  transform: rotate(-45deg);
+}
+
+.failureSummary:hover {
+  filter: brightness(1.15);
+}
+
+.failureSummary:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-button-info-fill);
+  outline-offset: 2px;
+}
+
+.failureText {
+  color: inherit;
+}
+
+/*
+ * The reason is quoted in the ordinary label colour rather than the error one:
+ * it is provider prose, not a second alarm, and it stays legible when it is
+ * long.
+ */
+.failureDetails {
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  gap: 2px;
+  margin-top: 3px;
+  padding-left: 14px;
+  display: grid;
+}
+
+.failureDisclosure[open] .failureSummary::after {
+  transform: rotate(45deg);
+}
+
+.failureDetailLabel {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The pill the settings pages use for the same gesture, sized to the row. */
+.retry {
+  flex: none;
+  box-sizing: border-box;
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 13px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
