@@ -48,7 +48,18 @@ function nodeTarget() {
 
 const target = nodeTarget();
 const archiveName = `node-${NODE_VERSION}-${target}.${process.platform === "win32" ? "zip" : "tar.gz"}`;
-const member = `node-${NODE_VERSION}-${target}/bin/${process.platform === "win32" ? "node.exe" : "node"}`;
+/**
+ * 发行包**内部**的布局两边不一样：类 Unix 的 tar.gz 把可执行文件放在 `bin/` 下，Windows
+ * 的 zip 则把 `node.exe` 直接放在解压出来的目录根上（根本没有 `bin/` 这一层）。
+ *
+ * 而**安装包里的落点**两边是一致的（`resources/runtime/node/bin/node[.exe]`，见
+ * desktop/src/main.cts 的 appPaths）——那个 `bin/` 是本脚本自己摆的，不是从包里搬的。
+ * 两者别混：这里写错，Windows 上 tar 会以「Not found in archive」+ 退出码 1 直接失败。
+ */
+const member =
+  process.platform === "win32"
+    ? `node-${NODE_VERSION}-${target}/node.exe`
+    : `node-${NODE_VERSION}-${target}/bin/node`;
 const licenseMember = `node-${NODE_VERSION}-${target}/LICENSE`;
 const nodeBin = join(runtimeDir, "bin", process.platform === "win32" ? "node.exe" : "node");
 const licenseFile = join(runtimeDir, "LICENSE");
@@ -103,7 +114,7 @@ const staging = join(cacheDir, `staging-${target}`);
 await rm(staging, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
 const untar = spawnSync("tar", ["-xf", archivePath, "-C", staging, member, licenseMember], { stdio: "inherit" });
-if (untar.status !== 0) fail(`tar 解压失败（退出码 ${untar.status}）：${archiveName}`);
+if (untar.status !== 0) fail(`tar 解压失败（退出码 ${untar.status}）：${archiveName} 里没有 ${member}`);
 
 const extracted = join(staging, ...member.split("/"));
 const extractedLicense = join(staging, ...licenseMember.split("/"));

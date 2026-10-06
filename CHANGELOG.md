@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 修复
+
+- **Windows 桌面包一直打不出来**：Node 官方发行包的**内部布局两个平台不一样**——类 Unix 的 tar.gz 把可执行文件放在 `bin/` 下，Windows 的 zip 则把 `node.exe` 直接放在解压出来的目录根上（压根没有 `bin/` 这一层）。`desktop/scripts/prepare-runtime.mjs` 用同一种布局去取两个平台的文件，于是 Windows 上 `tar` 报「Not found in archive」并以退出码 1 失败。0.6.1 那次跑批里 mac arm64 / mac x64 / linux 三个平台都已正常打包，只有 windows-x64 挂在「打包」这一步——就是这个原因。安装包里 `resources/runtime/node/bin/node.exe` 的落点没有变：那个 `bin/` 本来就是脚本自己摆的，不是从发行包里搬的（见 `desktop/src/main.cts` 的 `appPaths`）。
+
 ## [0.6.1] - 2026-10-06
 
 ### 修复
