@@ -18,8 +18,25 @@ export const ENTRY_LIMIT = 500;
 /** Text read cap. Larger files come back truncated rather than refused. */
 export const TEXT_LIMIT = 1024 * 1024;
 
+/**
+ * Bytes one page of a paged text read may cover.
+ *
+ * Paging exists because asking for a whole file at once has no good answer for
+ * a large one: the read cap ends a file mid-line and says so, which leaves the
+ * reader looking at the head of a log they cannot get past. A page is bounded by
+ * bytes *and* lines, and always ends just after a newline, so the next request
+ * continues from a line start.
+ */
+export const TEXT_PAGE_BYTES = 256 * 1024;
+
+/** Lines one page of a paged text read may cover. */
+export const TEXT_PAGE_LINES = 2000;
+
 /** Image cap. Larger images are refused: half a picture is worse than none. */
 export const IMAGE_LIMIT = 8 * 1024 * 1024;
+
+/** PDF cap. Larger documents are refused rather than handed over half-rendered. */
+export const PDF_LIMIT = 64 * 1024 * 1024;
 
 export interface WorkspaceEntry {
   name: string;
@@ -36,7 +53,7 @@ export interface WorkspaceListing {
   truncated: boolean;
 }
 
-export type WorkspaceFileKind = "text" | "image" | "unsupported";
+export type WorkspaceFileKind = "text" | "image" | "pdf" | "unsupported";
 
 export interface WorkspaceFileContent {
   path: string;
@@ -45,13 +62,47 @@ export interface WorkspaceFileContent {
   size: number;
   /** True when a text file was longer than `TEXT_LIMIT`. */
   truncated: boolean;
-  /** UTF-8 text for `text`, base64 for `image`, empty for `unsupported`. */
+  /** UTF-8 text for `text`, base64 for `image`, empty for `pdf`/`unsupported`. */
   content: string;
   /** Set for `image` only. */
   mimeType?: string;
   /** Set for `unsupported` only; already localized for display. */
   reason?: string;
 }
+
+/**
+ * One page of a text file.
+ *
+ * Addressed by byte offset rather than by line number because a line number
+ * cannot be resolved without reading everything before it: a 2000-line page 40
+ * pages into a log would rescan 40 growing prefixes. Offsets make the walk
+ * linear, and `lines` still counts what the reader sees.
+ */
+export interface WorkspaceTextPage {
+  path: string;
+  name: string;
+  /** Byte offset this page starts at; `0` for the first page. */
+  offset: number;
+  /** Byte offset the next page starts at; equals `size` at the end. */
+  nextOffset: number;
+  /** Lines this page holds, so the caller can number the next page's first one. */
+  lines: number;
+  text: string;
+  size: number;
+  /** True when this page reached the end of the file. */
+  eof: boolean;
+}
+
+/** A file handed to the browser rather than rendered here. */
+export interface WorkspaceRawFile {
+  name: string;
+  /** The content type the browser's own viewer keys off. */
+  mimeType: string;
+  size: number;
+  /** Already canonicalized and checked to be inside the project. */
+  absolutePath: string;
+}
+
 
 /**
  * Extensions the Preview tab can render as a picture. SVG is included because
@@ -72,10 +123,10 @@ const IMAGE_MIME: Record<string, string> = {
 /**
  * Containers this UI knows it cannot render. Listing them up front means an
  * `.xlsx` reports "unsupported" instead of being decoded as mojibake, and it
- * saves the read entirely.
+ * saves the read entirely. `pdf` is deliberately absent: it has a viewer — the
+ * browser's own, reached through `/raw` — so it is a kind of its own.
  */
 const BINARY_EXTENSIONS = new Set([
-  "pdf",
   "zip",
   "gz",
   "tgz",
@@ -308,6 +359,23 @@ export async function readWorkspaceFile(
     };
   }
 
+  // A PDF is not read here at all: the bytes go to the browser untouched
+  // through `/raw`, because the only renderer for them is the browser's own.
+  // Answering with the size is what lets the tab mount that viewer.
+  if (extension === "pdf") {
+    if (info.size > PDF_LIMIT) {
+      throw new HttpError(413, `文件过大（${formatSize(info.size)}），无法预览`);
+    }
+    return {
+      path: normalized,
+      name,
+      kind: "pdf",
+      size: info.size,
+      truncated: false,
+      content: "",
+    };
+  }
+
   if (BINARY_EXTENSIONS.has(extension)) {
     return {
       path: normalized,
@@ -348,3 +416,156 @@ export async function readWorkspaceFile(
     await handle.close();
   }
 }
+
+const NEWLINE = 0x0a;
+
+/** Bytes the UTF-8 sequence introduced by `lead` occupies; 1 for anything odd. */
+function sequenceLength(lead: number): number {
+  if ((lead & 0x80) === 0) return 1;
+  if ((lead & 0xe0) === 0xc0) return 2;
+  if ((lead & 0xf0) === 0xe0) return 3;
+  if ((lead & 0xf8) === 0xf0) return 4;
+  return 1;
+}
+
+/**
+ * Trim a byte cut back onto a character boundary.
+ *
+ * Reachable only for a single line longer than the page budget — every other
+ * page ends just after a newline, which is ASCII and therefore already a
+ * boundary. Cutting inside a multi-byte character would put a replacement
+ * character on each side of the seam.
+ *
+ * Works from the window's last byte backwards, because the byte at the cut is
+ * the one that is *not* in the window: find the lead byte of the sequence the
+ * cut lands in, and drop that sequence when it does not fit inside the window.
+ */
+function utf8SafeCut(buffer: Buffer, cut: number): number {
+  let lead = cut - 1;
+  while (lead > 0 && (buffer[lead]! & 0xc0) === 0x80) lead -= 1;
+  return lead + sequenceLength(buffer[lead] ?? 0) <= cut ? cut : lead;
+}
+
+/**
+ * How many bytes of a freshly read window belong to this page.
+ *
+ * The page ends just after a newline so the next one starts at a line start;
+ * only the file's last page may end mid-line. `maxLines` then trims a window
+ * that happens to hold more lines than one page may carry.
+ */
+function pageLength(buffer: Buffer, reachesEof: boolean, maxLines: number): number {
+  const end = reachesEof ? buffer.length : buffer.lastIndexOf(NEWLINE) + 1;
+  // No newline in the whole window: one line longer than the page budget. It is
+  // taken whole — a page that refused to advance would ask for itself forever —
+  // which is also why this is the one cut that needs a boundary check.
+  if (end === 0) return utf8SafeCut(buffer, buffer.length);
+
+  let seen = 0;
+  for (
+    let index = buffer.indexOf(NEWLINE);
+    index !== -1 && index < end;
+    index = buffer.indexOf(NEWLINE, index + 1)
+  ) {
+    seen += 1;
+    if (seen === maxLines) return index + 1;
+  }
+  return end;
+}
+
+/** Lines a page of text holds, counting a final line that has no newline. */
+function countLines(text: string): number {
+  if (text.length === 0) return 0;
+  let count = 0;
+  for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) {
+    count += 1;
+  }
+  return text.endsWith("\n") ? count : count + 1;
+}
+
+/**
+ * Read one page of a text file, for files too large to hand over whole.
+ *
+ * The page is addressed by the byte offset the caller got back from the previous
+ * one, so a walk through a large file reads each byte once. `offset` may be
+ * anything the caller holds; it is clamped, and an offset at or past the end
+ * answers with an empty final page rather than an error, because that is the
+ * ordinary way a reader discovers it has reached the end.
+ */
+export async function readWorkspaceTextPage(
+  root: string,
+  relative: string,
+  offset = 0,
+): Promise<WorkspaceTextPage> {
+  const { target, relative: normalized } = await resolveInsideProject(root, relative);
+  const info = await stat(target);
+  if (info.isDirectory()) throw badRequest(`这是一个目录：${normalized}`);
+  if (!info.isFile()) throw badRequest(`不是一个普通文件：${normalized}`);
+
+  const name = basename(normalized);
+  const start = Number.isFinite(offset) ? Math.min(Math.max(0, Math.floor(offset)), info.size) : 0;
+  const base = { path: normalized, name, size: info.size };
+
+  if (start >= info.size) {
+    return { ...base, offset: info.size, nextOffset: info.size, lines: 0, text: "", eof: true };
+  }
+
+  const length = Math.min(TEXT_PAGE_BYTES, info.size - start);
+  const buffer = Buffer.alloc(length);
+  const handle = await open(target, "r");
+  try {
+    await handle.read(buffer, 0, length, start);
+  } finally {
+    await handle.close();
+  }
+
+  // The same test the whole-file read makes, and only on the first page: a NUL
+  // is what catches the binary nobody listed, and the client only asks for more
+  // pages of a file the first page already proved to be text.
+  if (start === 0 && buffer.includes(0)) {
+    throw badRequest(`二进制文件暂不支持预览：${normalized}`);
+  }
+
+  const end = pageLength(buffer, start + length >= info.size, TEXT_PAGE_LINES);
+  const text = buffer.subarray(0, end).toString("utf8");
+  const nextOffset = start + end;
+  return {
+    ...base,
+    offset: start,
+    nextOffset,
+    lines: countLines(text),
+    text,
+    eof: nextOffset >= info.size,
+  };
+}
+
+/**
+ * The one format the sidebar hands to the browser instead of drawing itself.
+ *
+ * Everything else in this module comes back as JSON for the app to render. A
+ * PDF cannot: it needs a real document viewer, and the only one guaranteed to be
+ * present is the browser's own, which keys off the content type of a response.
+ * So this answers with the file's location and its type, and the route streams
+ * the bytes.
+ */
+const RAW_MIME: Record<string, string> = { pdf: "application/pdf" };
+
+export async function readWorkspaceRaw(
+  root: string,
+  relative: string,
+): Promise<WorkspaceRawFile> {
+  const { target, relative: normalized } = await resolveInsideProject(root, relative);
+  const info = await stat(target);
+  if (info.isDirectory()) throw badRequest(`这是一个目录：${normalized}`);
+  if (!info.isFile()) throw badRequest(`不是一个普通文件：${normalized}`);
+
+  const name = basename(normalized);
+  const mimeType = RAW_MIME[extname(name).slice(1).toLowerCase()];
+  if (mimeType === undefined) {
+    throw badRequest(`这种文件没有内置查看器：${name}`);
+  }
+  if (info.size > PDF_LIMIT) {
+    throw new HttpError(413, `文件过大（${formatSize(info.size)}），无法预览`);
+  }
+  return { name, mimeType, size: info.size, absolutePath: target };
+}
+

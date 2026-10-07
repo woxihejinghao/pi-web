@@ -275,13 +275,36 @@ export interface WorkspaceListing {
 export interface WorkspaceFileContent {
   path: string;
   name: string;
-  kind: "text" | "image" | "unsupported";
+  /**
+   * `pdf` is renderable, just not by anything in this bundle: the tab mounts the
+   * browser's own viewer against the raw endpoint. `unsupported` is a refusal
+   * with a reason.
+   */
+  kind: "text" | "image" | "pdf" | "unsupported";
   size: number;
   truncated: boolean;
-  /** UTF-8 text for `text`, base64 for `image`, empty for `unsupported`. */
+  /** UTF-8 text for `text`, base64 for `image`, empty for `pdf`/`unsupported`. */
   content: string;
   mimeType?: string;
   reason?: string;
+}
+
+/**
+ * One page of a text file, for files too large to hand over whole.
+ *
+ * Addressed by the byte offset the previous page ended at rather than by line
+ * number, so walking a large file reads each byte once; `lines` is what the
+ * reader numbers them with.
+ */
+export interface WorkspaceTextPage {
+  path: string;
+  name: string;
+  offset: number;
+  nextOffset: number;
+  lines: number;
+  text: string;
+  size: number;
+  eof: boolean;
 }
 
 /**

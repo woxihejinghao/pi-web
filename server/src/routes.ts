@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { homedir } from "node:os";
+import { pipeline } from "node:stream/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { wantsFrame, type EventBus } from "./bus.ts";
 import { BUILTIN_COMMANDS, runBuiltinCommand } from "./commands.ts";
@@ -40,7 +42,12 @@ import {
   gitStageAll,
   readGitStatus,
 } from "./git.ts";
-import { readWorkspaceFile, listWorkspaceDirectory } from "./workspace-files.ts";
+import {
+  readWorkspaceFile,
+  readWorkspaceRaw,
+  readWorkspaceTextPage,
+  listWorkspaceDirectory,
+} from "./workspace-files.ts";
 import { TerminalManager, type TerminalHost } from "./terminal.ts";
 import { pendingUiRequests, type PendingUiRequests } from "./ui-requests.ts";
 import {
@@ -1096,17 +1103,69 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   });
 
   /**
-   * One file for the right sidebar's preview tab: text, or an image as base64.
+   * One file for the right sidebar's preview tab: text, an image as base64, or
+   * a PDF by reference.
    *
    * A file the UI cannot render comes back as `kind: "unsupported"` with a
-   * reason rather than as an HTTP error — "this is a .pdf" is an answer, not a
-   * failure, and the tab renders it differently from a broken read.
+   * reason rather than as an HTTP error — "this is a .xlsx" is an answer, not a
+   * failure, and the tab renders it differently from a broken read. A PDF is the
+   * third case: it is renderable, just not here, so this answers with its size
+   * and `/raw` hands over the bytes.
    */
   route("GET", "/api/projects/:id/file", async ({ res, params, query }) => {
     const project = await getProject(params.id!);
     const path = query.get("path") ?? "";
     if (path.length === 0) throw badRequest("path is required");
     json(res, 200, await readWorkspaceFile(project.path, path));
+  });
+
+  /**
+   * One page of a text file, for files too large to hand over whole.
+   *
+   * The first page is what decides whether the reader pages at all: it carries
+   * `eof`, so a file that fits in one page costs exactly one request more than
+   * reading it whole would have. `offset` is a byte offset from the previous
+   * page, not a line number — a line number would mean rescanning the file from
+   * the start for every page.
+   */
+  route("GET", "/api/projects/:id/text", async ({ res, params, query }) => {
+    const project = await getProject(params.id!);
+    const path = query.get("path") ?? "";
+    if (path.length === 0) throw badRequest("path is required");
+    const offset = Number(query.get("offset") ?? "0");
+    json(res, 200, await readWorkspaceTextPage(project.path, path, offset));
+  });
+
+  /**
+   * A file for the browser's own viewer rather than for this app's renderers.
+   *
+   * The PDF preview is the whole reason this route exists: the panel has no PDF
+   * renderer, and the browser has one that keys off the response's content type.
+   * Only `readWorkspaceRaw`'s list of formats is served — this is not a general
+   * byte endpoint, and everything else still goes through `/file` as JSON.
+   */
+  route("GET", "/api/projects/:id/raw", async ({ res, params, query }) => {
+    const project = await getProject(params.id!);
+    const path = query.get("path") ?? "";
+    if (path.length === 0) throw badRequest("path is required");
+    const file = await readWorkspaceRaw(project.path, path);
+    res.writeHead(200, {
+      "content-type": file.mimeType,
+      "content-length": file.size,
+      // `inline`, because this response is an iframe's source: a browser that
+      // cannot display it should say so in place rather than download it.
+      // The RFC 5987 form keeps a non-ASCII name intact and escapes CR/LF.
+      "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      // A preview is reloaded on demand, so a cached copy would only ever be the
+      // stale one.
+      "cache-control": "no-store",
+      // The type above is a promise about the bytes, and the promise is what
+      // decides who renders them: a PDF is handed to the browser's own trusted
+      // viewer without a sandbox, so a body that was not really a PDF must not
+      // be allowed to talk the browser into rendering it as anything else.
+      "x-content-type-options": "nosniff",
+    });
+    await pipeline(createReadStream(file.absolutePath), res);
   });
 
   /**

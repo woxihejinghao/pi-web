@@ -35,7 +35,24 @@ describe("languageFor", () => {
 describe("previewKindFor", () => {
   it("honours the server's verdict before the extension", () => {
     expect(previewKindFor("photo.png", "image")).toBe("image");
-    expect(previewKindFor("report.pdf", "unsupported")).toBe("unsupported");
+    expect(previewKindFor("report.xlsx", "unsupported")).toBe("unsupported");
+  });
+
+  it("takes a PDF as its own kind rather than as a refusal", () => {
+    // The server answers `pdf` for a document it will stream rather than read;
+    // the tab mounts the browser's viewer against `/raw` for it.
+    expect(previewKindFor("report.pdf", "pdf")).toBe("pdf");
+  });
+
+  it("draws HTML in a frame instead of showing its source", () => {
+    expect(previewKindFor("page.html", "text")).toBe("html");
+    expect(previewKindFor("page.HTM", "text")).toBe("html");
+  });
+
+  it("still shows HTML source when the server refused the file", () => {
+    // A refusal is a refusal whatever the extension says: the reason is what the
+    // tab has to draw.
+    expect(previewKindFor("page.html", "unsupported")).toBe("unsupported");
   });
 
   it("splits text into markdown, code and plain text", () => {

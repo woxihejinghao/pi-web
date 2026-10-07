@@ -3,14 +3,29 @@ import type { WorkspaceFileContent } from "../../lib/types.ts";
 /**
  * How the Preview tab should render one file.
  *
- * The server decides *whether* it can hand the file over (text, image, or a
- * refusal); this module decides what to draw with it. The two are separate
- * because the second answer is a pure function of the file name and belongs in
- * the browser, next to the renderers it selects.
+ * The server decides *whether* it can hand the file over (text, image, a PDF by
+ * reference, or a refusal); this module decides what to draw with it. The two are
+ * separate because the second answer is a pure function of the file name and
+ * belongs in the browser, next to the renderers it selects.
+ *
+ * `pdf` and `html` are the two kinds that need a browsing context rather than a
+ * renderer: a PDF is drawn by the browser's own viewer (over `/raw`), and HTML is
+ * drawn in an opaque, script-free frame. Everything else is text, an image, or a
+ * refusal.
  */
-export type PreviewKind = "markdown" | "code" | "text" | "image" | "unsupported";
+export type PreviewKind =
+  | "markdown"
+  | "code"
+  | "text"
+  | "image"
+  | "pdf"
+  | "html"
+  | "unsupported";
 
 const MARKDOWN_EXTENSIONS = new Set(["md", "markdown", "mdx"]);
+
+/** Extensions rendered in the sandboxed frame rather than as source. */
+const HTML_EXTENSIONS = new Set(["html", "htm"]);
 
 /**
  * Extension → shiki language id. Only languages this app's grammar set already
@@ -110,7 +125,8 @@ export function languageFor(name: string): string | undefined {
 /**
  * What to draw for a file. The server's verdict comes first: a refusal is
  * shown as a refusal, and an image is an image regardless of its extension
- * mapping. Text splits into Markdown, highlighted code, and plain text.
+ * mapping. Among text, the name decides — Markdown, source to draw as a page,
+ * highlighted code, or plain text.
  */
 export function previewKindFor(
   name: string,
@@ -118,7 +134,9 @@ export function previewKindFor(
 ): PreviewKind {
   if (contentKind === "unsupported") return "unsupported";
   if (contentKind === "image") return "image";
+  if (contentKind === "pdf") return "pdf";
   const extension = extensionOf(name);
   if (MARKDOWN_EXTENSIONS.has(extension)) return "markdown";
+  if (HTML_EXTENSIONS.has(extension)) return "html";
   return languageFor(name) === undefined ? "text" : "code";
 }

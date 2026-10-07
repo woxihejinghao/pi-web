@@ -30,6 +30,7 @@ import type {
   WebSettings,
   WorkspaceFileContent,
   WorkspaceListing,
+  WorkspaceTextPage,
 } from "./types.ts";
 
 export class ApiError extends Error {
@@ -108,6 +109,30 @@ export const api = {
     request<WorkspaceFileContent>(
       `/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}`,
     ),
+
+  /**
+   * One page of a text file, from a byte offset the previous page ended at.
+   *
+   * A page rather than the whole file because the whole-file read has no good
+   * answer for a large one: it ends mid-line and says so, leaving the reader at
+   * the head of a log they cannot get past.
+   */
+  readWorkspaceTextPage: (projectId: string, path: string, offset: number) =>
+    request<WorkspaceTextPage>(
+      `/api/projects/${encodeURIComponent(projectId)}/text?path=${encodeURIComponent(path)}` +
+        `&offset=${String(offset)}`,
+    ),
+
+  /**
+   * The URL a browser can fetch one file from directly, for the formats whose
+   * only renderer is the browser's own — today, a PDF's viewer.
+   *
+   * A URL rather than a fetch because that is what an `<iframe>` needs, and
+   * because it lets the answer be streamed, type-tagged and cached by the
+   * browser instead of being inflated into JSON.
+   */
+  workspaceRawUrl: (projectId: string, path: string): string =>
+    `/api/projects/${encodeURIComponent(projectId)}/raw?path=${encodeURIComponent(path)}`,
 
   /**
    * What the terminal tab can offer, and the shells already open for a session.
