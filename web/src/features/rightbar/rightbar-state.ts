@@ -10,7 +10,7 @@ import type { Translate } from "../../lib/i18n/index.ts";
  * `app-state`, and the panel component is the only thing that reads it.
  */
 
-export type RightbarTabKind = "files" | "preview" | "changes" | "browser";
+export type RightbarTabKind = "files" | "preview" | "changes" | "browser" | "terminal";
 
 export interface RightbarTab {
   id: string;
@@ -18,7 +18,8 @@ export interface RightbarTab {
   title: string;
   /**
    * What the tab is about: a project-relative path for `preview`, an HTTP(S)
-   * URL for `browser`, and nothing for `files` (which needs no address).
+   * URL for `browser`, the host's own id for `terminal`, and nothing for
+   * `files` or `changes` (neither needs an address).
    */
   target: string;
   /** `browser` only: the tab's history, newest last. */
@@ -90,7 +91,13 @@ function parseSurface(raw: string): RightbarSurface | null {
       // history; a layout saved under the old name is adopted rather than
       // dropped, and re-titled for free.
       const kind = tab.kind === "diff" ? "changes" : tab.kind;
-      if (kind !== "files" && kind !== "preview" && kind !== "changes" && kind !== "browser") {
+      if (
+        kind !== "files" &&
+        kind !== "preview" &&
+        kind !== "changes" &&
+        kind !== "browser" &&
+        kind !== "terminal"
+      ) {
         continue;
       }
       if (typeof tab.id !== "string" || typeof tab.title !== "string") continue;
@@ -184,18 +191,26 @@ function nextTabId(kind: RightbarTabKind): string {
   return `${kind}-${String(tabCounter)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-const TAB_TITLE_KEYS = { files: "tab.files", changes: "tab.changes", browser: "tab.browser" } as const;
+const TAB_TITLE_KEYS = {
+  files: "tab.files",
+  changes: "tab.changes",
+  browser: "tab.browser",
+  terminal: "tab.terminal",
+} as const;
 
 /**
  * A tab's display name.
  *
- * The three fixed kinds are named by the message table instead of by a title
- * stored on the tab: the strip outlives a language switch, and a title captured
- * when the tab was created would come back in the old language. A preview tab
- * keeps its file name, which reads the same in either language.
+ * The fixed kinds are named by the message table instead of by a title stored
+ * on the tab: the strip outlives a language switch, and a title captured when
+ * the tab was created would come back in the old language. Two kinds carry a
+ * name of their own — a preview its file, a terminal whatever the user renamed
+ * it to — and both read the same in either language, so they keep it.
  */
 export function tabTitle(tab: RightbarTab, t: Translate): string {
-  return tab.kind === "preview" ? tab.title : t(TAB_TITLE_KEYS[tab.kind]);
+  if (tab.kind === "preview") return tab.title;
+  if (tab.kind === "terminal" && tab.title.length > 0) return tab.title;
+  return t(TAB_TITLE_KEYS[tab.kind]);
 }
 
 export function makeFilesTab(): RightbarTab {
@@ -221,6 +236,18 @@ export function makeBrowserTab(url: string): RightbarTab {
     history: url.length > 0 ? [url] : [],
     historyIndex: url.length > 0 ? 0 : -1,
   };
+}
+
+/**
+ * A terminal tab, before it has a shell.
+ *
+ * `target` is empty on purpose: the host id arrives when the body mounts and
+ * asks for one, and this layer never calls the API. The id is written back by
+ * `setTabTarget` so a reload reattaches to the same shell instead of opening a
+ * second one beside it.
+ */
+export function makeTerminalTab(): RightbarTab {
+  return { id: nextTabId("terminal"), kind: "terminal", title: "", target: "" };
 }
 
 /** The host a browser tab is titled after; falls back to the raw input. */
@@ -418,6 +445,17 @@ export const rightbarActions = {
   },
 
   /**
+   * Open a new terminal tab.
+   *
+   * Always a new one: two shells are two independent processes, so a tab is
+   * never reused the way a preview of the same file is. The host id is filled
+   * in by the body once it has one.
+   */
+  openTerminalTab(key: string): void {
+    rightbarActions.openTab(key, makeTerminalTab());
+  },
+
+  /**
    * Close one tab. Closing the last tab closes the panel with it, so a docked
    * surface is never left empty — dsh's rule, and the reason there is no
    * separate "close pane" gesture.
@@ -442,6 +480,20 @@ export const rightbarActions = {
   setTabTitle(key: string, id: string, title: string): void {
     const surface = surfaceOf(rightbarStore.get(), key);
     const tabs = surface.tabs.map((tab) => (tab.id === id ? { ...tab, title } : tab));
+    commit(key, { ...surface, tabs });
+  },
+
+  /**
+   * Point a tab at the resource it turned out to be about.
+   *
+   * A terminal is why this exists. Its tab is created before its shell is — the
+   * shell is the body's business, and this layer does not call the API — so the
+   * id the host hands back has to be remembered somewhere, or the next mount
+   * would open a second shell beside the one already running.
+   */
+  setTabTarget(key: string, id: string, target: string): void {
+    const surface = surfaceOf(rightbarStore.get(), key);
+    const tabs = surface.tabs.map((tab) => (tab.id === id ? { ...tab, target } : tab));
     commit(key, { ...surface, tabs });
   },
 

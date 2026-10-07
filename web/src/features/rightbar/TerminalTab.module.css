@@ -1,0 +1,95 @@
+/* The terminal body.
+ *
+ * It reaches the pane's edges: a shell drawn narrower than the PTY was told it
+ * is would wrap its output at a column nothing else agrees with, which reads as
+ * a broken terminal rather than a styling choice. */
+
+.host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--dsw-alias-bg-base);
+}
+
+.screen {
+  flex: 1;
+  min-height: 0;
+  /* FitAddon subtracts this padding before dividing by the character cell, so
+   * the PTY's width and the drawn width stay the same number. */
+  padding: 6px 0 6px 8px;
+  overflow: hidden;
+}
+
+/* Loading and "no shell here" both sit over the screen rather than replacing
+ * it, because the xterm holder has to stay mounted to be measured. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--dsw-alias-bg-base);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dsw-alias-border-l3);
+  border-top-color: var(--dsw-alias-label-secondary);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/* An exited shell keeps its screen and gains one line: the code it left with,
+ * and the way out. It is never restarted on its own — a shell that died is
+ * something to read, not something to paper over. */
+.exited {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 6px 8px 6px 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.restart {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 7px;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.restart:hover {
+  background: var(--dsw-alias-button-floating-hover);
+}

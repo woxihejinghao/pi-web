@@ -114,6 +114,24 @@ describe("tabs", () => {
     expect(surface().tabs[0]?.title).toBe("setup.md");
     expect(surface().tabs[0]?.target).toBe("docs/guide/setup.md");
   });
+
+  it("gives every terminal its own tab, since two shells are two processes", () => {
+    rightbarActions.openTerminalTab(KEY);
+    rightbarActions.openTerminalTab(KEY);
+    const terminals = surface().tabs.filter((tab) => tab.kind === "terminal");
+    expect(terminals).toHaveLength(2);
+    // Nothing to attach to yet: the body opens the shell and writes the id back.
+    expect(terminals[0]?.target).toBe("");
+    // An unnamed terminal is titled by the table, like the other fixed kinds.
+    expect(terminals[0] === undefined ? "" : tabTitle(terminals[0], zh)).toBe("终端");
+  });
+
+  it("remembers the host id a terminal body attached to", () => {
+    rightbarActions.openTerminalTab(KEY);
+    const id = surface().tabs[0]!.id;
+    rightbarActions.setTabTarget(KEY, id, "t-42");
+    expect(surface().tabs[0]?.target).toBe("t-42");
+  });
 });
 
 describe("browser history", () => {
@@ -218,6 +236,21 @@ describe("persistence", () => {
     const restored = surface();
     expect(restored.tabs).toEqual([
       expect.objectContaining({ kind: "changes", title: "", target: "" }),
+    ]);
+  });
+
+  it("brings a terminal tab back pointing at the shell it was attached to", () => {
+    // This is what makes a reload reattach instead of opening a second shell
+    // beside the one still running on the host.
+    installStorage();
+    rightbarActions.openTerminalTab(KEY);
+    const id = surface().tabs[0]!.id;
+    rightbarActions.setTabTarget(KEY, id, "t-42");
+
+    resetRightbarState();
+    rightbarActions.ensureSurface(KEY);
+    expect(surface().tabs).toEqual([
+      expect.objectContaining({ kind: "terminal", target: "t-42" }),
     ]);
   });
 });

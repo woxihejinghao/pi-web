@@ -23,6 +23,8 @@ import type {
   SessionView,
   SlashCommandList,
   StartLocation,
+  TerminalInfo,
+  TerminalSupport,
   TodoView,
   UpdatesView,
   WebSettings,
@@ -106,6 +108,52 @@ export const api = {
     request<WorkspaceFileContent>(
       `/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}`,
     ),
+
+  /**
+   * What the terminal tab can offer, and the shells already open for a session.
+   *
+   * Both in one call because the panel asks them at the same moment, and the
+   * second is meaningless when the answer to the first is "no shells here".
+   * An empty `sessionPath` asks only about the host.
+   */
+  terminalState: (sessionPath: string) =>
+    request<{ support: TerminalSupport; terminals: TerminalInfo[] }>(
+      `/api/terminal?sessionPath=${encodeURIComponent(sessionPath)}`,
+    ),
+
+  openTerminal: (body: {
+    sessionPath: string;
+    /** The workspace to start in; the server checks it is a registered one. */
+    cwd?: string;
+    cols: number;
+    rows: number;
+    shell?: string;
+  }) => request<TerminalInfo>("/api/terminal", { method: "POST", body: JSON.stringify(body) }),
+
+  /** The screen so far, for a tab mounting onto a shell that kept running. */
+  terminalScrollback: (id: string) =>
+    request<{ scrollback: string }>(`/api/terminal/${encodeURIComponent(id)}`),
+
+  writeTerminal: (id: string, data: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/input`, {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    }),
+
+  resizeTerminal: (id: string, cols: number, rows: number) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/resize`, {
+      method: "POST",
+      body: JSON.stringify({ cols, rows }),
+    }),
+
+  renameTerminal: (id: string, title: string) =>
+    request<TerminalInfo>(`/api/terminal/${encodeURIComponent(id)}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    }),
+
+  closeTerminal: (id: string) =>
+    request<{ closed: boolean }>(`/api/terminal/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   /**
    * The changes panel's state: branch, both sides of the diff, upstream drift

@@ -5,6 +5,7 @@ import { OPEN_BROWSER, PORT, STATIC_DIR } from "./config.ts";
 import { registry } from "./registry.ts";
 import { createRequestHandler } from "./routes.ts";
 import { createStaticHandler } from "./static.ts";
+import { TerminalManager } from "./terminal.ts";
 import { SessionWatcher } from "./watch.ts";
 import { WorkspaceWatcher } from "./workspace-watch.ts";
 import { pendingUiRequests } from "./ui-requests.ts";
@@ -40,7 +41,11 @@ registry.onClosed((handle, reason) => {
 // Null when there is no build to serve: the API then runs on its own, which is
 // exactly what the dev setup wants, and what an unbuilt checkout gets.
 const staticHandler = createStaticHandler(STATIC_DIR);
-const handler = createRequestHandler({ registry, bus, staticHandler });
+// Owned here rather than by the route handler so shutdown can reach it: a PTY
+// outliving the server would leave a shell attached to a terminal nobody can
+// see, and a `node` process that never exits.
+const terminals = new TerminalManager({ bus });
+const handler = createRequestHandler({ registry, bus, staticHandler, terminals });
 const server = createServer((req, res) => {
   void handler(req, res);
 });
@@ -86,6 +91,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   stopSweeper();
   watcher.stop();
   workspaceWatcher.stop();
+  terminals.stop();
   server.close();
   await registry.closeAll(`shutdown:${signal}`);
   process.exit(0);

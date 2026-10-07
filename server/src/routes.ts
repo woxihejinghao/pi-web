@@ -41,6 +41,7 @@ import {
   readGitStatus,
 } from "./git.ts";
 import { readWorkspaceFile, listWorkspaceDirectory } from "./workspace-files.ts";
+import { TerminalManager, type TerminalHost } from "./terminal.ts";
 import { pendingUiRequests, type PendingUiRequests } from "./ui-requests.ts";
 import {
   readComposerFromClient,
@@ -124,6 +125,13 @@ export interface RouteDeps {
    * `SSE_MAX_BUFFERED_BYTES`; tests lower it to reach the limit in a few writes.
    */
   sseMaxBufferedBytes?: number;
+  /**
+   * The shells behind `/api/terminal`. Defaults to a manager owned by this
+   * handler, which is what the server and every test want: one handler means
+   * one set of shells, torn down with it. A test supplies a stand-in when it
+   * cares about which shell the routes ask for rather than about the shell.
+   */
+  terminals?: TerminalHost;
 }
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
@@ -196,6 +204,20 @@ function requireString(body: Record<string, unknown>, key: string): string {
   const value = body[key];
   if (typeof value !== "string" || value.length === 0) {
     throw badRequest(`${key} is required`);
+  }
+  return value;
+}
+
+/**
+ * A finite number from the request body.
+ *
+ * Bounds are not checked here — `TerminalManager` clamps to what a PTY can
+ * actually hold, and doing it in two places would mean two answers.
+ */
+function requireNumber(body: Record<string, unknown>, key: string): number {
+  const value = body[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw badRequest(`${key} must be a number`);
   }
   return value;
 }
@@ -458,6 +480,7 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     deps;
   const sessionRoot = deps.sessionRoot ?? getSessionRoot();
   const uiRequests = deps.uiRequests ?? pendingUiRequests;
+  const terminals = deps.terminals ?? new TerminalManager({ bus });
   const routes: Route[] = [];
 
   const route = (method: string, path: string, handler: Handler): void => {
@@ -465,6 +488,21 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   };
 
   const allowedPath = (raw: string): string => assertAllowedSessionPath(raw, sessionRoot);
+
+  /**
+   * Whether this id names a session file this process may read.
+   *
+   * Used where an unreadable path has a fallback rather than an error: the
+   * question there is "is there something on disk?", not "is this allowed?".
+   */
+  const isSessionFile = (raw: string): boolean => {
+    try {
+      allowedPath(raw);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   /**
    * Attach to a session, spawning a pi process when none is live. Draft
@@ -1433,6 +1471,10 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   route("DELETE", "/api/sessions/:id", async ({ res, params }) => {
     const sessionPath = allowedPath(params.id!);
     await registry.close(sessionPath, "deleted");
+    // The session is gone for good, so its shells have nowhere left to be
+    // shown. Leaving them running would keep a `node` process alive under a
+    // tab that can never be reopened.
+    terminals.closeForSession(sessionPath);
     const result = await deleteSession(sessionPath);
     if (!result.ok) {
       if (result.missing === true) throw notFound("会话文件不存在");
@@ -1463,6 +1505,132 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       sessionId: handle.sessionId,
       messages,
     });
+  });
+
+  // --- terminals ------------------------------------------------------------
+
+  /**
+   * Where a session's shell starts.
+   *
+   * A live session answers directly: its handle carries the canonical project
+   * directory the pi process runs in. One that has not been opened yet is read
+   * from disk — the same lookup `openSession` does, minus the spawn, because
+   * opening a shell must not cost a pi process.
+   *
+   * A draft session has neither. pi writes a session file only once an
+   * assistant message arrives, so until then there is nothing on disk to read,
+   * and the client sends the workspace it is showing instead. That path is
+   * checked against the registered projects rather than trusted: it still
+   * arrives from a browser, and while "browse the host filesystem" is a feature
+   * this app has on purpose (the directory picker), "run a shell anywhere" is
+   * not one of them.
+   */
+  const terminalCwd = async (input: {
+    sessionPath: string;
+    requested: string | undefined;
+  }): Promise<string> => {
+    if (input.sessionPath.length > 0) {
+      const live = registry.get(input.sessionPath);
+      if (live !== undefined) return live.projectPath;
+      // The id has to be checked before it is handed to `SessionManager`. On a
+      // path that is not a session — a draft, `draft:…`, is one — `open` does
+      // not fail: it answers with the *server process's own* working directory.
+      // Trusting that would start a brand-new session's shell wherever the
+      // server happened to be launched, and would skip the workspace check
+      // below for exactly the case that check exists for.
+      if (isSessionFile(input.sessionPath)) {
+        try {
+          return SessionManager.open(input.sessionPath).getCwd();
+        } catch {
+          // On disk but unreadable. The requested workspace below answers.
+        }
+      }
+    }
+    if (input.requested !== undefined) {
+      const projects = await listProjects();
+      const known = projects.find((project) => project.path === input.requested);
+      if (known !== undefined) return known.path;
+      throw badRequest(`不是已注册的工作区：${input.requested}`);
+    }
+    throw badRequest("无法确定这个会话的工作目录");
+  };
+
+  /**
+   * What this host can offer, and what is already open for a session.
+   *
+   * One request rather than two because the panel asks both questions at the
+   * same moment — the instant a terminal tab mounts — and the second is
+   * meaningless when the answer to the first is "no shells here". The support
+   * half is cheap: it reports whether the optional module loads, not whether a
+   * shell can start.
+   */
+  route("GET", "/api/terminal", ({ res, query }) => {
+    const requested = query.get("sessionPath");
+    const sessionPath = requested === null || requested.length === 0 ? undefined : requested;
+    json(res, 200, {
+      support: terminals.support(),
+      terminals: terminals.list(sessionPath),
+    });
+  });
+
+  /** Open a shell. The response is the tab's handle, so it is a 201. */
+  route("POST", "/api/terminal", async ({ res, body }) => {
+    const payload = asObject(body);
+    const sessionPath = optionalString(payload, "sessionPath") ?? "";
+    const cols = requireNumber(payload, "cols");
+    const rows = requireNumber(payload, "rows");
+    const cwd = await terminalCwd({
+      sessionPath,
+      requested: optionalString(payload, "cwd"),
+    });
+    json(
+      res,
+      201,
+      terminals.create({ sessionPath, cwd, cols, rows, shell: optionalString(payload, "shell") }),
+    );
+  });
+
+  /**
+   * The screen so far.
+   *
+   * Fetched by a tab that is mounting onto a shell that has been running
+   * without it — a sidebar toggle, a page reload, a session switch — so what it
+   * draws first is everything that happened, not everything from now on.
+   */
+  route("GET", "/api/terminal/:id", ({ res, params }) => {
+    const scrollback = terminals.scrollbackOf(params.id!);
+    if (scrollback === null) throw notFound(`终端不存在：${params.id!}`);
+    json(res, 200, { scrollback });
+  });
+
+  route("POST", "/api/terminal/:id/input", ({ res, params, body }) => {
+    terminals.write(params.id!, requireString(asObject(body), "data"));
+    json(res, 200, { ok: true });
+  });
+
+  route("POST", "/api/terminal/:id/resize", ({ res, params, body }) => {
+    const payload = asObject(body);
+    terminals.resize(
+      params.id!,
+      requireNumber(payload, "cols"),
+      requireNumber(payload, "rows"),
+    );
+    json(res, 200, { ok: true });
+  });
+
+  route("POST", "/api/terminal/:id/rename", ({ res, params, body }) => {
+    json(res, 200, terminals.rename(params.id!, requireString(asObject(body), "title")));
+  });
+
+  /**
+   * Close a shell.
+   *
+   * An id that is already gone answers `{ closed: false }` rather than 404:
+   * closing a tab and closing the session it belongs to race by nature, and the
+   * loser of that race was not doing anything wrong.
+   */
+  route("DELETE", "/api/terminal/:id", ({ res, params }) => {
+    json(res, 200, { closed: terminals.close(params.id!) });
   });
 
   // --- extension UI responses ----------------------------------------------

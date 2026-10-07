@@ -11,7 +11,10 @@ export type BusEvent =
   | { type: "session_external_changed"; sessionPath: string; modifiedAt: string }
   | { type: "workspace_changed"; projectPath: string }
   | { type: "projects_changed" }
-  | { type: "sessions_changed"; projectPath: string };
+  | { type: "sessions_changed"; projectPath: string }
+  | { type: "terminal_output"; terminalId: string; sessionPath: string; data: string }
+  | { type: "terminal_state"; terminalId: string; sessionPath: string; exitCode: number }
+  | { type: "terminal_closed"; terminalId: string; sessionPath: string };
 
 export type BusListener = (event: BusEvent) => void;
 
@@ -68,7 +71,21 @@ export function wantsFrame(
   event: BusEvent,
 ): boolean {
   if (sessionPath === undefined) return true;
-  if (event.type !== "session_event") return true;
+  if (event.type !== "session_event") {
+    // Terminal frames are the one non-session event that is *addressed*: a
+    // shell belongs to a session, and a tab reading another one has nothing to
+    // do with its output — which can be a `yes` at full tilt. Everything else
+    // on this branch is shared chrome (sidebar dots, project lists) and goes to
+    // every stream regardless of what it is reading.
+    if (
+      event.type === "terminal_output" ||
+      event.type === "terminal_state" ||
+      event.type === "terminal_closed"
+    ) {
+      return event.sessionPath === sessionPath;
+    }
+    return true;
+  }
   if (event.sessionPath === sessionPath) return true;
   return !STREAM_ONLY_EVENTS.has(event.event.type);
 }

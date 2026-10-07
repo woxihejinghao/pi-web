@@ -6,6 +6,7 @@ import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts"
 import { useStore } from "../../lib/store.ts";
 import { rightbarActions, rightbarStore } from "../rightbar/rightbar-state.ts";
 import { PanelRightIcon } from "../rightbar/rightbar-icons.tsx";
+import { shortcutTitle } from "../rightbar/shortcuts.ts";
 import type { ImageBlock } from "../../lib/types.ts";
 import { Composer } from "./Composer.tsx";
 import { QuestionCard } from "./QuestionCard.tsx";
@@ -178,7 +179,7 @@ export function ConversationPane() {
           <button
             type="button"
             className={styles.headerPanelAction}
-            title={t("pane.openRightbar")}
+            title={shortcutTitle(t, t("pane.openRightbar"), "rightbar.toggle")}
             aria-label={t("pane.openRightbar")}
             onClick={() => rightbarActions.open(sessionPath)}
           >

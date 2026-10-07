@@ -321,8 +321,13 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
                     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
                     // Input is single-line in intent, so Enter answers it; the
                     // editor holds text that has its own line breaks and asks
-                    // for the modifier instead.
-                    const submits = request.method === "editor" ? event.metaKey || event.ctrlKey : !event.shiftKey;
+                    // for the modifier instead. Alt answers nothing: `⌘⌥↵` is
+                    // the fullscreen-the-panel shortcut, and this card sits in
+                    // the transcript next to the panel it would cancel.
+                    const submits =
+                      request.method === "editor"
+                        ? (event.metaKey || event.ctrlKey) && !event.altKey
+                        : !event.shiftKey && !event.altKey;
                     if (!submits) return;
                     event.preventDefault();
                     submit();

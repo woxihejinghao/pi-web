@@ -134,7 +134,18 @@ export function Composer({
     if (completion.onKeyDown(event)) return;
 
     // Never submit while an IME composition is active (Chinese input).
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+    //
+    // Alt is refused for the opposite reason: `⌘⌥↵` is this app's
+    // fullscreen-the-sidebar shortcut, and a keystroke that belongs to a command
+    // must not also be read as "send". dsh's composer draws the same line, in the
+    // same place — its keymap returns early on `altKey` without consuming the
+    // event, so the shortcut service still sees it.
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.nativeEvent.isComposing
+    ) {
       event.preventDefault();
       const other = event.metaKey || event.ctrlKey;
       // An idle agent has only one behavior, so the modifier is a no-op there.

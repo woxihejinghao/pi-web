@@ -13,6 +13,9 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.86.1"
   },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
+  },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",

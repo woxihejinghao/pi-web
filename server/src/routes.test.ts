@@ -12,6 +12,7 @@ import { resetDefaultComposerCache } from "./composer.ts";
 import { SessionRegistry } from "./registry.ts";
 import { createRequestHandler } from "./routes.ts";
 import { sessionDirFor } from "./session-path.ts";
+import type { CreateTerminalInput, TerminalHost } from "./terminal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB_CLI = join(HERE, "testing", "stub-pi.mjs");
@@ -1748,5 +1749,144 @@ describe("mcp api without the adapter", () => {
     expect(res.body.available).toBe(false);
     expect(res.body.unavailableReason).toMatch(/pi-mcp-adapter/);
     expect(res.body.servers).toEqual([]);
+  });
+});
+
+describe("terminal api", () => {
+  /**
+   * A shell host that records what it was asked for.
+   *
+   * What belongs to the routes is the *decision* — which session, which
+   * directory, which size — and a stand-in pins that down without node-pty
+   * being installed, without a shell's startup output, and without waiting on
+   * one to answer. `TerminalManager` gets the real coverage in
+   * `terminal.test.ts`.
+   */
+  const opened: CreateTerminalInput[] = [];
+  const host: TerminalHost = {
+    support: () => ({ available: true, shells: ["/bin/sh"] }),
+    list: () => [],
+    scrollbackOf: () => null,
+    create: (input) => {
+      opened.push(input);
+      return {
+        id: `t-${String(opened.length)}`,
+        sessionPath: input.sessionPath,
+        title: "",
+        cols: input.cols,
+        rows: input.rows,
+        exitCode: null,
+      };
+    },
+    write: () => undefined,
+    resize: () => undefined,
+    rename: (_id, title) => ({
+      id: "t-1",
+      sessionPath: "",
+      title,
+      cols: 80,
+      rows: 24,
+      exitCode: null,
+    }),
+    close: () => true,
+    closeForSession: () => undefined,
+  };
+
+  let terminalServer: Server;
+  let terminalUrl: string;
+
+  beforeEach(async () => {
+    opened.length = 0;
+    const handler = createRequestHandler({ registry, bus, sessionRoot, terminals: host });
+    terminalServer = createServer((req, res) => {
+      void handler(req, res);
+    });
+    await new Promise<void>((resolve) => terminalServer.listen(0, "127.0.0.1", resolve));
+    terminalUrl = `http://127.0.0.1:${(terminalServer.address() as AddressInfo).port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => terminalServer.close(() => resolve()));
+  });
+
+  async function openTerminal(body: unknown): Promise<ApiResult> {
+    const res = await fetch(`${terminalUrl}/api/terminal`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    return { status: res.status, body: text.length > 0 ? JSON.parse(text) : undefined };
+  }
+
+  it("reports what the host can offer, and what is already open", async () => {
+    const res = await fetch(`${terminalUrl}/api/terminal?sessionPath=`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      support: { available: true, shells: ["/bin/sh"] },
+      terminals: [],
+    });
+  });
+
+  it("runs a draft session's shell in the workspace it was given", async () => {
+    // The bug this pins: `SessionManager.open` does not fail on an id that is
+    // not a session — it answers with the server process's own working
+    // directory. A draft has no file on disk, so without the guard the shell
+    // would open wherever the server was launched from, and the workspace check
+    // would be skipped for the one case it exists for.
+    const project = await createProject("terminal-draft");
+    const res = await openTerminal({
+      sessionPath: "draft:abc",
+      cwd: project.path,
+      cols: 100,
+      rows: 30,
+    });
+
+    expect(res.status).toBe(201);
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.cwd).toBe(project.path);
+    expect(opened[0]?.cwd).not.toBe(process.cwd());
+    expect(opened[0]?.sessionPath).toBe("draft:abc");
+    expect(opened[0]?.cols).toBe(100);
+    expect(opened[0]?.rows).toBe(30);
+  });
+
+  it("reads an existing session's own directory off disk", async () => {
+    const project = await createProject("terminal-session");
+    const sessionDir = sessionDirFor(project.path, sessionRoot);
+    const sessionPath = join(sessionDir, "s1.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(
+      sessionPath,
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "bbbb1111-2222-3333-4444-555555555555",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: project.path,
+      })}\n`,
+      "utf8",
+    );
+
+    const res = await openTerminal({ sessionPath, cols: 80, rows: 24 });
+    expect(res.status).toBe(201);
+    expect(opened[0]?.cwd).toBe(project.path);
+  });
+
+  it("refuses a workspace that is not one of the registered projects", async () => {
+    const res = await openTerminal({
+      sessionPath: "draft:abc",
+      cwd: join(projectRoot, "not-registered"),
+      cols: 80,
+      rows: 24,
+    });
+    expect(res.status).toBe(400);
+    expect(opened).toHaveLength(0);
+  });
+
+  it("refuses when there is nothing to tell it where the shell should start", async () => {
+    const res = await openTerminal({ sessionPath: "draft:abc", cols: 80, rows: 24 });
+    expect(res.status).toBe(400);
+    expect(opened).toHaveLength(0);
   });
 });

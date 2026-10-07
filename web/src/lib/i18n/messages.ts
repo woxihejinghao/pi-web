@@ -263,6 +263,13 @@ export const zhCN = {
   "tab.files": "文件",
   "tab.changes": "文件变更",
   "tab.browser": "浏览器",
+  "tab.terminal": "终端",
+
+  // --- keyboard shortcuts ---------------------------------------------------
+  // The keycaps are not part of the sentence: they are looked up from the same
+  // table the listener matches (see `features/rightbar/shortcuts.ts`), which is
+  // what keeps a tooltip from advertising a key that does nothing.
+  "shortcut.hint": "{label}（{keys}）",
   "changes.workspace": "工作区改动",
   "changes.refresh": "刷新改动",
   "changes.loading": "读取改动…",
@@ -328,6 +335,9 @@ export const zhCN = {
   "browser.enableSandbox": "重新启用沙箱",
   "browser.disableSandbox": "关闭沙箱（仅本次）",
   "browser.embedHint": "部分站点禁止被嵌入，可改用系统浏览器打开。",
+  "terminal.starting": "正在启动 shell…",
+  "terminal.exited": "shell 已退出，代码 {code}",
+  "terminal.restart": "重新启动",
 
   // --- updates / attachments ------------------------------------------------
   "updates.checking": "正在检查…",
@@ -854,6 +864,10 @@ export const en: Record<MessageKey, string> = {
   "tab.files": "Files",
   "tab.changes": "Changes",
   "tab.browser": "Browser",
+  "tab.terminal": "Terminal",
+
+  // --- keyboard shortcuts ---------------------------------------------------
+  "shortcut.hint": "{label} ({keys})",
   "changes.workspace": "Working tree",
   "changes.refresh": "Refresh changes",
   "changes.loading": "Reading changes…",
@@ -919,6 +933,9 @@ export const en: Record<MessageKey, string> = {
   "browser.enableSandbox": "Re-enable the sandbox",
   "browser.disableSandbox": "Turn the sandbox off (this time only)",
   "browser.embedHint": "Some sites refuse to be embedded; use the system browser instead.",
+  "terminal.starting": "Starting a shell…",
+  "terminal.exited": "Shell exited with code {code}",
+  "terminal.restart": "Restart",
 
   "updates.checking": "Checking…",
   "updates.skipped": "Check skipped",

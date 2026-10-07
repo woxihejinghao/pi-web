@@ -1,4 +1,9 @@
 import { actions, appStore, streamRestored, workspaceChanged } from "./app-state.ts";
+// The one upward import in `lib/`: shell frames have to be fanned out at the
+// single point that demultiplexes the stream, and the fan-out lives with the
+// rest of the terminal state. It is a leaf (api + store + types), so this does
+// not close a cycle.
+import { emitTerminalOutput, terminalActions } from "../features/rightbar/terminal-state.ts";
 import type { BusEvent, ExtensionUiRequest } from "./types.ts";
 
 /**
@@ -132,6 +137,26 @@ export function connectEvents(): () => void {
   source.addEventListener("session_external_changed", (raw) => {
     const data = parse<Extract<BusEvent, { type: "session_external_changed" }>>(raw);
     if (data) actions.markExternalChanged(data.sessionPath);
+  });
+
+  // Shell output goes straight to whichever terminal is watching that id. It
+  // deliberately does not touch React state — see `terminal-state.ts`.
+  source.addEventListener("terminal_output", (raw) => {
+    const data = parse<Extract<BusEvent, { type: "terminal_output" }>>(raw);
+    if (data) emitTerminalOutput(data.terminalId, data.data);
+  });
+
+  // Exit after output, always: the server flushes buffered frames before it
+  // announces the code, so a shell that printed on its way out has its last
+  // line on screen when the notice appears.
+  source.addEventListener("terminal_state", (raw) => {
+    const data = parse<Extract<BusEvent, { type: "terminal_state" }>>(raw);
+    if (data) terminalActions.noteExit(data.terminalId, data.exitCode);
+  });
+
+  source.addEventListener("terminal_closed", (raw) => {
+    const data = parse<Extract<BusEvent, { type: "terminal_closed" }>>(raw);
+    if (data) terminalActions.forget(data.terminalId);
   });
 
   source.addEventListener("workspace_changed", (raw) => {

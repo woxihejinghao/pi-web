@@ -28,19 +28,25 @@ server/src/
   mcp-probe.ts     MCP 服务器的连接检查（initialize 握手，stdio 另取工具数）
   watch.ts         会话目录监听，区分自身写入与外部写入
   session-path.ts  会话路径校验与 per-project 会话目录推导
+  terminal.ts      右侧栏的 shell：可选的 node-pty 加载（含 spawn-helper 权限修复）、PTY 进程表、
+                   字节合并上报、滚动缓冲与退出码
   bus.ts           事件总线（进程事件 → SSE）
 web/src/
   theme/           设计令牌，移植自 deepseek-harness 的 ui-theme
-  layout/          三栏外壳、左侧栏、右侧栏挂载点
+  layout/          三栏外壳（也是全应用唯一安装快捷键监听的地方）、左侧栏、右侧栏挂载点
   features/projects/     工作区树（含会话嵌套）与目录选择器
   features/conversation/ 新会话页、对话流、Composer、工具行、思考行、轮次导轨
                          消息操作行（复制 / 分支 / 用量 / 用时）、话题树
                          任务清单（转录投影 + 面板 + 专用工具行）、Markdown 与代码高亮（shiki）
                          输入框右下角的模型选择器与上下文环（含共用统计面板 StatPanel）
                          扩展问答卡片（接管输入框座位）及其纯投影 question-model
-                         每一轮末尾的改动文件卡片（turn-files 投影 → 点行开右侧栏预览）  features/rightbar/     右侧栏：面板外壳（标签条 / 宽度拖拽 / 全屏 / 每会话布局持久化）、
-                         文件树、文件预览（Markdown / 代码 / 图片）、变更面板（暂存、提交、推送、历史）、内嵌浏览器
-  lib/             API 客户端、SSE 订阅、状态 store、更新提示的纯投影
+                         每一轮末尾的改动文件卡片（turn-files 投影 → 点行开右侧栏预览）
+  features/rightbar/     右侧栏：面板外壳（标签条 / 宽度拖拽 / 全屏 / 每会话布局持久化）、
+                         文件树、文件预览（Markdown / 代码 / 图片）、变更面板（暂存、提交、推送、历史）、
+                         终端（xterm + 真 PTY，按需加载）、内嵌浏览器，以及右栏这几条快捷键的命令表
+  lib/shortcuts/   键盘协议：物理键的规范化 / 比较 / 键帽串（binding）、桌面与浏览器和三种系统
+                   的判定（environment）、纯派发（dispatch），以及唯一的 keydown 监听（use-shortcuts）
+  lib/             API 客户端、SSE 订阅（含 shell 字节的转发）、状态 store、更新提示的纯投影
                    图片附件的读取与上限（粘贴 / 拖入 / 附件按钮共用）
   components/      图标、全屏看图（ImageLightbox，缩略图与遮罩共用一份）
 ```
@@ -291,6 +297,22 @@ Web 不会静默合并两边的写入 —— 那样会互相覆盖 leaf 指针�
 **改 pi 的全局设置会让其他驻留进程过期。** `set_auto_compaction` 写的是 pi 自己的配置文件，而只有**新启动**的进程会重新读它——已经跑着的进程继续用它启动时那份。所以写入成功后除了当前 handle 之外全部关闭（`closeAllExcept`），代价是下次切到那些会话要付一次冷启动。改设置是低频操作，用一次稍慢的切换换「另一个开着的会话不会显示旧值」，值。
 
 **没有「权限」也没有「语言」，因为做不出真的。** dsh 的权限是三档「仅可查看 / 工作区内修改 / 完全权限」，pi 侧对应的是 `trust`——而那是**「是否信任这个项目的动态配置（`.pi` / `.agents/skills`）」**，项目级、没有 RPC、语义也不是工具执行级别，放进「通用」里是错位的。语言则是单语言项目：列表里只有一个选项，等于摆了一个不会变的下拉。两项都留空，而不是放个占位。
+
+### 快捷键
+
+**协议是纯函数，碰 DOM 的只有一处。** `lib/shortcuts/binding.ts` 里没有 `KeyboardEvent`：它认的是 `{ code, modifiers }`——**物理键，不是 `key`**，因为 `⌥⌘B` 在 macOS 上打出来的字符是个 `∫`，按字符匹配迟早会散架。它负责规范化修饰键顺序、比较、拼键帽串。`environment.ts` 同样纯，输入只是 `{ desktopPlatform, userAgent }` 两个字符串。真正接触浏览器的只有 `use-shortcuts.ts` 里那一个 `window.addEventListener("keydown")` 和旁边的适配器，把事件压成同一个 `ShortcutGesture`。这条界线不是洁癖：正因为比较是纯的，那批断言才能在 Node 里对着真键盘事件跑（`Input.dispatchKeyEvent` 发出的就是同一批字段），不需要 jsdom。
+
+**命令表由动手的那个功能注册，外壳只装监听。** 「打开右栏」这条命令的属主不能是右栏本身——它得在右栏还没打开的时候就能被按下。所以命令表在 `features/rightbar/shortcuts.ts`，`layout/AppLayout.tsx` 负责装上它（dsh 也是这个分工：快捷键服务挂在外壳，命令由各自的 feature 注册）。监听装在 `AppLayout` 还有一个本地原因：设置页是**取代**外壳渲染的，不是盖在它上面，所以 `AppLayout` 始终挂着，必须靠一个 `!settingsOpen` 关掉监听，否则在一个既没有会话、也没有右栏的页面上它仍然活着。
+
+**浏览器列和桌面列不同，是因为那几个键已经归浏览器了。** `⌘P` 是打印、`⌘T` 是新标签页、`⌘⇧B` 是显示/隐藏书签栏——都拦不掉。所以浏览器运行的默认值改走 `⌥`（`⌥⌘P` / `⌥⌘T` / `⌥⌘B`），桌面版（Electron 壳，没有这些抢占者）保留 dsh 桌面版的原始绑定。`` ⌃` `` 两边一样，因为 dsh 刻意没把它设成 `primary`。
+
+**键帽串的修饰键顺序是 `⌃⌥⇧⌘`，不是 `⌘⌥⇧⌃`。** 这不是随便定的：macOS 自己就按这个顺序印修饰键，`⇧⌘B` 与 `⌥⌘B` 正是系统「键盘」设置里的写法。渲染成 `⌘⌥B` 在 macOS 用户眼里像是打错了。Windows/Linux 用 `Ctrl+Alt+B`，顺序同样照 dsh 的 `modifierOrder` 走。
+
+**`⌥⌘↵` 差点连带发出三条消息。** 这里有**三处** `Enter` 提交（`Composer`、变更面板的提交框、扩展问答卡片），它们原本只看 `event.key === "Enter"`，而 `⌥⌘↵` 现在归「面板全屏」——不处理的话，按一下会同时发消息和切全屏。三处都在 `Enter` 分支上加了「不收 `Alt`」，关键在于**同时不 `preventDefault`**：事件要留给快捷键层。dsh 的 Composer keymap 在同一处画了同一条线，注释原话是「返回 true 可以停掉 Lexical 的兜底换行，但**不消费**应用快捷键需要的那个 DOM 事件」。
+
+**遮罩层只在真的挡住时才吃按键。** 层选择器是 `[role="dialog"][aria-modal="true"], [role="menu"]`——这不是 dsh 那个选择器的逐字拷贝，因为它对这里多了两种东西：转录里的扩展问答卡片是 `role="dialog"` 但**没有** `aria-modal`（它是一张卡，不是模态），用量弹层也是，这两种必须让快捷键照常工作，否则按 `⌥⌘B` 会莫名其妙什么都没发生。三个 `role="menu"` 弹层都是「打开时才渲染」，所以严格的选择器不会被永久挡住。
+
+**提示文案与监听器读同一张表。** 按钮 `title` 里那句「收起右栏（⌥⌘B）」是从命令自己的 `defaults[runtime]` 现算的，不是手写的——手写就有两个地方要同步，而它们迟早会不一致，表现就是「悬停说按这个键、按下去没反应」。测试里有一条跨 `runtime × platform` 全组合的断言：同一个组合不能有两条命令，把「每个平台上的绑定唯一」这件事在表里就验掉。
 
 ### 输入框里的图片
 

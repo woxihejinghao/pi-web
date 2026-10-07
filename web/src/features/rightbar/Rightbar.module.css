@@ -198,8 +198,15 @@
   text-align: left;
 }
 
-.menuItem:hover {
+.menuItem:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* A host without a prebuilt node-pty still lists the terminal, greyed rather
+   than hidden — the reason is in the item's `title`. */
+.menuItem:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
 }
 
 .panelControl {

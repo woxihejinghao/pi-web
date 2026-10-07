@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import clsx from "clsx";
 import { ConversationPane } from "../features/conversation/ConversationPane.tsx";
 import { Rightbar } from "../features/rightbar/Rightbar.tsx";
+import { rightbarCommands } from "../features/rightbar/shortcuts.ts";
 import { SettingsPage } from "../features/settings/SettingsPage.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { actions, appStore, useT } from "../lib/app-state.ts";
+import { useShortcuts } from "../lib/shortcuts/use-shortcuts.ts";
 import { setEventSession } from "../lib/sse.ts";
 import { useStore } from "../lib/store.ts";
 import styles from "./AppLayout.module.css";
@@ -28,6 +30,16 @@ export function AppLayout() {
   useEffect(() => {
     setEventSession(state.selectedSessionPath);
   }, [state.selectedSessionPath]);
+
+  // Installed here rather than inside the panel: the commands open the panel
+  // too, so their owner cannot be the thing they are meant to conjure. dsh
+  // makes the same division — a shortcut service on the shell, the commands
+  // registered by the features that act on them.
+  //
+  // The settings page is why the flag exists. It renders *instead of* the shell
+  // rather than over it, so this component stays mounted and the listener would
+  // otherwise still be live on a page with no conversation and no panel.
+  useShortcuts(rightbarCommands, !state.settingsOpen);
 
   // The settings page replaces the shell instead of sitting over it. That does
   // unmount the conversation, and remounting costs a transcript read — a few

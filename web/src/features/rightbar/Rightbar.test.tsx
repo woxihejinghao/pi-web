@@ -90,6 +90,32 @@ describe("Rightbar", () => {
     expect(html).toContain("读取改动");
   });
 
+  it("gives a terminal tab a chip, and loads its screen on demand", () => {
+    selectSession("sess-1");
+    rightbarActions.openTerminalTab("sess-1");
+    const html = renderToStaticMarkup(<Rightbar />);
+    // The strip is in the main chunk and names the tab straight away...
+    expect(html).toContain('title="终端"');
+    // ...while the body is behind a `lazy` boundary, so a static render — which
+    // never resolves one — draws the fallback. That is the whole point of the
+    // split: xterm is ~340 kB and only a terminal tab ever needs it.
+    // `TerminalTab.test.tsx` covers what the body draws once it arrives.
+    expect(html).toContain("加载中");
+  });
+
+  it("prints the keys a control also answers to", () => {
+    selectSession("sess-1");
+    rightbarActions.open("sess-1");
+    const html = renderToStaticMarkup(<Rightbar />);
+    // The keycaps come from the same table the keydown listener matches
+    // against, so this asserts the whole chain at once: the environment's
+    // device, the binding's normalization, the keycap table and the tooltip
+    // template. There is no navigator in this render, which is the device whose
+    // defaults are the plainest.
+    expect(html).toContain('title="收起右栏（Ctrl+Shift+B）"');
+    expect(html).toContain('title="全屏显示（Ctrl+Alt+Enter）"');
+  });
+
   it("keeps each session's surface to itself", () => {
     selectSession("sess-a");
     rightbarActions.openPreviewTab("sess-a", "a.md");

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { CloseIcon, PlusIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
@@ -23,12 +23,31 @@ import {
   type RightbarTab,
   type RightbarTabKind,
 } from "./rightbar-state.ts";
+import { shortcutTitle } from "./shortcuts.ts";
+import { terminalActions, terminalStore } from "./terminal-state.ts";
+import pane from "./Pane.module.css";
 import styles from "./Rightbar.module.css";
+
+/**
+ * The terminal body is the one tab that arrives on demand.
+ *
+ * xterm plus its fit addon is ~340 kB of the bundle and this tab is its only
+ * consumer, so nothing else should pay for it on the first paint. That matters
+ * more here than for the other tabs: the shell is an optional capability, and
+ * a host without a prebuilt node-pty can never open one at all. The strip, the
+ * "+" menu and the reattach path stay in the main chunk — only the screen moves
+ * behind the boundary, and the chunk comes off the same origin as the page.
+ */
+const TerminalTab = lazy(async () => {
+  const module = await import("./TerminalTab.tsx");
+  return { default: module.TerminalTab };
+});
 
 /** The glyph on a tab chip, by what that tab is showing. */
 function TabIcon({ kind }: { kind: RightbarTabKind }) {
   if (kind === "files") return <Glyph name="checklist" size={13} />;
   if (kind === "browser") return <Glyph name="browse" size={13} />;
+  if (kind === "terminal") return <Glyph name="terminal" size={13} />;
   if (kind === "changes") return <DiffIcon width={13} height={13} />;
   return <FileIcon width={13} height={13} />;
 }
@@ -96,7 +115,16 @@ export function Rightbar() {
                 type="button"
                 className={styles.chipClose}
                 aria-label={t("rightbar.closeTab", { title: tabTitle(tab, t) })}
-                onClick={() => rightbarActions.closeTab(sessionPath, tab.id)}
+                onClick={() => {
+                  // Closing a terminal's chip is the user saying they are done
+                  // with that shell, so the process goes with the tab. Only this
+                  // gesture kills: collapsing the panel or switching sessions
+                  // unmounts the same body and must leave the shell running.
+                  if (tab.kind === "terminal" && tab.target.length > 0) {
+                    terminalActions.release(tab.target);
+                  }
+                  rightbarActions.closeTab(sessionPath, tab.id);
+                }}
               >
                 <CloseIcon width={11} height={11} />
               </button>
@@ -107,6 +135,7 @@ export function Rightbar() {
           onPick={(kind) => {
             if (kind === "files") rightbarActions.openFilesTab(sessionPath);
             else if (kind === "changes") rightbarActions.openChangesTab(sessionPath);
+            else if (kind === "terminal") rightbarActions.openTerminalTab(sessionPath);
             else rightbarActions.openBrowserTab(sessionPath, "");
           }}
         />
@@ -114,7 +143,11 @@ export function Rightbar() {
         <button
           type="button"
           className={styles.panelControl}
-          title={surface.mode === "fullscreen" ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen")}
+          title={shortcutTitle(
+            t,
+            surface.mode === "fullscreen" ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen"),
+            "rightbar.fullscreen",
+          )}
           aria-label={surface.mode === "fullscreen" ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen")}
           onClick={() =>
             rightbarActions.setMode(sessionPath, surface.mode === "fullscreen" ? "push" : "fullscreen")
@@ -129,7 +162,7 @@ export function Rightbar() {
         <button
           type="button"
           className={styles.panelControl}
-          title={t("rightbar.collapse")}
+          title={shortcutTitle(t, t("rightbar.collapse"), "rightbar.toggle")}
           aria-label={t("rightbar.collapse")}
           onClick={() => rightbarActions.close(sessionPath)}
         >
@@ -155,6 +188,18 @@ export function Rightbar() {
             projectId={project.id}
             onOpenFile={(path) => rightbarActions.openPreviewTab(sessionPath, path)}
           />
+        ) : active.kind === "terminal" ? (
+          // Keyed by tab id like the browser: two terminal tabs are two shells,
+          // and the tab is where the host id that identifies one lives.
+          <Suspense fallback={<div className={pane.note}>{t("common.loading")}</div>}>
+            <TerminalTab
+              key={active.id}
+              sessionPath={sessionPath}
+              projectPath={project.path}
+              tabKey={sessionPath}
+              tab={active}
+            />
+          </Suspense>
         ) : (
           <BrowserTab key={active.id} sessionPath={sessionPath} tab={active} />
         )}
@@ -209,10 +254,15 @@ function ResizeHandle({ sessionPath, width }: { sessionPath: string; width: numb
 }
 
 /** The strip's "+": the tab kinds a user can add directly. */
-function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser") => void }) {
+function AddTabMenu({
+  onPick,
+}: {
+  onPick: (kind: "files" | "changes" | "browser" | "terminal") => void;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const support = useStore(terminalStore).support;
 
   useEffect(() => {
     if (!open) return;
@@ -224,6 +274,17 @@ function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser"
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
+
+  // Asked when the menu opens rather than when the panel does: a sidebar opened
+  // to read a file has no business asking the host about shells.
+  useEffect(() => {
+    if (!open) return;
+    if (terminalStore.get().support === null) void terminalActions.probe();
+  }, [open]);
+
+  // null means the answer has not landed yet. The entry stays live in that
+  // case — the tab itself knows how to report a host that cannot open a shell.
+  const terminalOff = support !== null && !support.available;
 
   return (
     <div className={styles.addWrap} ref={rootRef}>
@@ -243,6 +304,7 @@ function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser"
             type="button"
             className={styles.menuItem}
             role="menuitem"
+            title={shortcutTitle(t, t("tab.files"), "rightbar.files")}
             onClick={() => {
               setOpen(false);
               onPick("files");
@@ -259,10 +321,26 @@ function AddTabMenu({ onPick }: { onPick: (kind: "files" | "changes" | "browser"
             }}
           >
             <DiffIcon width={13} height={13} />{t("tab.changes")}</button>
+          {/* Offered but disabled rather than hidden: a machine without a
+              prebuilt node-pty still wants to know the tab exists and why it
+              is not there, and the reason is one hover away. */}
           <button
             type="button"
             className={styles.menuItem}
             role="menuitem"
+            disabled={terminalOff}
+            title={terminalOff ? support?.reason : shortcutTitle(t, t("tab.terminal"), "rightbar.terminal")}
+            onClick={() => {
+              setOpen(false);
+              onPick("terminal");
+            }}
+          >
+            <Glyph name="terminal" size={13} />{t("tab.terminal")}</button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            role="menuitem"
+            title={shortcutTitle(t, t("tab.browser"), "rightbar.browser")}
             onClick={() => {
               setOpen(false);
               onPick("browser");

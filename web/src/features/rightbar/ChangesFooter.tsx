@@ -47,6 +47,10 @@ export function CommitBar({
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key !== "Enter") return;
     if (!event.metaKey && !event.ctrlKey) return;
+    // `⌘⌥↵` is the fullscreen-the-panel shortcut, and the changes tab is inside
+    // that panel — so this is the one commit box where the two keys really can
+    // arrive together. The composer refuses Alt for the same reason.
+    if (event.altKey) return;
     event.preventDefault();
     submit();
   };

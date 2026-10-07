@@ -285,6 +285,32 @@ export interface WorkspaceFileContent {
 }
 
 /**
+ * What this host can offer in a terminal tab.
+ *
+ * `available: false` is an answer rather than an error. `node-pty` is an
+ * optional dependency and a native one, so a machine without a prebuilt binary
+ * for its platform — or without a toolchain to build one — still runs
+ * everything else, and the terminal entry simply is not offered.
+ */
+export interface TerminalSupport {
+  available: boolean;
+  /** One line on why not, shown wherever the terminal entry would have been. */
+  reason?: string;
+  /** Shells the host offers, in the order a picker should show them. */
+  shells: string[];
+}
+
+export interface TerminalInfo {
+  id: string;
+  sessionPath: string;
+  title: string;
+  cols: number;
+  rows: number;
+  /** null while the shell is alive; the code it left with afterwards. */
+  exitCode: number | null;
+}
+
+/**
  * One changed file on one side of the change set. `patch` is git's own unified
  * diff for that side, parsed for drawing by `diff-parse.ts`.
  */
@@ -335,6 +361,9 @@ export type BusEvent =
   | { type: "session_event"; sessionPath: string; event: SessionEvent }
   | { type: "session_closed"; sessionPath: string; reason: string }
   | { type: "session_external_changed"; sessionPath: string; modifiedAt: string }
+  | { type: "terminal_output"; terminalId: string; sessionPath: string; data: string }
+  | { type: "terminal_state"; terminalId: string; sessionPath: string; exitCode: number }
+  | { type: "terminal_closed"; terminalId: string; sessionPath: string }
   | { type: "workspace_changed"; projectPath: string }
   | { type: "projects_changed" }
   | { type: "sessions_changed"; projectPath: string };
