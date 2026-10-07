@@ -260,6 +260,12 @@ export const zhCN = {
   "rightbar.collapse": "收起右栏",
   "rightbar.resize": "调整右栏宽度",
   "rightbar.newTab": "新建标签页",
+  // The chip's context menu. The first item reuses `rightbar.closeTab` — the
+  // ✕'s own words, name and all — so the two ways of closing one tab cannot
+  // drift apart.
+  "rightbar.tabMenu": "标签页操作",
+  "rightbar.closeOtherTabs": "关闭其他标签页",
+  "rightbar.closeAllTabs": "关闭全部标签页",
   "tab.files": "文件",
   "tab.changes": "文件变更",
   "tab.browser": "浏览器",
@@ -861,6 +867,9 @@ export const en: Record<MessageKey, string> = {
   "rightbar.collapse": "Collapse the sidebar",
   "rightbar.resize": "Resize the sidebar",
   "rightbar.newTab": "New tab",
+  "rightbar.tabMenu": "Tab actions",
+  "rightbar.closeOtherTabs": "Close other tabs",
+  "rightbar.closeAllTabs": "Close all tabs",
   "tab.files": "Files",
   "tab.changes": "Changes",
   "tab.browser": "Browser",

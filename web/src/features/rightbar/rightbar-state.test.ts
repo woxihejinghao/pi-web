@@ -80,6 +80,98 @@ describe("opening and closing", () => {
     expect(surface().tabs.map((tab) => tab.id)).toEqual([preview!.id]);
     expect(surface().activeTabId).toBe(preview!.id);
   });
+
+  /**
+   * Closing a group — the strip's context menu.
+   *
+   * `closeTabs` is the plural of `closeTab`, and the pair must agree: the single
+   * close is now literally a one-element call, so what these pin is that the
+   * plural behaves like the singular when given one id, and that a group close
+   * is one write rather than N.
+   */
+  describe("closing groups", () => {
+    /** Three tabs, with the second one showing. */
+    function threeTabs() {
+      rightbarActions.open(KEY);
+      rightbarActions.openPreviewTab(KEY, "README.md");
+      rightbarActions.openPreviewTab(KEY, "notes.md");
+      const [files, readme, notes] = surface().tabs;
+      rightbarActions.selectTab(KEY, readme!.id);
+      return { files: files!, readme: readme!, notes: notes! };
+    }
+
+    it("takes away every id it is given", () => {
+      const { files, readme, notes } = threeTabs();
+      rightbarActions.closeTabs(KEY, [files.id, notes.id]);
+      expect(surface().tabs.map((tab) => tab.id)).toEqual([readme.id]);
+      // The survivor was the one showing, and it stays showing.
+      expect(surface().activeTabId).toBe(readme.id);
+    });
+
+    it("leaves the panel open when tabs remain", () => {
+      const { files, notes } = threeTabs();
+      rightbarActions.closeTabs(KEY, [files.id, notes.id]);
+      expect(surface().open).toBe(true);
+    });
+
+    it("closes the panel when the group was everything", () => {
+      threeTabs();
+      rightbarActions.closeTabs(
+        KEY,
+        surface().tabs.map((tab) => tab.id),
+      );
+      expect(surface().open).toBe(false);
+      expect(surface().tabs).toEqual([]);
+      expect(surface().activeTabId).toBeNull();
+    });
+
+    it("falls to the tab that slides into the closed one's place", () => {
+      // `readme` (middle) is showing; `notes` takes its position.
+      const { notes } = threeTabs();
+      rightbarActions.closeTabs(KEY, [surface().tabs[1]!.id]);
+      expect(surface().activeTabId).toBe(notes.id);
+    });
+
+    it("falls back to the left when there was nothing to the right", () => {
+      // Closing the last tab has no right neighbour to slide in, so the tab to
+      // its left keeps the reader company — the same rule Chrome uses.
+      const { readme } = threeTabs();
+      rightbarActions.closeTabs(KEY, [surface().tabs[2]!.id]);
+      expect(surface().activeTabId).toBe(readme.id);
+    });
+
+    it("keeps the showing tab when it is not in the group", () => {
+      const { readme } = threeTabs();
+      rightbarActions.closeTabs(KEY, [surface().tabs[0]!.id]);
+      expect(surface().activeTabId).toBe(readme.id);
+    });
+
+    it("does nothing for ids that match no tab", () => {
+      const { files, readme, notes } = threeTabs();
+      rightbarActions.closeTabs(KEY, ["nope-1", "nope-2"]);
+      expect(surface().tabs.map((tab) => tab.id)).toEqual([files.id, readme.id, notes.id]);
+    });
+
+    it("does nothing for an empty group", () => {
+      threeTabs();
+      rightbarActions.closeTabs(KEY, []);
+      expect(surface().tabs).toHaveLength(3);
+      expect(surface().open).toBe(true);
+    });
+
+    it("writes the layout once for a whole group", () => {
+      // The panel persists through localStorage, so "how many writes" is
+      // observable: one commit per group, not one per tab.
+      const store = installStorage();
+      threeTabs();
+      store.clear();
+      rightbarActions.closeTabs(
+        KEY,
+        surface().tabs.map((tab) => tab.id),
+      );
+      expect([...store.keys()]).toHaveLength(1);
+    });
+  });
 });
 
 describe("tabs", () => {

@@ -455,25 +455,52 @@ export const rightbarActions = {
     rightbarActions.openTab(key, makeTerminalTab());
   },
 
-  /**
-   * Close one tab. Closing the last tab closes the panel with it, so a docked
-   * surface is never left empty — dsh's rule, and the reason there is no
-   * separate "close pane" gesture.
-   */
+  /** Close one tab. */
   closeTab(key: string, id: string): void {
+    rightbarActions.closeTabs(key, [id]);
+  },
+
+  /**
+   * Close several tabs in one write.
+   *
+   * One commit rather than one per tab because the strip's menu closes whole
+   * groups: a surface written once per closed tab would render the strip N times
+   * for a single gesture, and a page that went away mid-loop would leave a
+   * half-closed layout in storage.
+   *
+   * Closing *everything* closes the panel with it, so a docked surface is never
+   * left empty — dsh's rule, and the reason there is no separate "close pane"
+   * gesture. Closing a subset leaves the panel alone, even when the subset holds
+   * the tab that happened to be showing.
+   */
+  closeTabs(key: string, ids: readonly string[]): void {
     const surface = surfaceOf(rightbarStore.get(), key);
-    const index = surface.tabs.findIndex((tab) => tab.id === id);
-    if (index < 0) return;
-    const tabs = surface.tabs.filter((tab) => tab.id !== id);
+    const removing = new Set(ids);
+    const tabs = surface.tabs.filter((tab) => !removing.has(tab.id));
+    if (tabs.length === surface.tabs.length) return;
     if (tabs.length === 0) {
       commit(key, { ...surface, tabs, activeTabId: null, open: false });
       return;
     }
-    const activeTabId =
-      surface.activeTabId === id
-        ? (tabs[Math.min(index, tabs.length - 1)]?.id ?? null)
-        : surface.activeTabId;
-    commit(key, { ...surface, tabs, activeTabId });
+    // The tab that was showing stays showing unless it is one of the ones going
+    // away. When it does go, focus lands on whatever slid into its place — the
+    // neighbour on its right, or the one on its left when it was last. That is
+    // the neighbour rule a single close has always used, and it is why the count
+    // below is "survivors to the left of the first removed tab": for one id that
+    // is exactly the removed tab's own index.
+    if (surface.activeTabId !== null && !removing.has(surface.activeTabId)) {
+      commit(key, { ...surface, tabs });
+      return;
+    }
+    const first = surface.tabs.findIndex((tab) => removing.has(tab.id));
+    const survivorsBefore = surface.tabs
+      .slice(0, first)
+      .filter((tab) => !removing.has(tab.id)).length;
+    commit(key, {
+      ...surface,
+      tabs,
+      activeTabId: tabs[Math.min(survivorsBefore, tabs.length - 1)]?.id ?? null,
+    });
   },
 
   /** Rename a tab — a browser tab takes the title of the page it landed on. */

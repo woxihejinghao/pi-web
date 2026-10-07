@@ -20,9 +20,10 @@ import {
   rightbarActions,
   rightbarStore,
   tabTitle,
-  type RightbarTab,
   type RightbarTabKind,
 } from "./rightbar-state.ts";
+import { TabMenu } from "./TabMenu.tsx";
+import { closeTabs } from "./close-tabs.ts";
 import { shortcutTitle } from "./shortcuts.ts";
 import { terminalActions, terminalStore } from "./terminal-state.ts";
 import pane from "./Pane.module.css";
@@ -73,6 +74,17 @@ export function Rightbar() {
   const project = app.projects.find((item) => item.id === app.selectedProjectId) ?? null;
   const surface = state.surfaces[sessionPath];
 
+  // The chip whose context menu is open, and where the press landed. The tab
+  // itself is looked up from the live surface on every render rather than kept
+  // here, so a menu whose tab has since gone away draws nothing instead of
+  // offering to close something that is not there any more.
+  const [menu, setMenu] = useState<{
+    tabId: string;
+    anchor: HTMLElement;
+    x: number;
+    y: number;
+  } | null>(null);
+
   // Load this session's saved layout the first time the panel appears for it.
   useEffect(() => {
     rightbarActions.ensureSurface(sessionPath);
@@ -83,6 +95,7 @@ export function Rightbar() {
 
   const active =
     surface.tabs.find((tab) => tab.id === surface.activeTabId) ?? surface.tabs[0] ?? null;
+  const menuTab = menu === null ? null : (surface.tabs.find((tab) => tab.id === menu.tabId) ?? null);
 
   return (
     <aside
@@ -101,6 +114,21 @@ export function Rightbar() {
             <div
               key={tab.id}
               className={clsx(styles.chip, tab.id === active?.id && styles.chipActive)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                const anchor = event.currentTarget;
+                // A keyboard-invoked context menu (Shift+F10, the context-menu
+                // key) arrives with zeroed coordinates, so it hangs off the
+                // chip's own bottom-left corner instead of the window's.
+                const keyboard = event.clientX === 0 && event.clientY === 0;
+                const rect = anchor.getBoundingClientRect();
+                setMenu({
+                  tabId: tab.id,
+                  anchor,
+                  x: keyboard ? rect.left : event.clientX,
+                  y: keyboard ? rect.bottom : event.clientY,
+                });
+              }}
             >
               <button
                 type="button"
@@ -120,10 +148,7 @@ export function Rightbar() {
                   // with that shell, so the process goes with the tab. Only this
                   // gesture kills: collapsing the panel or switching sessions
                   // unmounts the same body and must leave the shell running.
-                  if (tab.kind === "terminal" && tab.target.length > 0) {
-                    terminalActions.release(tab.target);
-                  }
-                  rightbarActions.closeTab(sessionPath, tab.id);
+                  closeTabs(sessionPath, [tab.id]);
                 }}
               >
                 <CloseIcon width={11} height={11} />
@@ -204,6 +229,25 @@ export function Rightbar() {
           <BrowserTab key={active.id} sessionPath={sessionPath} tab={active} />
         )}
       </div>
+
+      {menu === null || menuTab === null ? null : (
+        <TabMenu
+          anchor={menu.anchor}
+          position={{ x: menu.x, y: menu.y }}
+          tabTitle={tabTitle(menuTab, t)}
+          hasSiblings={surface.tabs.length > 1}
+          onDismiss={() => setMenu(null)}
+          onPick={(action) => {
+            if (action === "close") closeTabs(sessionPath, [menuTab.id]);
+            else if (action === "closeOthers") {
+              closeTabs(
+                sessionPath,
+                surface.tabs.filter((tab) => tab.id !== menuTab.id).map((tab) => tab.id),
+              );
+            } else closeTabs(sessionPath, surface.tabs.map((tab) => tab.id));
+          }}
+        />
+      )}
     </aside>
   );
 }
