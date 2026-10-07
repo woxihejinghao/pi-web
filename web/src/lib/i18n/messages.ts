@@ -259,7 +259,24 @@ export const zhCN = {
   "rightbar.exitFullscreen": "回到右栏",
   "rightbar.collapse": "收起右栏",
   "rightbar.resize": "调整右栏宽度",
+  // The seam between two panes, named apart from `rightbar.resize` above: one
+  // widens the column, the other only redistributes it.
+  "rightbar.resizePanes": "调整分栏宽度",
   "rightbar.newTab": "新建标签页",
+  // Splitting. The two refusals are dsh's own sentences, word for word, because
+  // they name the same two limits: the pane budget, and a column too narrow to
+  // hold two working halves.
+  "rightbar.split": "分栏",
+  "rightbar.splitFull": "已达两格上限",
+  "rightbar.splitNarrow": "栏宽不足，拖宽侧边栏后再分栏",
+  "rightbar.emptyPane": "空面板",
+  // A floating panel's header: what it is, how big it is, and the way back.
+  "rightbar.dockFloat": "收回到侧边栏",
+  "rightbar.floatResize": "调整面板大小",
+  // What a dragged chip would do if it were released where the pointer is.
+  "rightbar.dropCenter": "移到这里",
+  "rightbar.dropLeft": "左分栏",
+  "rightbar.dropRight": "右分栏",
   // The chip's context menu. The first item reuses `rightbar.closeTab` — the
   // ✕'s own words, name and all — so the two ways of closing one tab cannot
   // drift apart.
@@ -871,7 +888,17 @@ export const en: Record<MessageKey, string> = {
   "rightbar.exitFullscreen": "Back to the sidebar",
   "rightbar.collapse": "Collapse the sidebar",
   "rightbar.resize": "Resize the sidebar",
+  "rightbar.resizePanes": "Resize the panes",
   "rightbar.newTab": "New tab",
+  "rightbar.split": "Split",
+  "rightbar.splitFull": "Two panes is the limit",
+  "rightbar.splitNarrow": "Not enough width; widen the sidebar before splitting",
+  "rightbar.emptyPane": "Empty pane",
+  "rightbar.dockFloat": "Dock back into the sidebar",
+  "rightbar.floatResize": "Resize the panel",
+  "rightbar.dropCenter": "Move here",
+  "rightbar.dropLeft": "Split left",
+  "rightbar.dropRight": "Split right",
   "rightbar.tabMenu": "Tab actions",
   "rightbar.closeOtherTabs": "Close other tabs",
   "rightbar.closeAllTabs": "Close all tabs",

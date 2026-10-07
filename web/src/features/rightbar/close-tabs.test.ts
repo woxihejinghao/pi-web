@@ -3,6 +3,7 @@ import { closeTabs } from "./close-tabs.ts";
 import {
   makePreviewTab,
   makeTerminalTab,
+  paneTabs,
   resetRightbarState,
   rightbarActions,
   rightbarStore,
@@ -32,10 +33,19 @@ function surface() {
   return value;
 }
 
+/** A surface's docked tabs. A tab record is the surface's own, so this is only
+ * a convenience for reading the pane that holds the ids. */
+function dockTabs() {
+  const value = surface();
+  const pane = value.panes[0];
+  if (pane === undefined) throw new Error("no docked pane");
+  return paneTabs(value, pane);
+}
+
 /** A tab that has a shell behind it — `target` is only filled once it has one. */
 function openTerminal(target: string): string {
   rightbarActions.openTab(KEY, { ...makeTerminalTab(), target });
-  const tab = surface().tabs.at(-1);
+  const tab = dockTabs().at(-1);
   if (tab === undefined) throw new Error("the terminal tab was not added");
   return tab.id;
 }
@@ -66,7 +76,19 @@ describe("closeTabs", () => {
     const id = openTerminal("host-1");
     closeTabs(KEY, [id]);
     expect(seen).toEqual(["DELETE /api/terminal/host-1"]);
-    expect(surface().tabs).toHaveLength(0);
+    expect(surface().tabs).toEqual({});
+  });
+
+  it("finds the shell behind a floating panel's tab too", () => {
+    // The lookup walks the surface's tab records rather than a pane's ids,
+    // which is the only reason a tab that has been dragged out of the column
+    // still has its process killed when it is closed.
+    const seen = stubFetch();
+    const id = openTerminal("host-1");
+    rightbarActions.floatTab(KEY, id);
+    closeTabs(KEY, [id]);
+    expect(seen).toEqual(["DELETE /api/terminal/host-1"]);
+    expect(surface().floats).toEqual([]);
   });
 
   it("kills every shell in a group, not just the first", () => {
@@ -83,13 +105,13 @@ describe("closeTabs", () => {
     const going = openTerminal("host-2");
     closeTabs(KEY, [going]);
     expect(seen).toEqual(["DELETE /api/terminal/host-2"]);
-    expect(surface().tabs.map((tab) => tab.id)).toEqual([kept]);
+    expect(dockTabs().map((tab) => tab.id)).toEqual([kept]);
   });
 
   it("asks the host for nothing when a view's tab closes", () => {
     const seen = stubFetch();
     rightbarActions.openTab(KEY, makePreviewTab("README.md"));
-    const id = surface().tabs[0]?.id ?? "";
+    const id = dockTabs()[0]?.id ?? "";
     closeTabs(KEY, [id]);
     expect(seen).toEqual([]);
   });
@@ -107,7 +129,7 @@ describe("closeTabs", () => {
     const id = openTerminal("host-1");
     closeTabs(KEY, ["nope"]);
     expect(seen).toEqual([]);
-    expect(surface().tabs.map((tab) => tab.id)).toEqual([id]);
+    expect(dockTabs().map((tab) => tab.id)).toEqual([id]);
   });
 
   it("does nothing for a session with no loaded surface", () => {

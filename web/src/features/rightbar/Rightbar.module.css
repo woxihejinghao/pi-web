@@ -51,7 +51,11 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
+/* The chips. `position: relative` is the drag caret's containing block: the
+ * caret is placed from the chip rectangles around it, which the caret cannot
+ * hold a slot between without moving them (see `Caret` in PaneView). */
 .chips {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -84,6 +88,12 @@
   border-radius: 13px;
   color: var(--dsw-alias-label-secondary);
   background: transparent;
+  /* `touch-action: none` on the press target alone, and deliberately not on the
+   * strip: a press-and-move on a chip has to stay a tab drag rather than become
+   * a pan the chip scroller claims and cancels the pointer for, while a press on
+   * the strip's empty run still scrolls the row. dsh puts it on both, which
+   * costs a touch reader the swipe on the whole row. */
+  touch-action: none;
 }
 
 .chip:hover {
@@ -167,11 +177,17 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* This class is shared by the strip's own "+" dropdown, which is absolutely
+ * positioned inside the panel, and by the tab's context menu, which is
+ * portalled into `document.body` and positioned in viewport coordinates. The
+ * level is therefore global for both: above the floating panels (`.`float`,
+ * 40), because a menu opened from a tab must never sit under a panel, and
+ * below the dialog mask (60), because a modal covers everything. */
 .menu {
   position: absolute;
   top: 28px;
   left: 0;
-  z-index: 10;
+  z-index: 50;
   min-width: 128px;
   padding: 4px;
   border-radius: 10px;
@@ -229,10 +245,348 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.body {
-  flex: 1;
+.chipDragging {
+  opacity: 0.5;
+}
+
+/* --- two panes: the row, the panes, and the seam -------------------------- */
+
+/* The row is a flex row of one or two panes. A pane's basis is 0 so the
+ * `flex-grow` each one carries inline *is* its fraction of the row; without the
+ * zero basis a pane would start from its content's width and the fractions
+ * would only redistribute what was left over. */
+.row {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row;
+  min-width: 0;
   min-height: 0;
+}
+
+.pane {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-basis: 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The seam owns no layout width: the two halves abut, so a rule a pane draws
+ * across its own edge runs unbroken past the seam. The visible rule is a 0.5px
+ * hairline centred on it and `::after` widens the pointer target to 8px by
+ * reaching 4px over each neighbour — dsh's divider, to the number. */
+.rowDivider {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.rowDivider::before,
+.rowDivider::after {
+  content: "";
+  position: absolute;
+}
+
+.rowDivider::before {
+  top: 0;
+  bottom: 0;
+  left: -0.25px;
+  width: 0.5px;
+  background: var(--dsw-alias-border-l4);
+}
+
+/* Hover: a 1px grip fades in over the hairline, its caption ink deepest at its
+ * middle and fading toward both ends. Painted on the hit target and crossfaded
+ * through opacity, because a gradient cannot transition from a solid colour. */
+.rowDivider::after {
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--dsw-alias-label-caption) 50%,
+      transparent
+    )
+    center / 1px 100% no-repeat;
+}
+
+.rowDivider:hover::after {
+  opacity: 1;
+}
+
+/* Which pane the keyboard commands act on.
+ *
+ * This is the one place the layout says something dsh's does not. dsh renders
+ * `data-dockkit-pane-active` too, but only ever as a test hook — no rule in its
+ * sheet reads it. It can afford that: the pane it splits is the last one the
+ * reader clicked, and its window chrome carries the focus anyway. Here the only
+ * thing that would tell them is this line, and a command that acts on an
+ * invisible target is a command nobody can learn. So the focused pane's strip
+ * is ruled in the accent, which is also what dsh's caret and drop card use. */
+.paneMarked > .strip {
+  border-bottom-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+/* No padding: each tab's own body draws its insets, so a header row it wants
+ * sits flush under the strip, and nothing here needs a scroller — every tab
+ * body brings its own. */
+.paneBody {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The insertion caret a dragged chip shows in a strip. Two pixels wide, and
+ * positioned from `left` alone — see `Caret` for why it is out of the flow. */
+.caret {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  pointer-events: none;
+}
+
+/* The split control's wrapper. It exists to carry the refusal reason: a
+ * disabled button receives no pointer events, so the `title` explaining why has
+ * to live on an ancestor. */
+.splitWrap {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* --- the drop hint a dragged chip shows over a pane's body ---------------- */
+
+/* A scrim and, over it, one box per landing region. The scrim dims the body's
+ * content so the insets between and around the cards do not show it through
+ * raw; the boxes are padded frames that keep each card 8px clear of the body's
+ * edges and, between two halves, 4px clear of the seam. */
+.dropLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.dropScrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent);
+  backdrop-filter: blur(6px);
+  animation: dropScrimIn 140ms ease-out;
+}
+
+.dropSlot {
+  position: absolute;
+  display: flex;
+  box-sizing: border-box;
+  padding: 8px;
+}
+
+.dropSlotCenter {
+  inset: 0;
+}
+
+.dropSlotLeft {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+  padding-right: 4px;
+}
+
+.dropSlotRight {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  padding-left: 4px;
+}
+
+/* What the eye lands on. A card that is not under the pointer stays as a quiet
+ * outline, so the reader sees where the *other* release would land instead of
+ * discovering it by trying. */
+.dropCard {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  border: 1.5px dashed var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+  animation: dropCardIn 140ms ease-out;
+}
+
+.dropCardActive {
+  color: var(--dsw-alias-label-secondary);
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%,
+    transparent
+  );
+  border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+/* One line, clipped rather than wrapped: a card in a narrow half is still wide
+ * enough for its glyph, and the caption fades under the frame. */
+.dropLabel {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@keyframes dropCardIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The scrim fades in without the cards' scale: a full-body cover that shrank
+ * would expose an uncovered rim of raw content on entry. */
+@keyframes dropScrimIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* --- floating panels ------------------------------------------------------ */
+
+/* Separated from the page by shadow alone, not a border: `--dsw-elevation-float`
+ * drops the 0.5px ring dsh's elevations carry (see `theme/index.css`), and that
+ * decision belongs to the token rather than to each consumer — the dialog says
+ * the same. Painted at 40: above the fullscreen column (30), which is the dock
+ * layer this floats clear of, and below the menus (50) and the dialog mask (60).
+ *
+ * The ground is `bg-layer-2` — dsh's own choice for a float — which is a step
+ * off the column in dark mode and the same white in light, where the shadow
+ * carries the separation. */
+.float {
+  position: fixed;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: 14px;
+  box-shadow: var(--dsw-elevation-float);
+  pointer-events: auto;
+}
+
+/* The panel a gesture has hold of draws above the rest of its layer, and it is
+ * the *layer's* height that does not move: the release has not recorded the
+ * raise yet, and a drag has to look like what it is about to become. Stacking
+ * the panels by depth instead — the same numbers, based at zero — put the whole
+ * layer under the column it floats clear of, the sidebar and the page chrome,
+ * because an inline `z-index` beats this rule and 1 is less than 30. Within the
+ * layer the panels are ordered by paint order, which is dsh's model: it gives
+ * every float the layer's own index and lets Grid order them. */
+.floatLifted {
+  z-index: 41;
+}
+
+/* The panel's header is the pane's strip row — `FloatLayer` puts `.strip` on it
+ * for the metrics and the hairline — and the whole of it is the move grip. */
+.floatHeader {
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+/* The one tab, as text: it is never selected, hovered, or closable from here,
+ * because a panel holds one tab and the header's controls do that. */
+.floatTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  cursor: inherit;
+}
+
+/* Unpadded like `.paneBody`: the same body draws the same insets in a float. */
+.floatBody {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The grip follows the panel's corner with a 4px inset, and pointer hover or an
+ * active drag reveals it. dsh's, to the pixel. */
+.floatResize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.floatResize::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-right: 1.5px solid var(--dsw-alias-label-caption);
+  border-bottom: 1.5px solid var(--dsw-alias-label-caption);
+  border-bottom-right-radius: 10px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.float:hover .floatResize::after,
+.floatResize:active::after {
+  opacity: 1;
+}
+
+.floatResize:hover::after {
+  border-color: var(--dsw-alias-label-tertiary);
 }

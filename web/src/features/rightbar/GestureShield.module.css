@@ -1,0 +1,12 @@
+/* The cover a gesture runs under. `gesture-shield.ts` says why it exists; this
+ * says only where it sits.
+ *
+ * Above the column and above the floating layer, because the frame it has to
+ * stay in front of is inside a pane; below the tab menu (50) and the dialog
+ * scrim (60), so a menu or a dialog that is open when a gesture starts still
+ * draws over it. It paints nothing — what it does is answer the hit test. */
+.cover {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+}

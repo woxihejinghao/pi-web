@@ -27,8 +27,10 @@ export function closeTabs(sessionPath: string, ids: readonly string[]): void {
   if (surface === undefined) return;
   const going = new Set(ids);
   // Read before removing: the host id lives on the tab, and the tab is about to
-  // stop existing in the store.
-  for (const tab of surface.tabs) {
+  // stop existing in the store. The tab records are the surface's own — a pane
+  // holds ids into them, so this is where every tab is visible, docked or
+  // floating.
+  for (const tab of Object.values(surface.tabs)) {
     if (going.has(tab.id)) releaseShell(tab);
   }
   rightbarActions.closeTabs(sessionPath, ids);

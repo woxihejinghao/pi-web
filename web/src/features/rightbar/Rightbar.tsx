@@ -1,89 +1,78 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import clsx from "clsx";
-import { CloseIcon, PlusIcon } from "../../components/icons.tsx";
-import { Glyph } from "../../components/dsh-icons.tsx";
 import { appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
-import { BrowserTab } from "./BrowserTab.tsx";
-import { ChangesTab } from "./ChangesTab.tsx";
-import { FilesTab } from "./FilesTab.tsx";
-import { PreviewTab } from "./PreviewTab.tsx";
 import {
-  DiffIcon,
-  FileIcon,
-  FullscreenIcon,
-  PanelRightIcon,
-  RestoreIcon,
-} from "./rightbar-icons.tsx";
+  containsPoint,
+  dividerSizes,
+  floatRectAt,
+  FLOAT_DEFAULT_SIZE,
+  MIN_PANE_FRACTION,
+  passedThreshold,
+  sameSizes,
+  clampSizes,
+} from "./dock-geometry.ts";
+import { hitTest } from "./dock-hit.ts";
+import type { DropTarget } from "./dock-hit.ts";
+import { FullscreenIcon, PanelRightIcon, RestoreIcon } from "./rightbar-icons.tsx";
+import { PaneView } from "./PaneView.tsx";
+import { FloatLayer } from "./FloatLayer.tsx";
 import {
   WIDTH_DEFAULT,
+  canSplitDock,
   rightbarActions,
   rightbarStore,
   tabTitle,
-  type RightbarTabKind,
+  type RightbarSurface,
 } from "./rightbar-state.ts";
 import { TabMenu } from "./TabMenu.tsx";
 import { closeTabs } from "./close-tabs.ts";
 import { shortcutTitle } from "./shortcuts.ts";
-import { terminalActions, terminalStore } from "./terminal-state.ts";
-import pane from "./Pane.module.css";
+import { useGesture } from "./pointer.ts";
 import styles from "./Rightbar.module.css";
 
-/**
- * The terminal body is the one tab that arrives on demand.
- *
- * xterm plus its fit addon is ~340 kB of the bundle and this tab is its only
- * consumer, so nothing else should pay for it on the first paint. That matters
- * more here than for the other tabs: the shell is an optional capability, and
- * a host without a prebuilt node-pty can never open one at all. The strip, the
- * "+" menu and the reattach path stay in the main chunk — only the screen moves
- * behind the boundary, and the chunk comes off the same origin as the page.
- */
-const TerminalTab = lazy(async () => {
-  const module = await import("./TerminalTab.tsx");
-  return { default: module.TerminalTab };
-});
+/** The chip whose context menu is open, and where the press landed. */
+interface MenuState {
+  readonly tabId: string;
+  readonly anchor: HTMLElement;
+  readonly x: number;
+  readonly y: number;
+}
 
-/** The glyph on a tab chip, by what that tab is showing. */
-function TabIcon({ kind }: { kind: RightbarTabKind }) {
-  if (kind === "files") return <Glyph name="checklist" size={13} />;
-  if (kind === "browser") return <Glyph name="browse" size={13} />;
-  if (kind === "terminal") return <Glyph name="terminal" size={13} />;
-  if (kind === "changes") return <DiffIcon width={13} height={13} />;
-  return <FileIcon width={13} height={13} />;
+/** The chip being dragged, and where its release would land right now. */
+interface ChipDrag {
+  readonly tabId: string;
+  readonly target: DropTarget | null;
 }
 
 /**
  * The right sidebar.
  *
- * One panel, mounted beside the conversation for the selected session: a tab
- * strip on top and the active tab's body below. It is deliberately *not* a
- * window manager — the tabs, their order, their addresses and the panel's width
- * are the whole model, and a session's layout survives a reload through
- * localStorage (see `rightbar-state.ts`).
+ * One panel, mounted beside the conversation for the selected session: a row of
+ * one or two panes, each with a tab strip on top and its showing tab's body
+ * below. It is deliberately *not* a window manager — the panes, the tabs, their
+ * order, their addresses, the divider and the panel's width are the whole model,
+ * and a session's layout survives a reload through localStorage (see
+ * `rightbar-state.ts`).
+ *
+ * The panel is only half of what this draws. A tab dragged clear of the row
+ * becomes a **floating panel**, and a floating panel outlives the column that
+ * spawned it: collapsing the sidebar takes the docked row away, not the
+ * overlays, which is dsh's rule too (`aria-hidden` there is false whenever any
+ * pane floats). That is why this no longer returns nothing when the surface is
+ * closed — only the `<aside>` is conditional.
  *
  * Nothing renders without a session: the panel is addressed by session path, and
  * the hero (which has none) is the one screen where there is nothing for a file
  * tree or a preview to belong to.
  */
 export function Rightbar() {
-  const t = useT();
   const state = useStore(rightbarStore);
   const app = useStore(appStore);
   const sessionPath = app.selectedSessionPath ?? "";
   const project = app.projects.find((item) => item.id === app.selectedProjectId) ?? null;
   const surface = state.surfaces[sessionPath];
-
-  // The chip whose context menu is open, and where the press landed. The tab
-  // itself is looked up from the live surface on every render rather than kept
-  // here, so a menu whose tab has since gone away draws nothing instead of
-  // offering to close something that is not there any more.
-  const [menu, setMenu] = useState<{
-    tabId: string;
-    anchor: HTMLElement;
-    x: number;
-    y: number;
-  } | null>(null);
 
   // Load this session's saved layout the first time the panel appears for it.
   useEffect(() => {
@@ -91,143 +80,235 @@ export function Rightbar() {
   }, [sessionPath]);
 
   if (sessionPath.length === 0 || project === null) return null;
-  if (surface === undefined || !surface.open) return null;
+  if (surface === undefined) return null;
 
-  const active =
-    surface.tabs.find((tab) => tab.id === surface.activeTabId) ?? surface.tabs[0] ?? null;
-  const menuTab = menu === null ? null : (surface.tabs.find((tab) => tab.id === menu.tabId) ?? null);
+  return (
+    <>
+      {surface.open ? (
+        // Keyed by session so the open menu and any half-finished gesture do not
+        // survive a switch: they belong to a layout rather than to the panel.
+        <Panel
+          key={sessionPath}
+          sessionPath={sessionPath}
+          projectId={project.id}
+          projectPath={project.path}
+          surface={surface}
+        />
+      ) : null}
+      <FloatLayer
+        sessionPath={sessionPath}
+        projectId={project.id}
+        projectPath={project.path}
+        surface={surface}
+        onOpenFile={(path) => {
+          rightbarActions.openPreviewTab(sessionPath, path);
+        }}
+      />
+    </>
+  );
+}
+
+/** The docked column: its panes, the divider between them, and the drags over them. */
+function Panel({
+  sessionPath,
+  projectId,
+  projectPath,
+  surface,
+}: {
+  sessionPath: string;
+  projectId: string;
+  projectPath: string;
+  surface: RightbarSurface;
+}) {
+  const t = useT();
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [drag, setDrag] = useState<ChipDrag | null>(null);
+  // The divider drag's live fractions. The layout follows the pointer and only
+  // the release is written, which is what keeps a persisted layout at one write
+  // per gesture instead of one per frame.
+  const [sizes, setSizes] = useState<number[] | null>(null);
+  const begin = useGesture(() => {
+    setDrag(null);
+    setSizes(null);
+  });
+
+  const fullscreen = surface.mode === "fullscreen";
+  const splitAllowed = canSplitDock(surface);
+  const menuTab = menu === null ? null : (surface.tabs[menu.tabId] ?? null);
+  const shares = surface.panes.length === 2 ? (sizes ?? surface.sizes ?? [0.5, 0.5]) : [1];
+
+  /**
+   * Begin dragging a chip.
+   *
+   * A press is not yet a drag: nothing is previewed until the pointer has
+   * travelled the threshold, so a click that moves a pixel is still a click. A
+   * release clear of the row floats the tab; one inside the row but over no
+   * pane is not a move at all.
+   */
+  const onTabPressed = (tabId: string, event: ReactPointerEvent<HTMLElement>): void => {
+    const root = rowRef.current;
+    if (root === null) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    begin(event.currentTarget, event.pointerId, {
+      // A chip is not a handle: it says what it is with its shape, and there is
+      // no cursor dsh shows for carrying one. `default` is the neutral thing to
+      // show over whatever the pointer is passing across.
+      cursor: "default",
+      move: (moved) => {
+        if (!dragging) {
+          if (!passedThreshold(startX, startY, moved.clientX, moved.clientY)) return;
+          dragging = true;
+        }
+        setDrag({ tabId, target: hitTest(root, moved.clientX, moved.clientY, splitAllowed) });
+      },
+      up: (released) => {
+        if (!dragging) return;
+        const target = hitTest(root, released.clientX, released.clientY, splitAllowed);
+        if (target === null) {
+          if (containsPoint(root.getBoundingClientRect(), released.clientX, released.clientY)) return;
+          rightbarActions.floatTab(
+            sessionPath,
+            tabId,
+            floatRectAt(released.clientX, released.clientY, FLOAT_DEFAULT_SIZE),
+          );
+          return;
+        }
+        if (target.kind === "strip") {
+          rightbarActions.placeTab(sessionPath, tabId, target.paneId, target.index);
+        } else {
+          rightbarActions.dropTab(sessionPath, tabId, target.paneId, target.zone);
+        }
+      },
+    });
+  };
+
+  /** Begin dragging the seam between two panes. */
+  const onDividerPressed = (event: ReactPointerEvent<HTMLElement>): void => {
+    const container = event.currentTarget.parentElement;
+    if (container === null) return;
+    const recorded = surface.sizes ?? [0.5, 0.5];
+    const box = container.getBoundingClientRect();
+    const start = { origin: event.clientX, extent: box.width, sizes: recorded };
+    const reached = (x: number): number[] =>
+      clampSizes(dividerSizes(start.sizes, 0, start.extent > 0 ? (x - start.origin) / start.extent : 0), MIN_PANE_FRACTION);
+    // A release that left the fractions where they were — a click on the seam,
+    // or a drag pushed further into the clamp — is not a resize and writes
+    // nothing.
+    begin(event.currentTarget, event.pointerId, {
+      // dsh's own value for the seam it draws the same way.
+      cursor: "col-resize",
+      move: (moved) => {
+        setSizes(reached(moved.clientX));
+      },
+      up: (released) => {
+        const next = reached(released.clientX);
+        if (sameSizes(next, start.sizes)) return;
+        rightbarActions.resizePanes(sessionPath, next);
+      },
+    });
+  };
+
+  const chrome = (
+    <>
+      <button
+        type="button"
+        className={styles.panelControl}
+        title={shortcutTitle(
+          t,
+          fullscreen ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen"),
+          "rightbar.fullscreen",
+        )}
+        aria-label={fullscreen ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen")}
+        data-rb-mode={fullscreen ? "push" : "fullscreen"}
+        onClick={(event) => {
+          event.stopPropagation();
+          rightbarActions.setMode(sessionPath, fullscreen ? "push" : "fullscreen");
+        }}
+      >
+        {fullscreen ? <RestoreIcon width={14} height={14} /> : <FullscreenIcon width={14} height={14} />}
+      </button>
+      <button
+        type="button"
+        className={styles.panelControl}
+        title={shortcutTitle(t, t("rightbar.collapse"), "rightbar.toggle")}
+        aria-label={t("rightbar.collapse")}
+        data-rb-collapse
+        onClick={(event) => {
+          event.stopPropagation();
+          rightbarActions.close(sessionPath);
+        }}
+      >
+        <PanelRightIcon width={14} height={14} />
+      </button>
+    </>
+  );
 
   return (
     <aside
-      className={clsx(styles.panel, surface.mode === "fullscreen" && styles.fullscreen)}
-      style={surface.mode === "fullscreen" ? undefined : { width: `${String(surface.width)}px` }}
+      className={clsx(styles.panel, fullscreen && styles.fullscreen)}
+      style={fullscreen ? undefined : { width: `${String(surface.width)}px` }}
       aria-label={t("rightbar.title")}
+      data-rb-panel
     >
-      {surface.mode === "push" ? (
-        <ResizeHandle sessionPath={sessionPath} width={surface.width} />
-      ) : null}
-      <div className={styles.strip}>
-        {/* The chips scroll on their own; the strip itself must not clip, or the
-            "+" menu would be cut off at the strip's edge. */}
-        <div className={styles.chips}>
-          {surface.tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={clsx(styles.chip, tab.id === active?.id && styles.chipActive)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                const anchor = event.currentTarget;
-                // A keyboard-invoked context menu (Shift+F10, the context-menu
-                // key) arrives with zeroed coordinates, so it hangs off the
-                // chip's own bottom-left corner instead of the window's.
-                const keyboard = event.clientX === 0 && event.clientY === 0;
-                const rect = anchor.getBoundingClientRect();
-                setMenu({
-                  tabId: tab.id,
-                  anchor,
-                  x: keyboard ? rect.left : event.clientX,
-                  y: keyboard ? rect.bottom : event.clientY,
-                });
-              }}
-            >
-              <button
-                type="button"
-                className={styles.chipBody}
-                title={tabTitle(tab, t)}
-                onClick={() => rightbarActions.selectTab(sessionPath, tab.id)}
-              >
-                <TabIcon kind={tab.kind} />
-                <span className={styles.chipTitle}>{tabTitle(tab, t)}</span>
-              </button>
-              <button
-                type="button"
-                className={styles.chipClose}
-                aria-label={t("rightbar.closeTab", { title: tabTitle(tab, t) })}
-                onClick={() => {
-                  // Closing a terminal's chip is the user saying they are done
-                  // with that shell, so the process goes with the tab. Only this
-                  // gesture kills: collapsing the panel or switching sessions
-                  // unmounts the same body and must leave the shell running.
-                  closeTabs(sessionPath, [tab.id]);
-                }}
-              >
-                <CloseIcon width={11} height={11} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <AddTabMenu
-          onPick={(kind) => {
-            if (kind === "files") rightbarActions.openFilesTab(sessionPath);
-            else if (kind === "changes") rightbarActions.openChangesTab(sessionPath);
-            else if (kind === "terminal") rightbarActions.openTerminalTab(sessionPath);
-            else rightbarActions.openBrowserTab(sessionPath, "");
-          }}
-        />
-        <span className={styles.stripSpacer} />
-        <button
-          type="button"
-          className={styles.panelControl}
-          title={shortcutTitle(
-            t,
-            surface.mode === "fullscreen" ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen"),
-            "rightbar.fullscreen",
-          )}
-          aria-label={surface.mode === "fullscreen" ? t("rightbar.exitFullscreen") : t("rightbar.fullscreen")}
-          onClick={() =>
-            rightbarActions.setMode(sessionPath, surface.mode === "fullscreen" ? "push" : "fullscreen")
-          }
-        >
-          {surface.mode === "fullscreen" ? (
-            <RestoreIcon width={14} height={14} />
-          ) : (
-            <FullscreenIcon width={14} height={14} />
-          )}
-        </button>
-        <button
-          type="button"
-          className={styles.panelControl}
-          title={shortcutTitle(t, t("rightbar.collapse"), "rightbar.toggle")}
-          aria-label={t("rightbar.collapse")}
-          onClick={() => rightbarActions.close(sessionPath)}
-        >
-          <PanelRightIcon width={14} height={14} />
-        </button>
-      </div>
-
-      <div className={styles.body}>
-        {active === null ? null : active.kind === "files" ? (
-          <FilesTab
-            key={project.id}
-            projectId={project.id}
-            rootLabel={project.path}
-            onOpenFile={(path) => rightbarActions.openPreviewTab(sessionPath, path)}
-          />
-        ) : active.kind === "preview" ? (
-          // Keyed by tab id so two tabs previewing the same file keep their own
-          // scroll position and load state.
-          <PreviewTab key={active.id} projectId={project.id} tab={active} />
-        ) : active.kind === "changes" ? (
-          <ChangesTab
-            key={active.id}
-            projectId={project.id}
-            onOpenFile={(path) => rightbarActions.openPreviewTab(sessionPath, path)}
-          />
-        ) : active.kind === "terminal" ? (
-          // Keyed by tab id like the browser: two terminal tabs are two shells,
-          // and the tab is where the host id that identifies one lives.
-          <Suspense fallback={<div className={pane.note}>{t("common.loading")}</div>}>
-            <TerminalTab
-              key={active.id}
+      {fullscreen ? null : <ResizeHandle sessionPath={sessionPath} width={surface.width} />}
+      {/* The row scrolls in two dimensions never: a pane's own body is the only
+          scroller, and a strip's chips scroll on their own. */}
+      <div className={styles.row} ref={rowRef} data-rb-row>
+        {surface.panes.map((pane, index) => (
+          <Fragment key={pane.id}>
+            {/* The seam comes before every pane but the first, which is what
+                puts it *between* two panes: after the map it would be a last
+                child of the row, drawing its hairline and its 8px target at the
+                row's trailing edge, where there is no seam to grab. dsh nests
+                its cells the same way, for the same reason. */}
+            {index > 0 ? (
+              <div
+                className={styles.rowDivider}
+                data-rb-divider
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={t("rightbar.resizePanes")}
+                onPointerDown={onDividerPressed}
+              />
+            ) : null}
+            <PaneView
               sessionPath={sessionPath}
-              projectPath={project.path}
-              tabKey={sessionPath}
-              tab={active}
+              projectId={projectId}
+              projectPath={projectPath}
+              surface={surface}
+              pane={pane}
+              grow={shares[index] ?? 1}
+              // The accent rule under the strip is the focus, and focus only means
+              // something once there are two panes to choose between: a lone pane
+              // is the focus by definition, and a marker on it is noise. This is
+              // the same fact `data-rb-pane-active` carries, drawn.
+              marked={surface.panes.length > 1 && surface.activePaneId === pane.id}
+              chrome={pane.id === surface.panes.at(-1)?.id ? chrome : null}
+              draggingTabId={drag?.tabId ?? null}
+              dropTarget={drag?.target ?? null}
+              onTabPressed={onTabPressed}
+              onOpenMenu={(tabId, anchor, x, y) => {
+                setMenu({ tabId, anchor, x, y });
+              }}
+              onSplit={() => {
+                // The split control is the pane's own, so it is the one that says
+                // which pane — never the focus, which a click on the button would
+                // have just moved here anyway.
+                rightbarActions.focusPane(sessionPath, pane.id);
+                rightbarActions.splitPane(sessionPath, pane.id);
+              }}
+              onFocusPane={() => {
+                rightbarActions.focusPane(sessionPath, pane.id);
+              }}
+              onOpenFile={(path) => {
+                rightbarActions.openPreviewTab(sessionPath, path, pane.id);
+              }}
             />
-          </Suspense>
-        ) : (
-          <BrowserTab key={active.id} sessionPath={sessionPath} tab={active} />
-        )}
+          </Fragment>
+        ))}
       </div>
 
       {menu === null || menuTab === null ? null : (
@@ -235,16 +316,18 @@ export function Rightbar() {
           anchor={menu.anchor}
           position={{ x: menu.x, y: menu.y }}
           tabTitle={tabTitle(menuTab, t)}
-          hasSiblings={surface.tabs.length > 1}
-          onDismiss={() => setMenu(null)}
+          hasSiblings={Object.keys(surface.tabs).length > 1}
+          onDismiss={() => {
+            setMenu(null);
+          }}
           onPick={(action) => {
             if (action === "close") closeTabs(sessionPath, [menuTab.id]);
             else if (action === "closeOthers") {
               closeTabs(
                 sessionPath,
-                surface.tabs.filter((tab) => tab.id !== menuTab.id).map((tab) => tab.id),
+                Object.keys(surface.tabs).filter((id) => id !== menuTab.id),
               );
-            } else closeTabs(sessionPath, surface.tabs.map((tab) => tab.id));
+            } else closeTabs(sessionPath, Object.keys(surface.tabs));
           }}
         />
       )}
@@ -257,12 +340,17 @@ export function Rightbar() {
  *
  * The width follows the pointer during the drag and is written to storage only
  * on release: a persisted layout is worth one write per gesture, not one per
- * frame. Pointer capture keeps the drag alive when the pointer leaves the 5px
- * handle, which it does immediately.
+ * frame. The press runs through the same gesture the seams inside the column
+ * use, so it is captured and covered the same way — its early `onPointerMove`
+ * handlers only ever worked while the pointer stayed in this document, and the
+ * panel's own body is not the only thing to the left of it.
  */
 function ResizeHandle({ sessionPath, width }: { sessionPath: string; width: number }) {
   const t = useT();
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const begin = useGesture(() => {
+    // Nothing to clear: this gesture previews no state of its own, it writes
+    // the width as it goes.
+  });
 
   return (
     <div
@@ -272,127 +360,21 @@ function ResizeHandle({ sessionPath, width }: { sessionPath: string; width: numb
       aria-label={t("rightbar.resize")}
       onPointerDown={(event) => {
         event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        dragRef.current = { startX: event.clientX, startWidth: width };
-      }}
-      onPointerMove={(event) => {
-        const drag = dragRef.current;
-        if (drag === null) return;
-        // Dragging left widens the panel, which is the edge the pointer holds.
-        rightbarActions.setWidth(sessionPath, drag.startWidth + (drag.startX - event.clientX), false);
-      }}
-      onPointerUp={(event) => {
-        if (dragRef.current === null) return;
-        dragRef.current = null;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        rightbarActions.setWidth(
-          sessionPath,
-          rightbarStore.get().surfaces[sessionPath]?.width ?? WIDTH_DEFAULT,
-        );
-      }}
-      onPointerCancel={() => {
-        dragRef.current = null;
+        const start = { x: event.clientX, width };
+        begin(event.currentTarget, event.pointerId, {
+          cursor: "col-resize",
+          move: (moved) => {
+            // Dragging left widens the panel, which is the edge the pointer holds.
+            rightbarActions.setWidth(sessionPath, start.width + (start.x - moved.clientX), false);
+          },
+          up: () => {
+            rightbarActions.setWidth(
+              sessionPath,
+              rightbarStore.get().surfaces[sessionPath]?.width ?? WIDTH_DEFAULT,
+            );
+          },
+        });
       }}
     />
-  );
-}
-
-/** The strip's "+": the tab kinds a user can add directly. */
-function AddTabMenu({
-  onPick,
-}: {
-  onPick: (kind: "files" | "changes" | "browser" | "terminal") => void;
-}) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const support = useStore(terminalStore).support;
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent): void => {
-      const root = rootRef.current;
-      if (root !== null && event.target instanceof Node && root.contains(event.target)) return;
-      setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
-
-  // Asked when the menu opens rather than when the panel does: a sidebar opened
-  // to read a file has no business asking the host about shells.
-  useEffect(() => {
-    if (!open) return;
-    if (terminalStore.get().support === null) void terminalActions.probe();
-  }, [open]);
-
-  // null means the answer has not landed yet. The entry stays live in that
-  // case — the tab itself knows how to report a host that cannot open a shell.
-  const terminalOff = support !== null && !support.available;
-
-  return (
-    <div className={styles.addWrap} ref={rootRef}>
-      <button
-        type="button"
-        className={styles.addButton}
-        title={t("rightbar.newTab")}
-        aria-label={t("rightbar.newTab")}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <PlusIcon width={13} height={13} />
-      </button>
-      {open ? (
-        <div className={styles.menu} role="menu">
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            title={shortcutTitle(t, t("tab.files"), "rightbar.files")}
-            onClick={() => {
-              setOpen(false);
-              onPick("files");
-            }}
-          >
-            <Glyph name="checklist" size={13} />{t("tab.files")}</button>
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onPick("changes");
-            }}
-          >
-            <DiffIcon width={13} height={13} />{t("tab.changes")}</button>
-          {/* Offered but disabled rather than hidden: a machine without a
-              prebuilt node-pty still wants to know the tab exists and why it
-              is not there, and the reason is one hover away. */}
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            disabled={terminalOff}
-            title={terminalOff ? support?.reason : shortcutTitle(t, t("tab.terminal"), "rightbar.terminal")}
-            onClick={() => {
-              setOpen(false);
-              onPick("terminal");
-            }}
-          >
-            <Glyph name="terminal" size={13} />{t("tab.terminal")}</button>
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            title={shortcutTitle(t, t("tab.browser"), "rightbar.browser")}
-            onClick={() => {
-              setOpen(false);
-              onPick("browser");
-            }}
-          >
-            <Glyph name="browse" size={13} />{t("tab.browser")}</button>
-        </div>
-      ) : null}
-    </div>
   );
 }

@@ -8,7 +8,7 @@ import {
   type ShortcutRuntime,
 } from "../../lib/shortcuts/binding.ts";
 import { translator } from "../../lib/i18n/index.ts";
-import { resetRightbarState, rightbarActions, rightbarStore } from "./rightbar-state.ts";
+import { paneTabs, resetRightbarState, rightbarActions, rightbarStore } from "./rightbar-state.ts";
 import { rightbarCommands, shortcutHint, shortcutTitle, type RightbarCommandId } from "./shortcuts.ts";
 
 const KEY = "session-a";
@@ -39,6 +39,14 @@ function surface(key = KEY) {
   const value = rightbarStore.get().surfaces[key];
   if (value === undefined) throw new Error(`no surface for ${key}`);
   return value;
+}
+
+/** The tabs of a surface's first docked pane, in strip order. */
+function dockTabs(key = KEY) {
+  const value = surface(key);
+  const pane = value.panes[0];
+  if (pane === undefined) throw new Error("no docked pane");
+  return paneTabs(value, pane);
 }
 
 beforeEach(() => {
@@ -103,7 +111,7 @@ describe("running a command", () => {
     command("rightbar.toggle").run();
     expect(surface().open).toBe(true);
     // Opening an empty surface seeds it, so the panel never shows nothing.
-    expect(surface().tabs).toHaveLength(1);
+    expect(dockTabs()).toHaveLength(1);
     command("rightbar.toggle").run();
     expect(surface().open).toBe(false);
   });
@@ -113,7 +121,7 @@ describe("running a command", () => {
     command("rightbar.files").run();
     command("rightbar.files").run();
     // Files is a single-instance tab: a second one would show the same tree.
-    expect(surface().tabs.map((tab) => tab.kind)).toEqual(["files"]);
+    expect(dockTabs().map((tab) => tab.kind)).toEqual(["files"]);
     expect(surface().open).toBe(true);
   });
 
@@ -122,16 +130,16 @@ describe("running a command", () => {
     command("rightbar.terminal").run();
     command("rightbar.terminal").run();
     // Two terminals are two processes, so unlike Files this never reuses a tab.
-    expect(surface().tabs.map((tab) => tab.kind)).toEqual(["terminal", "terminal"]);
+    expect(dockTabs().map((tab) => tab.kind)).toEqual(["terminal", "terminal"]);
     // The host id is the body's business; the shortcut only makes the tab.
-    expect(surface().tabs.map((tab) => tab.target)).toEqual(["", ""]);
+    expect(dockTabs().map((tab) => tab.target)).toEqual(["", ""]);
   });
 
   it("opens a browser tab on nothing, which is the address bar's empty state", () => {
     selectSession(KEY);
     command("rightbar.browser").run();
-    expect(surface().tabs.map((tab) => tab.kind)).toEqual(["browser"]);
-    expect(surface().tabs[0]?.target).toBe("");
+    expect(dockTabs().map((tab) => tab.kind)).toEqual(["browser"]);
+    expect(dockTabs()[0]?.target).toBe("");
   });
 
   it("gives the window to the panel only while the panel is showing", () => {
@@ -148,6 +156,61 @@ describe("running a command", () => {
     expect(surface().mode).toBe("fullscreen");
     command("rightbar.fullscreen").run();
     expect(surface().mode).toBe("push");
+  });
+
+  /**
+   * Splitting acts on the **focused** pane.
+   *
+   * With two panes docked, the click that focused one is the only record of
+   * which half the user means — there is no window focus to read, because both
+   * halves are one column of one page. dsh reads the DOM focus and blocks with
+   * a reason; with no channel for a reason here, the command declines and the
+   * pane's own control carries the sentence when it is disabled.
+   */
+  describe("splitting the focused pane", () => {
+    it("makes a second pane beside the focused one", () => {
+      selectSession(KEY);
+      rightbarActions.open(KEY);
+      const first = surface().panes[0]!.id;
+      command("rightbar.split").run();
+
+      const value = surface();
+      expect(value.panes).toHaveLength(2);
+      expect(value.panes[0]!.id).toBe(first);
+      expect(value.sizes).toEqual([0.5, 0.5]);
+      // The new half is the focus, so the *next* press has a pane to act on
+      // only once that half holds something.
+      expect(value.activePaneId).toBe(value.panes[1]!.id);
+    });
+
+    it("does nothing while the panel is put away", () => {
+      selectSession(KEY);
+      // Present but hidden: "split this" is not "open this".
+      rightbarActions.ensureSurface(KEY);
+      command("rightbar.split").run();
+      expect(surface().panes).toHaveLength(1);
+    });
+
+    it("declines while a floating panel is the focus", () => {
+      selectSession(KEY);
+      rightbarActions.open(KEY);
+      rightbarActions.openTerminalTab(KEY);
+      const panel = dockTabs()[1]!.id;
+      rightbarActions.floatTab(KEY, panel);
+
+      // A panel holds one tab by definition, so there is no second half to make
+      // — and splitting the docked pane behind it would act on a pane the user
+      // is not looking at.
+      command("rightbar.split").run();
+      expect(surface().panes).toHaveLength(1);
+      expect(surface().floats).toHaveLength(1);
+    });
+
+    it("does nothing at all while the hero is showing", () => {
+      selectSession(null);
+      command("rightbar.split").run();
+      expect(rightbarStore.get().surfaces).toEqual({});
+    });
   });
 });
 
@@ -190,6 +253,14 @@ describe("the keycap hint", () => {
     expect(await hintOn({ ...MAC_BROWSER, desktop: "darwin" }, "rightbar.toggle")).toBe("⌥⌘B");
     expect(await hintOn({ ...MAC_BROWSER, desktop: "darwin" }, "rightbar.files")).toBe("⌘P");
     expect(await hintOn({ ...MAC_BROWSER, desktop: "darwin" }, "rightbar.fullscreen")).toBe("⌥⌘Enter");
+  });
+
+  it("keeps the split on bare primary in both shells", async () => {
+    // The one row where the web column is not moved to `primary+alt`: no
+    // browser claims `⌘\`, so there is no race to lose and the binding can stay
+    // where a Mac user's fingers already expect it.
+    expect(await hintOn(MAC_BROWSER, "rightbar.split")).toBe("⌘\\");
+    expect(await hintOn({ ...MAC_BROWSER, desktop: "darwin" }, "rightbar.split")).toBe("⌘\\");
   });
 
   it("names Control, Alt and Shift where they are not symbols", async () => {

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appStore, resetAppState } from "../../lib/app-state.ts";
 import { Rightbar } from "./Rightbar.tsx";
-import { resetRightbarState, rightbarActions } from "./rightbar-state.ts";
+import { resetRightbarState, rightbarActions, rightbarStore } from "./rightbar-state.ts";
 
 // Panel copy renders through `useT`; without a navigator the default `system`
 // preference resolves to English. These assertions pin the Chinese wording, so
@@ -17,6 +17,11 @@ vi.stubGlobal("navigator", { language: "zh-CN" });
  * open surface actually lays out its strip and its active tab's body. Effects do
  * not run in a static render, which is what keeps the tab bodies from reaching
  * for the network here.
+ *
+ * Two things are out of reach from here and are covered by the live probe
+ * instead: the floating layer (which is portalled, and React's *server*
+ * renderer refuses portals outright) and every gesture (which needs measured
+ * rectangles). See `/tmp/piws-sc/v5.mjs` and `docs/design-notes.md`.
  */
 function selectSession(sessionPath: string | null): void {
   appStore.update((state) => ({
@@ -124,5 +129,59 @@ describe("Rightbar", () => {
 
     selectSession("sess-b");
     expect(renderToStaticMarkup(<Rightbar />)).toBe("");
+  });
+
+  it("draws a row of two panes, each with its own strip, and the seam between", () => {
+    selectSession("sess-1");
+    rightbarActions.open("sess-1");
+    const first = rightbarStore.get().surfaces["sess-1"]!.panes[0]!.id;
+    rightbarActions.splitPane("sess-1", first);
+
+    const html = renderToStaticMarkup(<Rightbar />);
+    expect(html.match(/data-rb-pane="/gu)).toHaveLength(2);
+    expect(html.match(/data-rb-strip="/gu)).toHaveLength(2);
+    expect(html).toContain("data-rb-divider");
+    // The half the split made holds nothing, and says so rather than drawing a
+    // blank box.
+    expect(html).toContain("空面板");
+  });
+
+  it("puts the seam between the two panes, not after them", () => {
+    selectSession("sess-1");
+    rightbarActions.open("sess-1");
+    const first = rightbarStore.get().surfaces["sess-1"]!.panes[0]!.id;
+    rightbarActions.splitPane("sess-1", first);
+
+    const html = renderToStaticMarkup(<Rightbar />);
+    // Where the seam sits is the whole of its job, and a seam appended after the
+    // panes instead of between them is wrong in a way nothing else here notices:
+    // it still exists, still owns no layout width, and still reads as a
+    // separator — it just draws its hairline and its 8px target at the row's
+    // trailing edge, where there is nothing to divide and nothing to grab. dsh
+    // nests its cells the same way it does here, and for the same reason.
+    const seam = html.indexOf("data-rb-divider");
+    const second = html.lastIndexOf('data-rb-pane="');
+    expect(seam).toBeGreaterThan(html.indexOf('data-rb-pane="'));
+    expect(seam).toBeLessThan(second);
+  });
+
+  it("names the focused pane, and rules only that one", () => {
+    selectSession("sess-1");
+    rightbarActions.open("sess-1");
+    const alone = renderToStaticMarkup(<Rightbar />);
+    // A lone pane is the focus by definition, and the attribute says which pane
+    // a keyboard command would act on — worth having even when there is only
+    // one. The *rule* under its strip is the other half: a marker on the only
+    // pane in the column is noise rather than information.
+    expect(alone).toContain("data-rb-pane-active");
+    expect(alone).not.toContain("paneMarked");
+
+    const first = rightbarStore.get().surfaces["sess-1"]!.panes[0]!.id;
+    rightbarActions.splitPane("sess-1", first);
+    const html = renderToStaticMarkup(<Rightbar />);
+    // The half the split just made is the focus, so exactly one of the two
+    // carries either mark.
+    expect(html.match(/data-rb-pane-active/gu)).toHaveLength(1);
+    expect(html.match(/paneMarked/gu)).toHaveLength(1);
   });
 });
