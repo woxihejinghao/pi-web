@@ -83,17 +83,6 @@ export interface TerminalSupport {
   available: boolean;
   /** One line on why not — shown wherever the terminal entry would have been. */
   reason?: string;
-  /** Shells this host offers, in the order a picker should show them. */
-  shells: string[];
-  /**
-   * The shell the plain "terminal" entry opens, which is the login shell.
-   *
-   * Reported rather than left to be inferred: "what does not picking mean" is
-   * exactly what a picker has to put next to its first entry, and only the host
-   * can answer it — the client sees a list of paths, not which one the user's
-   * own `$SHELL` points at. Empty when no shell is available at all.
-   */
-  default: string;
 }
 
 export interface TerminalInfo {
@@ -102,12 +91,9 @@ export interface TerminalInfo {
   cols: number;
   rows: number;
   /**
-   * The program that was actually started, after `pickShell` resolved the
-   * request.
-   *
-   * A tab is named after this, so it has to be the real answer rather than the
-   * one that was asked for: a stale choice saved in a layout, or one for a
-   * shell this host no longer lists, opens the fallback instead.
+   * The program that was started. There is no request to resolve any more —
+   * every terminal opens bash (see `pickShell`) — but a tab is named after
+   * this, so it stays the host's answer rather than the client's guess.
    */
   shell: string;
   /** null while the shell is alive; the code it left with afterwards. */
@@ -118,7 +104,7 @@ interface TerminalRecord {
   readonly id: string;
   readonly sessionPath: string;
   readonly proc: PtyProcess;
-  /** What `pickShell` settled on; kept so every later read reports the same thing. */
+  /** Kept so every later read reports the same program this shell was started as. */
   readonly shell: string;
   cols: number;
   rows: number;
@@ -150,8 +136,6 @@ export interface CreateTerminalInput {
   cwd: string;
   cols: number;
   rows: number;
-  /** A path from `support().shells`; anything else falls back to the default. */
-  shell?: string;
 }
 
 /**
@@ -195,15 +179,9 @@ export class TerminalManager implements TerminalHost {
    */
   support(): TerminalSupport {
     if (this.load() === null) {
-      return {
-        available: false,
-        reason: this.failure ?? "terminal unavailable",
-        shells: [],
-        default: "",
-      };
+      return { available: false, reason: this.failure ?? "terminal unavailable" };
     }
-    const shells = installedShells();
-    return { available: true, shells, default: pickShell(undefined, shells) };
+    return { available: true };
   }
 
   list(sessionPath?: string): TerminalInfo[] {
@@ -229,8 +207,7 @@ export class TerminalManager implements TerminalHost {
       throw conflict(`终端数量已达上限（${String(MAX_TERMINALS)}），请先关闭一个`);
     }
 
-    const shells = installedShells();
-    const file = pickShell(input.shell, shells);
+    const file = pickShell(installedShells());
     const cols = clampDimension(input.cols, 80);
     const rows = clampDimension(input.rows, 24);
     const id = `term-${String(++this.counter)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -498,20 +475,22 @@ function defaultShell(): string {
 }
 
 /**
- * The shell a new tab opens.
+ * The shell a terminal opens.
  *
- * A requested shell is honoured only when the host actually lists it, so a
- * stale choice saved in a layout cannot make the tab fail to open. Otherwise
- * the user's own login shell wins: it is the one whose aliases and prompt they
- * expect, and the one `/etc/shells` almost always contains.
+ * bash, or — on a host without one — this user's login shell, or failing that
+ * the first shell `/etc/shells` lists. bash rather than the login shell on
+ * purpose: a terminal here is where you go to see what the agent actually did,
+ * and the same shell on every machine is worth more for that than one that
+ * changes with whoever installed the app. The login shell stays as the first
+ * fallback so a host is never left with nothing to open — Windows, which has no
+ * `/etc/shells` at all, lands there and gets `ComSpec`.
  *
- * Exported because it is the whole rule, and the rule is worth naming in a
- * test: the machine's own `/etc/shells` decides what `installedShells()`
- * answers, so a test that went through `create` would only be able to assert
- * "one of these two things happened".
+ * Exported because it is the whole rule, and a test that went through `create`
+ * could only assert which branch this machine happened to take.
  */
-export function pickShell(requested: string | undefined, shells: string[]): string {
-  if (requested !== undefined && shells.includes(requested)) return requested;
+export function pickShell(shells: string[]): string {
+  const preferred = "/bin/bash";
+  if (shells.includes(preferred)) return preferred;
   const login = defaultShell();
   if (shells.includes(login)) return login;
   return shells[0] ?? login;

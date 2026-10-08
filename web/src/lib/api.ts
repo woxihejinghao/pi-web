@@ -152,7 +152,6 @@ export const api = {
     cwd?: string;
     cols: number;
     rows: number;
-    shell?: string;
   }) => request<TerminalInfo>("/api/terminal", { method: "POST", body: JSON.stringify(body) }),
 
   /** The screen so far, for a tab mounting onto a shell that kept running. */

@@ -1645,7 +1645,7 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(
       res,
       201,
-      terminals.create({ sessionPath, cwd, cols, rows, shell: optionalString(payload, "shell") }),
+      terminals.create({ sessionPath, cwd, cols, rows }),
     );
   });
 

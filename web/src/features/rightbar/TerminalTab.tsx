@@ -178,10 +178,6 @@ export function TerminalTab({
           knownId: tab.target,
           cols: term.cols,
           rows: term.rows,
-          // Also read once: changing it later is what the restart path is for,
-          // and a picker that could re-point a *running* shell would be lying
-          // about what that process is.
-          shell: tab.shell ?? "",
         });
         if (cancelled) return;
 

@@ -147,28 +147,20 @@ describe("TerminalManager", () => {
   });
 
   describe("support", () => {
-    it("reports the host's shells when the optional module loads", () => {
+    it("answers that shells are available when the optional module loads", () => {
       const support = harness().manager.support();
       expect(support.available).toBe(true);
-      // A host always offers at least one — the fallback is the user's own
-      // login shell, which is what the tab should open either way.
-      expect(support.shells.length).toBeGreaterThan(0);
-      // The one a plain "terminal" opens, reported rather than inferred: the
-      // client sees a list of paths, not which one `$SHELL` points at. It is
-      // always a listed shell, because that is the only kind `pickShell` picks.
-      expect(support.default.length).toBeGreaterThan(0);
-      expect(support.shells).toContain(support.default);
+      // Nothing else is in the answer: the host no longer offers a list to pick
+      // from, so there is no list here to check.
+      expect(support.reason).toBeUndefined();
     });
 
-    it("reports why, and offers nothing, when the module will not load", () => {
+    it("reports why when the module will not load", () => {
       const support = harness(() => {
         throw new Error("Cannot find module 'node-pty'");
       }).manager.support();
       expect(support.available).toBe(false);
       expect(support.reason).toContain("node-pty");
-      expect(support.shells).toEqual([]);
-      // Nothing to open, so nothing to name as the default.
-      expect(support.default).toBe("");
     });
 
     it("treats a loader that answers null the same as one that throws", () => {
@@ -198,28 +190,18 @@ describe("TerminalManager", () => {
    * reason — the test owns both halves of the comparison.
    */
   describe("pickShell", () => {
-    const shells = ["/bin/sh", "/bin/bash", "/bin/zsh"];
-
-    it("honours a request the host lists", () => {
-      expect(pickShell("/bin/zsh", shells)).toBe("/bin/zsh");
-    });
-
-    it("ignores a request the host does not list", () => {
-      // A layout saved on another machine, or one whose package was removed,
-      // must not leave a tab that cannot open. Which of the two fallbacks wins
-      // depends on this machine's `$SHELL`, so the assertion is the invariant
-      // rather than a path: a listed shell, and not the one that was asked for.
-      const picked = pickShell("/opt/homebrew/bin/fish", shells);
-      expect(picked).not.toBe("/opt/homebrew/bin/fish");
-      expect(shells).toContain(picked);
+    it("opens bash when the host has it", () => {
+      // The whole point of the rule: the same shell everywhere, whatever this
+      // user's own `$SHELL` happens to be.
+      expect(pickShell(["/bin/sh", "/bin/bash", "/bin/zsh"])).toBe("/bin/bash");
     });
 
     it.skipIf(process.platform === "win32")(
-      "prefers the login shell when nothing was asked for",
+      "falls back to the login shell when bash is not listed",
       () => {
         vi.stubEnv("SHELL", "/bin/zsh");
         try {
-          expect(pickShell(undefined, shells)).toBe("/bin/zsh");
+          expect(pickShell(["/bin/sh", "/bin/zsh"])).toBe("/bin/zsh");
         } finally {
           vi.unstubAllEnvs();
         }
@@ -227,11 +209,11 @@ describe("TerminalManager", () => {
     );
 
     it.skipIf(process.platform === "win32")(
-      "takes the first listed shell when the login shell is not one",
+      "takes the first listed shell when neither bash nor the login shell is there",
       () => {
         vi.stubEnv("SHELL", "/opt/homebrew/bin/fish");
         try {
-          expect(pickShell(undefined, shells)).toBe("/bin/sh");
+          expect(pickShell(["/bin/zsh", "/bin/sh"])).toBe("/bin/zsh");
         } finally {
           vi.unstubAllEnvs();
         }
@@ -259,32 +241,19 @@ describe("TerminalManager", () => {
       expect(env.TERM).toBe("xterm-256color");
     });
 
-    it("opens the login shell when the request does not name one", () => {
+    it("spawns the host's shell, and reports that as the program it is running", () => {
       const h = harness();
-      const support = h.manager.support();
       const info = open(h);
-      expect(info.shell).toBe(support.default);
-      expect(h.spawnedFiles).toEqual([support.default]);
+      // Whatever this machine's `/etc/shells` yields, the program that was
+      // spawned and the program every read reports are the same one.
+      expect(info.shell).toBe(h.spawnedFiles[0]);
+      expect(info.shell.length).toBeGreaterThan(0);
+      expect(h.manager.list()[0]?.shell).toBe(info.shell);
     });
 
-    it("spawns the shell it was asked for, and keeps reporting that one", () => {
+    it.skipIf(process.platform === "win32")("opens bash on a host that has it", () => {
       const h = harness();
-      const support = h.manager.support();
-      // Any listed shell that is *not* the default proves the request travelled;
-      // on a host with a single shell the pipeline is still what is under test.
-      const wanted = support.shells.find((item) => item !== support.default) ?? support.default;
-      const info = h.manager.create({
-        sessionPath: "/s.jsonl",
-        cwd: "/work",
-        cols: 80,
-        rows: 24,
-        shell: wanted,
-      });
-      expect(info.shell).toBe(wanted);
-      expect(h.spawnedFiles).toEqual([wanted]);
-      // Reads report what is running, so a tab is named after the real program
-      // rather than after a request that may not have been honoured.
-      expect(h.manager.list()[0]?.shell).toBe(wanted);
+      expect(open(h).shell).toBe("/bin/bash");
     });
 
     it("answers 503 — not 400 — when this host cannot run a shell", () => {

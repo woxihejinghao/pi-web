@@ -169,35 +169,18 @@ export function terminalsFor(state: TerminalState, sessionPath: string): Termina
 /**
  * What a shell is called on a tab.
  *
- * The host reports a path — `/bin/zsh`, `C:\Program Files\PowerShell\7\pwsh.exe`
+ * The host reports a path — `/bin/bash`, `C:\Program Files\PowerShell\7\pwsh.exe`
  * — and a tab strip has room for the program, not the path. `.exe` is dropped
  * because Windows never says it out loud. A name with no separator is returned
  * as-is, which is also a shape `ComSpec` can take (`cmd`).
  *
- * Derived from what *started*, not from what was asked for: a request the host
- * does not list opens the fallback, and the tab has to say which one is really
- * running.
+ * Derived from what the host started rather than from a constant because the
+ * host is what decides: bash here on almost every machine, the login shell on a
+ * host without one, `ComSpec` on Windows.
  */
 export function shellName(shellPath: string): string {
   const base = shellPath.split(/[\\/]/).pop() ?? shellPath;
   return base.replace(/\.exe$/i, "");
-}
-
-/**
- * The extra shells the "+" menu lists under its Terminal entry.
- *
- * The default is left out on purpose: the entry above the list already opens
- * it, so repeating it would be two names for one action. Order is the host's,
- * which is `/etc/shells` order — the same order a login-shell manager shows.
- *
- * A host with one shell therefore yields nothing, and the menu looks exactly as
- * it did before the list existed. An unavailable host yields nothing too: the
- * entries would be dead, and the Terminal entry itself already carries the
- * reason on hover.
- */
-export function shellChoices(support: TerminalSupport | null): string[] {
-  if (support === null || !support.available) return [];
-  return support.shells.filter((item) => item !== support.default);
 }
 
 /**
@@ -220,8 +203,6 @@ export async function attachShell(input: {
   knownId: string;
   cols: number;
   rows: number;
-  /** A path from `support().shells`; empty means the login shell. */
-  shell: string;
 }): Promise<{ info: TerminalInfo; scrollback: string }> {
   const answer = await terminalActions.refresh(input.sessionPath);
 
@@ -246,10 +227,6 @@ export async function attachShell(input: {
     cwd: input.projectPath,
     cols: input.cols,
     rows: input.rows,
-    // Empty means "no preference", and an absent field is how that is said:
-    // the host answers with the login shell, where `pickShell` would only
-    // reject the empty string and fall back to the same thing.
-    ...(input.shell.length > 0 ? { shell: input.shell } : {}),
   });
   terminalActions.noteAdded(info);
   return { info, scrollback: "" };

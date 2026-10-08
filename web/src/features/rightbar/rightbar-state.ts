@@ -58,17 +58,6 @@ export interface RightbarTab {
    * `files` or `changes` (neither needs an address).
    */
   target: string;
-  /**
-   * `terminal` only: the shell this tab asked for, as a path from
-   * `support().shells`.
-   *
-   * Absent means "whatever the host opens by default" — the plain Terminal
-   * entry, and every tab written before this field existed. It lives on the tab
-   * rather than being read from the host at open time because a restart has to
-   * come back as the *same* shell, and because the choice has to survive a
-   * reload exactly like the tab does.
-   */
-  shell?: string;
   /** `browser` only: the tab's history, newest last. */
   history?: string[];
   /** `browser` only: the position inside that history. */
@@ -240,10 +229,6 @@ function readTab(entry: unknown): RightbarTab | null {
     ...(kind === "browser" && typeof tab.historyIndex === "number"
       ? { historyIndex: tab.historyIndex }
       : {}),
-    // A string is enough of a check: the host ignores a path it does not list,
-    // so a value that arrived from an older or hand-edited layout cannot make
-    // the tab fail to open.
-    ...(kind === "terminal" && typeof tab.shell === "string" ? { shell: tab.shell } : {}),
   };
 }
 
@@ -587,19 +572,11 @@ export function makeBrowserTab(url: string): RightbarTab {
  * `setTabTarget` so a reload reattaches to the same shell instead of opening a
  * second one beside it.
  *
- * `shell` is the picker's answer. Empty means "no preference", which is what
- * the plain Terminal entry passes and what the server reads as the login shell
- * — so an empty string is dropped rather than stored, keeping one shape for one
- * fact.
+ * There is no shell to remember: every terminal opens bash (the server's
+ * `pickShell` decides), so a tab carries nothing about which program it wants.
  */
-export function makeTerminalTab(shell: string): RightbarTab {
-  return {
-    id: nextTabId("terminal"),
-    kind: "terminal",
-    title: "",
-    target: "",
-    ...(shell.length > 0 ? { shell } : {}),
-  };
+export function makeTerminalTab(): RightbarTab {
+  return { id: nextTabId("terminal"), kind: "terminal", title: "", target: "" };
 }
 
 /** The host a browser tab is titled after; falls back to the raw input. */
@@ -1120,14 +1097,9 @@ export const rightbarActions = {
    * Always a new one: two shells are two independent processes, so a tab is
    * never reused the way a preview of the same file is. The host id is filled
    * in by the body once it has one.
-   *
-   * `shell` is the picker's choice; the default is "no preference", which the
-   * host answers with the user's login shell. The strip's ⌃` binding goes
-   * through here with no argument too, so the keystroke and the plain menu
-   * entry keep meaning the same thing.
    */
-  openTerminalTab(key: string, paneId?: string, shell = ""): void {
-    rightbarActions.openTab(key, makeTerminalTab(shell), paneId);
+  openTerminalTab(key: string, paneId?: string): void {
+    rightbarActions.openTab(key, makeTerminalTab(), paneId);
   },
 
   /** Close one tab. */

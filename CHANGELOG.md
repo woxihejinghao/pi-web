@@ -21,6 +21,7 @@
 - **侧边栏的图标换成 dsh 当前那一版**（`ui-primitives/src/icons/index.tsx` 的 artwork）。此前这一栏的 chrome 图标大多取的是另一套 —— Figma 导出的填充版，或 `icons.tsx` 里自绘的描边 —— 而 dsh 现在把侧边栏画成描边的：新会话是气泡加号（`IconNewChatOutlineRegular`，18px）、搜索是描边放大镜（`IconSearchOutlineRegular`）、重命名是方框加笔（`IconEditOutlineRegular`）、删除是描边垃圾桶（`IconTrashOutlineRegular`）、设置是描边齿轮（`IconSettingsOutlineRegular`）。工作区的文件夹、展开三角、溢出的省略号也按当前 artwork 换过（`folderOpen` 的 duotone 内填由 20% 改成 dsh 的 16%，`caretRight` 的 viewBox 从 14 改回 16）。为此 `Glyph` 多了一条**逐 path 的 `stroke` 开关**：dsh 有两枚是半填充半描边的（`projectAdd` 的加号、`rename` 的笔），只有一个 glyph 级的开关没法同时画出这两半。
 - 顺带删掉 `icons.tsx` 里已经没人用的 `SearchIcon` / `PencilIcon` / `TrashIcon`；`PlusIcon` 仍被右侧栏用着所以留着，`EyeOffIcon` 也留着 —— dsh 没有「隐藏会话」这个概念，它用归档，这边不假装是同一个动作。
 - hover 会话行时**隐藏时间戳**再显示操作按钮。原先靠操作簇的渐变背景盖住时间戳，但那一簇只比按钮宽 20px，两位数天数的「13天」会从两枚图标之间露出来（dsh 就是隐藏时间戳）。
+- **终端不再提供 shell 选择，一律开 bash**：上一版做的「+ 菜单里列其余 shell」连同它依赖的整条链路一起撤了 —— `TerminalSupport.shells` / `default`、`CreateTerminalInput.shell`、`POST /api/terminal` 的 `shell` 字段、`RightbarTab.shell`、`attachShell` 的 shell 参数、`api.openTerminal` 的字段、`shellChoices` 与两条 i18n 文案。**默认从登录 shell 改成 bash**：`pickShell` 现在优先 `/bin/bash`（这台主机没有才退回 `$SHELL`，再没有就取 `/etc/shells` 第一个；Windows 落在 `ComSpec`）。理由是「跟着谁装的走」对一个用来看 agent 干了什么的终端没什么价值，而每台机器一致有；登录 shell 退居兜底，保证主机不会落到没得开的地步。`TerminalInfo.shell` 留着 —— 标签名还是按真正跑起来的程序取（现在几乎总是 `bash`）。实测：本机 `$SHELL=/bin/zsh`、请求体不带 `shell`，回来的是 `info.shell=/bin/bash`，PTY 里 `echo $0` 也是 `/bin/bash`。
 
 ### 修复
 

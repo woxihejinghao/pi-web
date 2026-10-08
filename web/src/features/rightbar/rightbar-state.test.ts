@@ -293,19 +293,8 @@ describe("tabs", () => {
     expect(tabsOf(pane())[0]?.target).toBe("t-42");
   });
 
-  it("keeps the shell the picker chose, and stays quiet when it did not", () => {
-    rightbarActions.openTerminalTab(KEY, undefined, "/bin/bash");
-    rightbarActions.openTerminalTab(KEY);
-    const terminals = tabsOf(pane()).filter((tab) => tab.kind === "terminal");
-    expect(terminals[0]?.shell).toBe("/bin/bash");
-    // "No preference" is stored by saying nothing, not by storing an empty
-    // string: the host reads an absent field as the login shell, and one fact
-    // with two spellings is how a layout ends up meaning two things.
-    expect(terminals[1]?.shell).toBeUndefined();
-  });
-
   it("renames a tab, and the strip reads the new name", () => {
-    rightbarActions.openTerminalTab(KEY, undefined, "/bin/zsh");
+    rightbarActions.openTerminalTab(KEY);
     const id = ids()[0]!;
     rightbarActions.setTabTitle(KEY, id, "build");
     const tab = tabsOf(pane())[0]!;
@@ -743,22 +732,9 @@ describe("persistence", () => {
     expect(restored.activePaneId).toBe(restored.panes[1]!.id);
   });
 
-  it("brings a terminal's chosen shell back with the tab", () => {
-    installStorage();
-    rightbarActions.openTerminalTab(KEY, undefined, "/bin/zsh");
-
-    resetRightbarState();
-    rightbarActions.ensureSurface(KEY);
-    const terminal = tabsOf(surface().panes[0]!).find((tab) => tab.kind === "terminal");
-    // The choice has to survive the reload exactly like the tab does: a tab
-    // that came back without it would restart on the login shell instead, which
-    // is a different program than the one the user picked.
-    expect(terminal?.shell).toBe("/bin/zsh");
-  });
-
   it("brings a renamed tab back with its name", () => {
     installStorage();
-    rightbarActions.openTerminalTab(KEY, undefined, "/bin/zsh");
+    rightbarActions.openTerminalTab(KEY);
     const id = ids()[0]!;
     rightbarActions.setTabTitle(KEY, id, "build");
 

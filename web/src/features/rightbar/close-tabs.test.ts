@@ -44,7 +44,7 @@ function dockTabs() {
 
 /** A tab that has a shell behind it — `target` is only filled once it has one. */
 function openTerminal(target: string): string {
-  rightbarActions.openTab(KEY, { ...makeTerminalTab(""), target });
+  rightbarActions.openTab(KEY, { ...makeTerminalTab(), target });
   const tab = dockTabs().at(-1);
   if (tab === undefined) throw new Error("the terminal tab was not added");
   return tab.id;

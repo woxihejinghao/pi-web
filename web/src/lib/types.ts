@@ -319,16 +319,6 @@ export interface TerminalSupport {
   available: boolean;
   /** One line on why not, shown wherever the terminal entry would have been. */
   reason?: string;
-  /** Shells the host offers, in the order a picker should show them. */
-  shells: string[];
-  /**
-   * The shell a plain "terminal" opens — the login shell.
-   *
-   * Mirrored from the host instead of guessed here: the list below names paths,
-   * and nothing in it says which one the user's own `$SHELL` points at. Empty
-   * when no shell is available.
-   */
-  default: string;
 }
 
 export interface TerminalInfo {
