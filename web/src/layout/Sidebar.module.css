@@ -638,6 +638,16 @@
   display: flex;
 }
 
+/*
+ * Hover trades the timestamp for the action cluster, exactly as dsh does.
+ * Leaving it up and painting the cluster over it does not work: the cluster is
+ * only as wide as its buttons plus the fade, so a two-digit day count pokes out
+ * between two glyphs instead of disappearing under the fill.
+ */
+.sessionRow:hover .sessionTime {
+  display: none;
+}
+
 .sessionRowActive .rowActions {
   background: linear-gradient(
     to right,

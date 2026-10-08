@@ -46,18 +46,6 @@ export const PlusIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export const PencilIcon = (props: SVGProps<SVGSVGElement>) => (
-  <svg {...base(props)}>
-    <path d="M11.2 2.8a1.6 1.6 0 0 1 2.3 2.3L6 12.5l-3 .7.7-3z" />
-  </svg>
-);
-
-export const TrashIcon = (props: SVGProps<SVGSVGElement>) => (
-  <svg {...base(props)}>
-    <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8" />
-  </svg>
-);
-
 export const EyeOffIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg {...base(props)}>
     <path d="M2 2l12 12M6.3 6.4a2.2 2.2 0 0 0 3.1 3.1M4.2 4.4C2.9 5.3 2 6.6 2 8c0 2 2.7 4 6 4 1.2 0 2.3-.3 3.2-.9M13.4 9.9c.4-.6.6-1.2.6-1.9 0-2-2.7-4-6-4-.5 0-1 .06-1.5.17" />
@@ -124,12 +112,5 @@ export const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
 export const CheckIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg {...base(props)}>
     <path d="M3.5 8.5l3 3 6-7" />
-  </svg>
-);
-
-export const SearchIcon = (props: SVGProps<SVGSVGElement>) => (
-  <svg {...base(props)}>
-    <circle cx="7.2" cy="7.2" r="4.2" />
-    <path d="m10.6 10.6 2.9 2.9" />
   </svg>
 );

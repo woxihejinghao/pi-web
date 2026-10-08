@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
-import {
-  EyeOffIcon,
-  PencilIcon,
-  PlusIcon,
-  TrashIcon,
-} from "../../components/icons.tsx";
+import { EyeOffIcon } from "../../components/icons.tsx";
 import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { StateDot, type StateDotState } from "../../components/StateDot.tsx";
@@ -93,7 +88,7 @@ function ProjectRowMenu({
           onRename();
         }}
       >
-        <PencilIcon width={14} height={14} />{t("project.rename")}</button>
+        <Glyph name="editOutline" size={16} />{t("project.rename")}</button>
       <button
         type="button"
         className={clsx(styles.projectMenuItem, styles.projectMenuItemDanger)}
@@ -103,7 +98,7 @@ function ProjectRowMenu({
           onRemove();
         }}
       >
-        <TrashIcon width={14} height={14} />{t("project.delete")}</button>
+        <Glyph name="trash" size={16} />{t("project.delete")}</button>
     </div>,
     document.body,
   );
@@ -202,7 +197,7 @@ function SessionRow({
           title={t("session.rename")}
           onClick={() => void rename()}
         >
-          <PencilIcon />
+          <Glyph name="editOutline" size={16} />
         </button>
         <button
           type="button"
@@ -221,7 +216,7 @@ function SessionRow({
             title={t("session.delete")}
             onClick={() => void remove()}
           >
-            <TrashIcon />
+            <Glyph name="trash" size={16} />
           </button>
         ) : null}
       </div>
@@ -378,7 +373,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               actions.enterNewSession();
             }}
           >
-            <PlusIcon />
+            <Glyph name="newChatOutline" size={16} />
           </button>
         </div>
       </div>

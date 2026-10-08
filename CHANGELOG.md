@@ -18,6 +18,9 @@
 - **左侧栏按 dsh 的规范重排**：列几何照 `ui-sidebar/SidebarRoot.module.css`（`6px 12px` 内边距、60px 品牌行、36px 分组头、42px 设置项），行几何照 `ui-workspace/rows/Rows.module.css`（工作区行 34px、会话行 32px、标题 14px/20px、时间戳 10px/16px、12px 圆角、悬停与选中同用 `--dsw-alias-interactive-bg-hover`）。列宽 268 → **280**（dsh 的 `SIDEBAR_DEFAULT`）；列分隔线 `border-l2` → **l3**；品牌名 14px → **18px**；头部图标按钮 24px → **28px**；“新会话”的圆角从刻意偏离的 14px 回到 dsh 的 **12px**；`--dsw-radius-*` 四档 token 补进设计 token 表（此前未移植）。滚动条照 dsh 贴到列自己的右边缘：负外边距抵消列内边距，行落点用 `edge − 滚动条 − 2` 算回原位，公式读的是本项目自己的 `--dsh-scrollbar-width`（这里全局 8px，dsh 是 5px —— 要跟的是行的落点，不是条本身的粗细）。
 - **缩进改用行内 `padding-inline-start` 而不是外边距，会话行不再比工作区行多缩 26px**：被外边距推开的是整行连背景一起，而 dsh 的悬停/选中填充要铺满整列；两个层级在 dsh 里共用同一个 `--dsh-workspace-indent`（每层 12px）。工作区行之间恢复 dsh 的 4px 组间距（组内 2px）。「展开其余 N 个会话」照 dsh 的 `.sessionOverflowButton`：28px 行高、8px 圆角、**悬停不变底色**只提亮文字。顺带补上 `.projectRowCurrent` —— 它一直被 `ProjectTree.tsx` 引用却从没在样式表里定义过，当前工作区因此一直没有行底色。
 - 三处刻意不跟 dsh，代码里各自注明：品牌是字母标记而不是 dsh 的字标美术件；搜索是独立的行，dsh 是在分组头里就地展开一个；行的操作按钮仍是绝对定位的一簇，因为下面那个拉伸的标题伪元素需要它盖在自己之上才有得点 —— dsh 是把按钮换进 flex 行、把时间戳挤掉，那套在这里会和 `::after` 抢点击。
+- **侧边栏的图标换成 dsh 当前那一版**（`ui-primitives/src/icons/index.tsx` 的 artwork）。此前这一栏的 chrome 图标大多取的是另一套 —— Figma 导出的填充版，或 `icons.tsx` 里自绘的描边 —— 而 dsh 现在把侧边栏画成描边的：新会话是气泡加号（`IconNewChatOutlineRegular`，18px）、搜索是描边放大镜（`IconSearchOutlineRegular`）、重命名是方框加笔（`IconEditOutlineRegular`）、删除是描边垃圾桶（`IconTrashOutlineRegular`）、设置是描边齿轮（`IconSettingsOutlineRegular`）。工作区的文件夹、展开三角、溢出的省略号也按当前 artwork 换过（`folderOpen` 的 duotone 内填由 20% 改成 dsh 的 16%，`caretRight` 的 viewBox 从 14 改回 16）。为此 `Glyph` 多了一条**逐 path 的 `stroke` 开关**：dsh 有两枚是半填充半描边的（`projectAdd` 的加号、`rename` 的笔），只有一个 glyph 级的开关没法同时画出这两半。
+- 顺带删掉 `icons.tsx` 里已经没人用的 `SearchIcon` / `PencilIcon` / `TrashIcon`；`PlusIcon` 仍被右侧栏用着所以留着，`EyeOffIcon` 也留着 —— dsh 没有「隐藏会话」这个概念，它用归档，这边不假装是同一个动作。
+- hover 会话行时**隐藏时间戳**再显示操作按钮。原先靠操作簇的渐变背景盖住时间戳，但那一簇只比按钮宽 20px，两位数天数的「13天」会从两枚图标之间露出来（dsh 就是隐藏时间戳）。
 
 ### 修复
 

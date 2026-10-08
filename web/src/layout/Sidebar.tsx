@@ -1,7 +1,6 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Glyph } from "../components/dsh-icons.tsx";
-import { PlusIcon, SearchIcon } from "../components/icons.tsx";
 import { DirectoryPicker } from "../features/projects/DirectoryPicker.tsx";
 import { ProjectTreeItem } from "../features/projects/ProjectTree.tsx";
 import { actions, appStore, useT } from "../lib/app-state.ts";
@@ -41,7 +40,7 @@ export function Sidebar() {
           }
           onClick={() => actions.enterNewSession()}
         >
-          <PlusIcon />
+          <Glyph name="newChatOutline" size={18} />
           {t("sidebar.newSession")}
         </button>
       </div>
@@ -56,7 +55,7 @@ export function Sidebar() {
             title={t("sidebar.searchPlaceholder")}
             onClick={() => actions.toggleSearch()}
           >
-            <SearchIcon />
+            <Glyph name="searchOutline" size={16} />
           </button>
           <button
             type="button"
