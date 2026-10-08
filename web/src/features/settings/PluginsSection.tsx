@@ -5,7 +5,6 @@ import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import type { ExtensionItem, ExtensionUpdate } from "../../lib/types.ts";
 import { extensionUpdateCount, updateForSource } from "../../lib/updates.ts";
-import { shouldOfferTodoInstall } from "../conversation/todo-model.ts";
 import { extensionSourceLabel, groupExtensions, groupMeta } from "./plugin-model.ts";
 import styles from "./PluginsSection.module.css";
 
@@ -55,9 +54,6 @@ export function PluginsSection({ className }: { className?: string }) {
   const [updating, setUpdating] = useState<Record<string, true>>({});
   /** Why an update failed, per path — shown in the row that started it. */
   const [updateErrors, setUpdateErrors] = useState<Record<string, string>>({});
-  /** The task-list extension's install offer, which lives below the lead. */
-  const [installingTodo, setInstallingTodo] = useState(false);
-  const [todoError, setTodoError] = useState<string | null>(null);
   /** A forced update check in flight, from the header's 检查更新. */
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
@@ -65,7 +61,6 @@ export function PluginsSection({ className }: { className?: string }) {
     state.projects.find((project) => project.id === state.selectedProjectId)?.path ?? null;
 
   const view = state.extensions;
-  const todo = state.todo;
   // Same slot the 关于 row in 通用设置 writes, keyed by workspace.
   const updates = state.updates[projectPath ?? ""] ?? null;
   const updateCount = extensionUpdateCount(updates);
@@ -83,22 +78,6 @@ export function PluginsSection({ className }: { className?: string }) {
     if (updates !== null) return;
     void actions.loadUpdates(projectPath);
   }, [projectPath, updates]);
-
-  useEffect(() => {
-    // Same rule for the task-list answer: it is resolved per workspace, and it
-    // is what decides whether the install offer below is worth showing.
-    if (todo !== null && todo.projectPath === projectPath) return;
-    void actions.loadTodo(projectPath);
-  }, [projectPath, todo]);
-
-  const installTodo = (): void => {
-    setInstallingTodo(true);
-    setTodoError(null);
-    void actions
-      .installTodoExtension(projectPath)
-      .catch((err: Error) => setTodoError(err.message))
-      .finally(() => setInstallingTodo(false));
-  };
 
   /**
    * Ask upstream again. The server caches its answer for a few minutes, so
@@ -199,30 +178,6 @@ export function PluginsSection({ className }: { className?: string }) {
       </div>
 
       <p className={styles.lead}>{t("settings.plugins.lead")}</p>
-
-      {/*
-        The task panel's own notice can be closed, so the offer has to exist
-        somewhere that is not a transient hint — this is that place, and it is
-        also where anyone looking for "extensions" would come. The rule for
-        when it is worth showing is the one the panel uses, minus the dismissal:
-        an installed-but-disabled package is the user's own choice, not a
-        missing dependency.
-      */}
-      {shouldOfferTodoInstall(todo, false) ? (
-        <div className={styles.todoNotice}>
-          <p className={styles.todoNoticeText}>{t("settings.plugins.todoNoticePrefix")}<code>todo</code>{t("settings.plugins.todoNoticeSuffix")}</p>
-          <button
-            type="button"
-            className={styles.todoNoticeAction}
-            disabled={installingTodo}
-            title="pi install npm:@juicesharp/rpiv-todo"
-            onClick={installTodo}
-          >
-            {installingTodo ? t("todo.installing") : t("todo.install")}
-          </button>
-          {todoError !== null ? <p className={styles.todoNoticeError}>{todoError}</p> : null}
-        </div>
-      ) : null}
 
       {/*
         The fact the 关于 row in 通用设置 counts, restated where the action is.

@@ -242,7 +242,7 @@ export function ConversationPane() {
       />
       {/* Between transcript and composer, where dsh puts its plan strip: the
           list belongs to the input it is about to steer, not to the history. */}
-      <TodoPanel todos={conversation.todos} projectPath={project?.path ?? null} />
+      <TodoPanel todos={conversation.todos} />
       {/* One seat, two occupants: a pending question replaces the input rather
           than stacking above it, so the card cannot be confused for a message
           that has already been sent. */}

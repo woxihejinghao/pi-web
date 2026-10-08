@@ -43,10 +43,10 @@ export interface ConversationView {
    */
   forkPoints: ForkPoint[];
   /**
-   * The session's current todo list, projected from the newest `todo` tool
-   * result in the transcript (see `projectTodos`). Empty when the session never
-   * used one — or when the last write cleared it, which is the same thing to
-   * every consumer here.
+   * The plan for the turn in flight, projected from its newest `todo` tool
+   * result (see `projectTodos`). Empty when the turn never used one, when the
+   * last write in it cleared the list, or when the newest turn has not written
+   * one yet — all three are the same thing to every consumer here.
    */
   todos: TodoItem[];
   /** Assistant content being assembled right now, or null when idle. */
@@ -404,21 +404,24 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     lastPublishRef.current = Date.now();
     dirtyRef.current = false;
     const slot = slotRef.current;
+    // Computed before the projection that consumes it: the plan is cleared when a
+    // turn opens, and a prompt pi has not taken up yet has not opened one.
+    const undeliveredPrompts = Math.max(
+      0,
+      countUserMessages(messagesRef.current) - deliveredUsersRef.current,
+    );
     setView({
       messages: messagesRef.current,
       forkPoints: forkPointsRef.current,
       // Projected on every publish rather than cached: the scan walks backwards
-      // and normally stops at the last tool result, and a stale plan is a worse
-      // bug than a redundant pass over a few hundred messages.
-      todos: projectTodos(messagesRef.current),
+      // from the end of the newest turn and normally stops at its last tool
+      // result, and a stale plan is a worse bug than a redundant pass.
+      todos: projectTodos(messagesRef.current, undeliveredPrompts),
       partial: slot ? [...slot.content] : null,
       // Recomputed rather than counted as it changes: the refs are the state,
       // and one pass over a few hundred messages is cheaper than a counter that
       // can drift from the list it describes.
-      undeliveredPrompts: Math.max(
-        0,
-        countUserMessages(messagesRef.current) - deliveredUsersRef.current,
-      ),
+      undeliveredPrompts,
       toolExecutions: { ...toolsRef.current },
       isStreaming: streamingRef.current,
       loading: loadingRef.current,

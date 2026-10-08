@@ -1,6 +1,6 @@
 import { useId } from "react";
 import clsx from "clsx";
-import { limitCompleted, visibleTodos, type TodoItem, type TodoStatus } from "./todo-model.ts";
+import { limitCompleted, type TodoItem, type TodoStatus } from "./todo-model.ts";
 import styles from "./TodoList.module.css";
 import { useT } from "../../lib/app-state.ts";
 
@@ -52,11 +52,6 @@ function PendingGlyph() {
   );
 }
 
-/**
- * `deleted` renders nothing. A tombstone exists so a `blockedBy` id still
- * resolves; it is filtered out before it reaches a list, and a stray one getting
- * a glyph of its own would be a row nobody meant to draw.
- */
 function StatusGlyph({ status }: { status: TodoStatus }) {
   switch (status) {
     case "completed":
@@ -65,8 +60,6 @@ function StatusGlyph({ status }: { status: TodoStatus }) {
       return <ProgressGlyph />;
     case "pending":
       return <PendingGlyph />;
-    case "deleted":
-      return null;
   }
 }
 
@@ -87,28 +80,20 @@ export function TodoList({
   const t = useT();
   const { rows, hiddenCompleted } =
     completedLimit === undefined
-      ? { rows: visibleTodos(todos), hiddenCompleted: 0 }
+      ? { rows: [...todos], hiddenCompleted: 0 }
       : limitCompleted(todos, completedLimit);
   if (rows.length === 0) return null;
 
   return (
     <ul className={clsx(styles.list, className)}>
       {rows.map((item) => (
-        // pi's tasks have stable ids, so they are the key — dsh keys on the
-        // content string only because its items have no identity.
-        <li key={item.id} className={styles.item} data-status={item.status} data-task-id={item.id}>
+        // The content is the identity: the tool rejects a duplicate, and a
+        // whole-list write carries no id to key on instead.
+        <li key={item.content} className={styles.item} data-status={item.status}>
           <span className={styles.glyph} aria-hidden>
             <StatusGlyph status={item.status} />
           </span>
-          <span className={styles.content}>{item.subject}</span>
-          {item.status === "in_progress" && item.activeForm !== undefined ? (
-            // Parenthesised like the terminal panel's row: the label describes
-            // the shape the task is taking, not another task.
-            <span className={styles.activeForm}>{`(${item.activeForm})`}</span>
-          ) : null}
-          {item.blockedBy !== undefined && item.blockedBy.length > 0 ? (
-            <span className={styles.blocked}>{`⛓ ${item.blockedBy.map((id) => `#${String(id)}`).join(",")}`}</span>
-          ) : null}
+          <span className={styles.content}>{item.content}</span>
         </li>
       ))}
       {hiddenCompleted > 0 ? (

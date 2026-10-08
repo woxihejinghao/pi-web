@@ -1,28 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { translator } from "../../lib/i18n/index.ts";
-import type { TodoSummary } from "./todo-model.ts";
-
-const zh = translator("zh-CN");
-const progressLabel = (summary: TodoSummary): string => progressLabelOf(summary, zh);
-const rowSummary = (summary: TodoSummary): string => rowSummaryOf(summary, zh);
-import type { AgentMessage, TodoView } from "../../lib/types.ts";
+import type { AgentMessage } from "../../lib/types.ts";
 import {
   limitCompleted,
   parseTodoSnapshot,
-  progressLabel as progressLabelOf,
+  progressLabel,
   projectTodos,
-  rowSummary as rowSummaryOf,
-  shouldOfferTodoInstall,
+  rowSummary,
   summarizeTodos,
-  todoArgsSummary,
-  todoCallAction,
-  todoCallId,
-  visibleTodos,
+  todosInArgs,
   type TodoItem,
+  type TodoSummary,
 } from "./todo-model.ts";
 
-function task(overrides: Partial<TodoItem> & { id: number; status: TodoItem["status"] }): TodoItem {
-  return { subject: `task ${String(overrides.id)}`, ...overrides };
+const zh = translator("zh-CN");
+const progress = (summary: TodoSummary): string => progressLabel(summary, zh);
+const row = (summary: TodoSummary): string => rowSummary(summary, zh);
+
+function task(content: string, status: TodoItem["status"]): TodoItem {
+  return { content, status };
 }
 
 /** A `todo` tool result carrying a snapshot, as pi writes it to the transcript. */
@@ -30,22 +26,21 @@ function toolResult(details: unknown, toolName = "todo"): AgentMessage {
   return { role: "toolResult", toolName, toolCallId: "call_1", content: [], details } as AgentMessage;
 }
 
+/** A prompt, which is what opens a turn. */
+function user(text: string): AgentMessage {
+  return { role: "user", content: [{ type: "text", text }] } as AgentMessage;
+}
+
 describe("parseTodoSnapshot", () => {
-  it("reads a well-formed snapshot", () => {
-    const snapshot = parseTodoSnapshot({
-      action: "update",
-      params: { action: "update", id: 2, status: "completed" },
-      tasks: [{ id: 1, subject: "first", status: "pending" }],
-      nextId: 2,
-    });
-    expect(snapshot).toEqual({ action: "update", tasks: [{ id: 1, subject: "first", status: "pending" }] });
+  it("reads a well-formed whole-list snapshot", () => {
+    expect(parseTodoSnapshot({
+      todos: [task("first", "pending"), task("second", "in_progress")],
+      counts: { pending: 1, inProgress: 1, completed: 0 },
+    })).toEqual([task("first", "pending"), task("second", "in_progress")]);
   });
 
   it("accepts an empty list — clearing the plan is a real state", () => {
-    expect(parseTodoSnapshot({ action: "clear", tasks: [], nextId: 1 })).toEqual({
-      action: "clear",
-      tasks: [],
-    });
+    expect(parseTodoSnapshot({ todos: [], counts: { pending: 0, inProgress: 0, completed: 0 } })).toEqual([]);
   });
 
   it("rejects payloads it only half understands", () => {
@@ -54,107 +49,137 @@ describe("parseTodoSnapshot", () => {
     expect(parseTodoSnapshot(null)).toBeNull();
     expect(parseTodoSnapshot("nope")).toBeNull();
     expect(parseTodoSnapshot({})).toBeNull();
-    expect(parseTodoSnapshot({ tasks: {} })).toBeNull();
-    expect(parseTodoSnapshot({ tasks: [{ id: 1, subject: "ok", status: "pending" }, null] })).toBeNull();
-    expect(parseTodoSnapshot({ tasks: [{ id: "1", subject: "x", status: "pending" }] })).toBeNull();
-    expect(parseTodoSnapshot({ tasks: [{ id: 1, subject: "x", status: "done" }] })).toBeNull();
-    expect(parseTodoSnapshot({ tasks: [{ id: 1, status: "pending" }] })).toBeNull();
+    expect(parseTodoSnapshot({ todos: {} })).toBeNull();
+    expect(parseTodoSnapshot({ todos: [{ content: "ok", status: "pending" }, null] })).toBeNull();
+    expect(parseTodoSnapshot({ todos: [{ content: 1, status: "pending" }] })).toBeNull();
+    expect(parseTodoSnapshot({ todos: [{ content: "", status: "pending" }] })).toBeNull();
+    expect(parseTodoSnapshot({ todos: [{ content: "x", status: "done" }] })).toBeNull();
+    expect(parseTodoSnapshot({ todos: [{ content: "x", status: "deleted" }] })).toBeNull();
   });
 
-  it("keeps the optional fields it renders, drops the empty ones", () => {
+  it("maps the old incremental payload onto the same shape", () => {
+    // `@juicesharp/rpiv-todo` answered with `tasks`, `subject` and a fourth
+    // `deleted` state; a session older than the switch still shows its plan.
     const snapshot = parseTodoSnapshot({
-      action: "create",
+      action: "update",
       tasks: [
-        {
-          id: 3,
-          subject: "write tests",
-          status: "in_progress",
-          activeForm: "writing tests",
-          description: "unit + integration",
-          owner: "",
-          blockedBy: [1, "2", 2],
-        },
+        { id: 1, subject: "first", status: "pending" },
+        { id: 2, subject: "second", status: "completed" },
+      ],
+      nextId: 3,
+    });
+    expect(snapshot).toEqual([task("first", "pending"), task("second", "completed")]);
+  });
+
+  it("keeps the legacy reader lenient, because its tombstones are normal", () => {
+    const snapshot = parseTodoSnapshot({
+      tasks: [
+        { id: 1, subject: "kept", status: "in_progress" },
+        { id: 2, subject: "gone", status: "deleted" },
+        { id: 3, subject: "broken", status: "done" },
+        null,
       ],
     });
-    expect(snapshot?.tasks[0]).toEqual({
-      id: 3,
-      subject: "write tests",
-      status: "in_progress",
-      activeForm: "writing tests",
-      description: "unit + integration",
-      blockedBy: [1, 2],
-    });
-  });
-
-  it("drops a blockedBy that holds no usable id", () => {
-    const snapshot = parseTodoSnapshot({
-      tasks: [{ id: 1, subject: "x", status: "pending", blockedBy: [] }],
-    });
-    expect(snapshot?.tasks[0]?.blockedBy).toBeUndefined();
+    expect(snapshot).toEqual([task("kept", "in_progress")]);
   });
 });
 
 describe("projectTodos", () => {
   it("takes the last snapshot, not the first", () => {
     const messages = [
-      toolResult({ action: "create", tasks: [task({ id: 1, status: "pending" })] }),
-      toolResult({ action: "update", tasks: [task({ id: 1, status: "completed" })] }),
+      toolResult({ todos: [task("task 1", "pending")] }),
+      toolResult({ todos: [task("task 1", "completed")] }),
     ];
-    expect(projectTodos(messages)).toEqual([task({ id: 1, status: "completed" })]);
+    expect(projectTodos(messages)).toEqual([task("task 1", "completed")]);
   });
 
   it("skips a malformed snapshot and falls back to the previous one", () => {
-    const healthy = toolResult({ action: "create", tasks: [task({ id: 1, status: "pending" })] });
-    const truncated = toolResult({ action: "update", tasks: "…" });
-    expect(projectTodos([healthy, truncated])).toEqual([task({ id: 1, status: "pending" })]);
+    const healthy = toolResult({ todos: [task("task 1", "pending")] });
+    const truncated = toolResult({ todos: "…" });
+    expect(projectTodos([healthy, truncated])).toEqual([task("task 1", "pending")]);
   });
 
-  it("counts every action as a snapshot, including the read-only ones", () => {
-    // `list` and `get` answer with the same whole-list field, so nothing has to
-    // special-case them — a projection that skipped them would be wrong.
+  it("reads a session that still carries the old payload", () => {
+    const messages = [toolResult({ action: "create", tasks: [{ id: 1, subject: "old", status: "pending" }] })];
+    expect(projectTodos(messages)).toEqual([task("old", "pending")]);
+  });
+
+  it("clears the plan when a new turn opens, the way dsh does at turn/start", () => {
     const messages = [
-      toolResult({ action: "create", tasks: [task({ id: 1, status: "pending" })] }),
-      toolResult({ action: "list", tasks: [task({ id: 1, status: "completed" })] }),
+      user("first"),
+      toolResult({ todos: [task("task 1", "completed")] }),
+      user("second"),
     ];
-    expect(projectTodos(messages)).toEqual([task({ id: 1, status: "completed" })]);
+    // The previous turn's list is not this turn's plan: the panel is empty until
+    // the agent writes one again.
+    expect(projectTodos(messages)).toEqual([]);
+  });
+
+  it("shows what the newest turn wrote, not what the one before it did", () => {
+    const messages = [
+      user("first"),
+      toolResult({ todos: [task("old", "completed")] }),
+      user("second"),
+      toolResult({ todos: [task("new", "pending")] }),
+    ];
+    expect(projectTodos(messages)).toEqual([task("new", "pending")]);
+  });
+
+  it("keeps the plan while the newest prompt is still queued", () => {
+    const messages = [
+      user("first"),
+      toolResult({ todos: [task("task 1", "in_progress")] }),
+      user("second"),
+    ];
+    // pi has not picked the second prompt up, so it has not opened a turn — and
+    // the plan it will replace is still the one being worked on.
+    expect(projectTodos(messages, 1)).toEqual([task("task 1", "in_progress")]);
   });
 
   it("ignores other tools, other roles, and sessions with no plan", () => {
     const messages = [
-      { role: "assistant", content: [], details: { tasks: [task({ id: 9, status: "pending" })] } },
-      toolResult({ action: "create", tasks: [task({ id: 9, status: "pending" })] }, "bash"),
+      { role: "assistant", content: [], details: { todos: [task("task 9", "pending")] } },
+      toolResult({ todos: [task("task 9", "pending")] }, "bash"),
     ] as AgentMessage[];
     expect(projectTodos(messages)).toEqual([]);
     expect(projectTodos([])).toEqual([]);
   });
 });
 
+describe("todosInArgs", () => {
+  it("reads the list a call was asked to write", () => {
+    // The whole list lives in the arguments, so a running or failed call still
+    // has a real summary.
+    expect(todosInArgs({ todos: [task("task 1", "in_progress")] })).toEqual([task("task 1", "in_progress")]);
+  });
+
+  it("is null when the arguments carry no usable list", () => {
+    expect(todosInArgs(undefined)).toBeNull();
+    expect(todosInArgs({ action: "update", id: 7 })).toBeNull();
+  });
+});
+
 describe("summarizeTodos", () => {
   const todos: TodoItem[] = [
-    task({ id: 1, status: "completed" }),
-    task({ id: 2, status: "completed" }),
-    task({ id: 3, status: "in_progress", activeForm: "writing tests" }),
-    task({ id: 4, status: "in_progress" }),
-    task({ id: 5, status: "pending" }),
-    task({ id: 6, status: "deleted" }),
+    task("done one", "completed"),
+    task("done two", "completed"),
+    task("running one", "in_progress"),
+    task("running two", "in_progress"),
+    task("waiting", "pending"),
   ];
 
-  it("counts the visible rows and names one active task while counting the rest", () => {
+  it("counts the rows and names one active task while counting the rest", () => {
     const summary = summarizeTodos(todos);
     expect(summary).toMatchObject({ done: 2, total: 5, active: 2, pending: 1, activeExtra: 1 });
-    expect(summary.activeSubject).toBe("task 3");
+    expect(summary.activeContent).toBe("running one");
   });
 
-  it("leaves tombstones out of every count", () => {
-    expect(visibleTodos(todos).map((t) => t.id)).toEqual([1, 2, 3, 4, 5]);
-  });
-
-  it("names nothing when the first active task has a blank subject", () => {
+  it("names nothing when the first active task has blank content", () => {
     const summary = summarizeTodos([
-      task({ id: 1, status: "in_progress", subject: "   " }),
-      task({ id: 2, status: "in_progress" }),
+      task("   ", "in_progress"),
+      task("running", "in_progress"),
     ]);
-    expect(summary.activeSubject).toBeNull();
+    expect(summary.activeContent).toBeNull();
     expect(summary.activeExtra).toBe(0);
     expect(summary.active).toBe(2);
   });
@@ -162,7 +187,7 @@ describe("summarizeTodos", () => {
 
 describe("limitCompleted", () => {
   it("leaves a short list alone", () => {
-    const todos = [task({ id: 1, status: "completed" }), task({ id: 2, status: "pending" })];
+    const todos = [task("one", "completed"), task("two", "pending")];
     expect(limitCompleted(todos, 3)).toEqual({ rows: todos, hiddenCompleted: 0 });
   });
 
@@ -170,122 +195,47 @@ describe("limitCompleted", () => {
     // 40 finished rows above one open task is the real session this was built
     // against: without trimming, the open row is behind three screens of history.
     const todos = [
-      ...Array.from({ length: 40 }, (_, index) => task({ id: index + 1, status: "completed" })),
-      task({ id: 41, status: "pending" }),
+      ...Array.from({ length: 40 }, (_, index) => task(`done ${String(index + 1)}`, "completed")),
+      task("open", "pending"),
     ];
     const { rows, hiddenCompleted } = limitCompleted(todos, 3);
-    expect(rows.map((row) => row.id)).toEqual([38, 39, 40, 41]);
+    expect(rows.map((row) => row.content)).toEqual(["done 38", "done 39", "done 40", "open"]);
     expect(hiddenCompleted).toBe(37);
   });
 
   it("never drops an unfinished row, whichever side of the list it is on", () => {
     const todos = [
-      task({ id: 1, status: "in_progress" }),
-      task({ id: 2, status: "completed" }),
-      task({ id: 3, status: "completed" }),
-      task({ id: 4, status: "pending" }),
-      task({ id: 5, status: "completed" }),
-      task({ id: 6, status: "completed" }),
+      task("running", "in_progress"),
+      task("done one", "completed"),
+      task("done two", "completed"),
+      task("waiting", "pending"),
+      task("done three", "completed"),
+      task("done four", "completed"),
     ];
     const { rows, hiddenCompleted } = limitCompleted(todos, 2);
-    expect(rows.map((row) => row.id)).toEqual([1, 4, 5, 6]);
+    expect(rows.map((row) => row.content)).toEqual(["running", "waiting", "done three", "done four"]);
     expect(hiddenCompleted).toBe(2);
-  });
-
-  it("does not count tombstones as finished", () => {
-    const todos = [task({ id: 1, status: "deleted" }), task({ id: 2, status: "completed" })];
-    expect(limitCompleted(todos, 3)).toEqual({
-      rows: [task({ id: 2, status: "completed" })],
-      hiddenCompleted: 0,
-    });
   });
 });
 
 describe("labels", () => {
   it("joins only the non-zero counts, with a separator HTML would keep", () => {
-    const label = progressLabel(summarizeTodos([
-      task({ id: 1, status: "completed" }),
-      task({ id: 2, status: "in_progress" }),
-      task({ id: 3, status: "pending" }),
-      task({ id: 4, status: "pending" }),
+    const label = progress(summarizeTodos([
+      task("one", "completed"),
+      task("two", "in_progress"),
+      task("three", "pending"),
+      task("four", "pending"),
     ]));
     // En spaces (U+2002) on both sides: ASCII runs collapse in HTML.
     expect(label).toBe("1 已完成\u2002·\u20021 进行中\u2002·\u20022 待处理");
   });
 
   it("omits zero-count segments rather than printing a zero", () => {
-    expect(progressLabel(summarizeTodos([task({ id: 1, status: "completed" })]))).toBe("1 已完成");
+    expect(progress(summarizeTodos([task("one", "completed")]))).toBe("1 已完成");
   });
 
-  it("appends the active subject to the row summary only while one is running", () => {
-    expect(rowSummary(summarizeTodos([task({ id: 1, status: "completed" }), task({ id: 2, status: "pending" })]))).toBe(
-      "1/2 已完成",
-    );
-    expect(
-      rowSummary(summarizeTodos([task({ id: 1, status: "in_progress", subject: "porting the theme" })])),
-    ).toBe("0/1 已完成 · porting the theme");
-  });
-});
-
-describe("call arguments", () => {
-  it("reads the id an update or delete acts on", () => {
-    expect(todoCallId({ action: "update", id: 7, status: "completed" })).toBe(7);
-    expect(todoCallId({ action: "clear" })).toBeNull();
-    expect(todoCallId(undefined)).toBeNull();
-    expect(todoCallId({ id: "7" })).toBeNull();
-  });
-
-  it("reads the action, defaulting to an empty string it can render", () => {
-    expect(todoCallAction({ action: "create" })).toBe("create");
-    expect(todoCallAction({})).toBe("");
-    expect(todoCallAction(undefined)).toBe("");
-  });
-
-  it("summarizes a call from its arguments when the snapshot cannot be read", () => {
-    expect(todoArgsSummary({ action: "create", subject: "port the panel" })).toBe("create · port the panel");
-    expect(todoArgsSummary({ action: "update", id: 3, status: "completed" })).toBe("update #3");
-    expect(todoArgsSummary({ action: "clear" })).toBe("clear");
-    expect(todoArgsSummary({})).toBe("");
-  });
-});
-
-/** A clean "not installed" answer, which each case bends one field of. */
-function todoView(overrides: Partial<TodoView> = {}): TodoView {
-  return {
-    available: false,
-    installed: false,
-    packageName: "@juicesharp/rpiv-todo",
-    source: "npm:@juicesharp/rpiv-todo",
-    projectPath: null,
-    error: null,
-    ...overrides,
-  };
-}
-
-describe("shouldOfferTodoInstall", () => {
-  it("offers the install when the package is cleanly absent", () => {
-    expect(shouldOfferTodoInstall(todoView(), false)).toBe(true);
-  });
-
-  it("stays quiet until the answer arrives", () => {
-    // The panel is mounted from the first paint, so `null` is the normal state
-    // during every reload — a notice here would flash on each one.
-    expect(shouldOfferTodoInstall(null, false)).toBe(false);
-  });
-
-  it("stays quiet when the read broke", () => {
-    // A broken read is not a missing package: installing could re-install one
-    // that is already there.
-    expect(shouldOfferTodoInstall(todoView({ error: "boom" }), false)).toBe(false);
-  });
-
-  it("does not re-offer a package that is installed", () => {
-    expect(shouldOfferTodoInstall(todoView({ installed: true }), false)).toBe(false);
-    // Disabled is the user's own choice, undoable in the plugins section.
-    expect(shouldOfferTodoInstall(todoView({ installed: true, available: true }), false)).toBe(false);
-  });
-
-  it("honours the dismissal", () => {
-    expect(shouldOfferTodoInstall(todoView(), true)).toBe(false);
+  it("appends the active task to the row summary only while one is running", () => {
+    expect(row(summarizeTodos([task("one", "completed"), task("two", "pending")]))).toBe("1/2 已完成");
+    expect(row(summarizeTodos([task("porting the theme", "in_progress")]))).toBe("0/1 已完成 · porting the theme");
   });
 });

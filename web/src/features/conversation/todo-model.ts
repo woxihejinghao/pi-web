@@ -1,168 +1,169 @@
 /**
  * The todo list projection — the pure part, no React.
  *
- * dsh's todo is a whole-list snapshot type (`todo_write`): one `TodoItem` per
- * line, a three-state status, and a plan that is replaced wholesale. pi's `todo`
- * tool (shipped by the rpiv-todo extension) is an incremental one: six actions
- * (`create` / `update` / `list` / `get` / `delete` / `clear`), a four-state
- * status with a `deleted` tombstone, dependencies, and an `activeForm` label
- * shown while a task is in progress.
+ * One `todo` call carries the whole list and replaces the previous one, the way
+ * dsh's `todo_write` does: each entry is a `content` line and a three-state
+ * `status`, and nothing else — a list that is replaced wholesale needs no id,
+ * no priority and no tombstone. So the current plan is a projection of the
+ * transcript — scan the newest turn backwards for the newest usable snapshot —
+ * rather than state this UI has to own, which is also what makes the panel
+ * survive a `/reload` and a compaction.
  *
- * What the two share — and the reason this module exists — is that every
- * successful call carries the *whole post-mutation list* under `details.tasks`.
- * That makes the current plan a projection of the transcript rather than state
- * this UI has to own: scan backwards for the last usable snapshot. It is also
- * exactly how the terminal panel rebuilds itself after `/reload` or compaction,
- * so both surfaces read the same source.
+ * `tasks` is read as well. That is what the tool answered with before it moved
+ * into this project (`@juicesharp/rpiv-todo`): an incremental list carrying ids,
+ * a `deleted` tombstone and `blockedBy` deps. A session that predates the switch
+ * still shows its plan; the extra fields are dropped rather than half-rendered,
+ * because nothing here can act on an id any more.
  */
 
-import type { AgentMessage, TodoView, ToolResultMessage } from "../../lib/types.ts";
+import type { AgentMessage, ToolResultMessage } from "../../lib/types.ts";
 import type { Translate } from "../../lib/i18n/index.ts";
 
-export type TodoStatus = "pending" | "in_progress" | "completed" | "deleted";
+export type TodoStatus = "pending" | "in_progress" | "completed";
 
-/**
- * One task, as much as the UI reads of it. Derived from unvalidated model JSON,
- * so every field is optional until checked — the extension's schema adds
- * `metadata`, which nothing here renders and therefore nothing here keeps.
- */
+/** One task, as much as the UI reads of it. */
 export interface TodoItem {
-  id: number;
-  subject: string;
+  content: string;
   status: TodoStatus;
-  /** Present-continuous label the extension shows while `in_progress`. */
-  activeForm?: string;
-  description?: string;
-  /** Ids this task waits on; rendered as `⛓ #1,#2` on the task's row. */
-  blockedBy?: number[];
-  owner?: string;
 }
 
-const STATUSES: readonly string[] = ["pending", "in_progress", "completed", "deleted"];
+const STATUSES: readonly string[] = ["pending", "in_progress", "completed"];
 
 function isStatus(value: unknown): value is TodoStatus {
   return typeof value === "string" && STATUSES.includes(value);
 }
 
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value !== "" ? value : undefined;
+/** One entry, or null when either field the UI reads is missing or mistyped. */
+function parseItem(value: unknown): TodoItem | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as { content?: unknown; status?: unknown };
+  if (typeof raw.content !== "string" || raw.content === "" || !isStatus(raw.status)) return null;
+  return { content: raw.content, status: raw.status };
 }
 
-/** One task, or null when a field the UI depends on is missing or mistyped. */
-function parseTask(value: unknown): TodoItem | null {
+/**
+ * The old tool's entry: `subject` names it, `status` carries a fourth state,
+ * and `deleted` is a tombstone kept so a `blockedBy` id still resolves. A
+ * tombstone was never meant to be read, so it drops out here like an unusable
+ * row; everything else is mapped onto the current shape.
+ */
+function parseLegacyItem(value: unknown): TodoItem | null {
   if (typeof value !== "object" || value === null) return null;
-  const raw = value as Record<string, unknown>;
-  if (typeof raw.id !== "number" || typeof raw.subject !== "string" || !isStatus(raw.status)) {
+  const raw = value as { subject?: unknown; status?: unknown };
+  if (raw.status === "deleted" || typeof raw.subject !== "string" || raw.subject === "" || !isStatus(raw.status)) {
     return null;
   }
-
-  const item: TodoItem = { id: raw.id, subject: raw.subject, status: raw.status };
-  const activeForm = nonEmptyString(raw.activeForm);
-  const description = nonEmptyString(raw.description);
-  const owner = nonEmptyString(raw.owner);
-  if (activeForm !== undefined) item.activeForm = activeForm;
-  if (description !== undefined) item.description = description;
-  if (owner !== undefined) item.owner = owner;
-  if (Array.isArray(raw.blockedBy)) {
-    const ids = raw.blockedBy.filter((id): id is number => typeof id === "number");
-    if (ids.length > 0) item.blockedBy = ids;
-  }
-  return item;
-}
-
-export interface TodoSnapshot {
-  /** The call's action, kept for callers that want to say what happened. */
-  action: string;
-  tasks: TodoItem[];
+  return { content: raw.subject, status: raw.status };
 }
 
 /**
- * Read one call's `details` into a snapshot.
+ * Read one payload into the plan it holds, or null when it holds no list.
  *
- * All-or-nothing on purpose: a list with one unusable row is not a list with
- * one row fewer, it is a payload this UI no longer understands, and rendering
- * the rows it did understand would show a plan that was never the plan. A null
- * answer makes the caller fall back one call further, or to the generic tool row.
+ * The current shape is all-or-nothing on purpose: a list with one unusable row
+ * is not a list with one row fewer, it is a payload this UI no longer
+ * understands, and rendering the rows it did understand would show a plan that
+ * was never the plan. A null answer makes the caller walk one call further back,
+ * or fall back to the arguments. The legacy shape is read leniently, because its
+ * tombstones are a normal part of the payload rather than a sign of damage.
  */
-export function parseTodoSnapshot(details: unknown): TodoSnapshot | null {
+export function parseTodoSnapshot(details: unknown): TodoItem[] | null {
   if (typeof details !== "object" || details === null) return null;
-  const raw = details as Record<string, unknown>;
-  if (!Array.isArray(raw.tasks)) return null;
+  const raw = details as { todos?: unknown; tasks?: unknown };
 
-  const tasks: TodoItem[] = [];
-  for (const value of raw.tasks) {
-    const task = parseTask(value);
-    if (task === null) return null;
-    tasks.push(task);
+  if (Array.isArray(raw.todos)) {
+    const todos: TodoItem[] = [];
+    for (const value of raw.todos) {
+      const item = parseItem(value);
+      if (item === null) return null;
+      todos.push(item);
+    }
+    return todos;
   }
-  return { action: nonEmptyString(raw.action) ?? "", tasks };
+
+  if (Array.isArray(raw.tasks)) {
+    const todos: TodoItem[] = [];
+    for (const value of raw.tasks) {
+      const item = parseLegacyItem(value);
+      if (item !== null) todos.push(item);
+    }
+    return todos;
+  }
+
+  return null;
 }
 
 /**
- * The current plan: the last usable `todo` snapshot in the transcript.
+ * Where the newest turn opens: the index of the last user message pi has taken
+ * up. Everything before it belongs to an earlier turn.
  *
- * Backwards rather than forwards, because only the newest snapshot matters and
- * a long session carries one per call. A malformed snapshot is skipped instead
- * of ending the search: the rows it came from are still a real record of the
- * list as it stood one call earlier.
- *
- * `list` / `get` calls are snapshots too — the extension answers both with the
- * same `details.tasks` — so they need no special case here.
+ * `undelivered` is how many trailing user messages pi has not picked up yet —
+ * the same figure `groupTurns` folds into the turn in flight, and the same one
+ * `useConversation` publishes as `undeliveredPrompts`. A queued prompt does not
+ * open a turn until pi reaches it, so it must not clear the plan either.
  */
-export function projectTodos(messages: readonly AgentMessage[]): TodoItem[] {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
+function currentTurnStart(messages: readonly AgentMessage[], undelivered: number): number {
+  let delivered =
+    messages.reduce((count, message) => (message.role === "user" ? count + 1 : count), 0) - undelivered;
+  let start = 0;
+  for (let index = 0; index < messages.length; index += 1) {
+    if (messages[index].role !== "user") continue;
+    delivered -= 1;
+    // A queued prompt sits after the turn it belongs to; it opens no new one.
+    if (delivered < 0) break;
+    start = index;
+  }
+  return start;
+}
+
+/**
+ * The current plan: the last usable `todo` snapshot written since the newest
+ * turn opened.
+ *
+ * dsh clears its plan at `turn/start` and keeps it through `turn/end`, so its
+ * panel only ever describes the turn it belongs to. The same rule is projected
+ * here rather than stored: a turn opens at each user message pi has taken up, so
+ * a snapshot older than the newest one is not this turn's plan — it is the
+ * previous turn's. Nothing has to be cleared, and `/reload`, branching and
+ * compaction all agree, because the boundary is in the transcript.
+ *
+ * Backwards rather than forwards, because only the newest snapshot matters and a
+ * turn carries one per call. A malformed snapshot is skipped instead of ending
+ * the search: the rows it came from are still a real record of the list as it
+ * stood one call earlier.
+ */
+export function projectTodos(messages: readonly AgentMessage[], undelivered = 0): TodoItem[] {
+  const start = currentTurnStart(messages, undelivered);
+  for (let index = messages.length - 1; index >= start; index -= 1) {
     const message = messages[index] as Partial<ToolResultMessage>;
     if (message.role !== "toolResult" || message.toolName !== "todo") continue;
     const snapshot = parseTodoSnapshot(message.details);
-    if (snapshot !== null) return snapshot.tasks;
+    if (snapshot !== null) return snapshot;
   }
   return [];
 }
 
 /**
- * The rows the UI shows.
+ * The plan a call is writing, read off its arguments.
  *
- * `deleted` is a tombstone: the task is kept so that a `blockedBy` id still
- * resolves, not so that anyone reads it. The terminal panel never renders one
- * either, and the two surfaces disagreeing about what the list contains would
- * be a worse bug than a missing row.
+ * A whole-list write puts the list in the arguments, so a call still running —
+ * or one that failed and therefore has no usable result — can still be
+ * summarized from what it was asked to do. The arguments are the well-formed
+ * payload the write itself carries, so the same reader handles both.
  */
-export function visibleTodos(todos: readonly TodoItem[]): TodoItem[] {
-  return todos.filter((task) => task.status !== "deleted");
-}
-
-/**
- * Whether the panel should offer to install the task-list extension.
- *
- * There are four ways to answer "no", and they are not the same thing:
- *
- * - the app has not heard back yet (`view === null`), so the panel waits rather
- *   than flashing a notice at every reload;
- * - the read broke (`error`), and a broken read is not a missing package —
- *   offering an install could re-install something already present;
- * - the package is in pi's settings but disabled, which is the user's own
- *   choice to undo in the plugins section, not a missing dependency;
- * - the user closed the notice, which is why this preference exists at all.
- *
- * Only a clean "not installed" reaches the install offer.
- */
-export function shouldOfferTodoInstall(view: TodoView | null, dismissed: boolean): boolean {
-  if (dismissed || view === null || view.error !== null) return false;
-  return !view.available && !view.installed;
+export function todosInArgs(args: Record<string, unknown> | undefined): TodoItem[] | null {
+  return parseTodoSnapshot(args);
 }
 
 /**
  * How many finished tasks the plan panel keeps on screen.
  *
- * dsh never faces this: its plan is replaced on every write and cleared on the
- * next turn, so the list stays short. pi's list is the session's and it is
- * cleared only deliberately, so a long session ends up with dozens of finished
- * rows — the real one this UI was built against had 40 of them above a single
- * unfinished task, which meant opening the panel and then scrolling past all of
- * them to find out what was left.
+ * dsh does not need this layer — its plan is cleared at the start of the next
+ * turn, so a list only ever describes one turn and stays short. Here one turn can
+ * still finish a dozen tasks (a fan-out migration, a batch of renames) against a
+ * panel that is 180px tall, and the answer a reader opens it for is "where is it
+ * now?" — never a completed row.
  *
- * Unfinished tasks are never dropped, only finished ones: the answer to "where
- * is it now?" is never a completed row.
+ * Unfinished tasks are never dropped, only finished ones.
  */
 export const PANEL_COMPLETED_LIMIT = 3;
 
@@ -175,19 +176,18 @@ export interface LimitedTodos {
 /**
  * Trim the finished tail of the list for the panel.
  *
- * Keeps the *most recently finished* rows rather than the oldest ones: tasks are
- * numbered in creation order, so the newest finished rows are the ones adjacent
- * to the work still in flight, and dropping the oldest keeps the visible window
+ * Keeps the *most recently finished* rows rather than the oldest ones: the list
+ * is written in plan order, so the newest finished rows are the ones adjacent to
+ * the work still in flight, and dropping the oldest keeps the visible window
  * contiguous instead of punching a hole in the middle of the list.
  */
 export function limitCompleted(todos: readonly TodoItem[], limit: number): LimitedTodos {
-  const rows = visibleTodos(todos);
-  const finished = rows.filter((task) => task.status === "completed");
-  if (finished.length <= limit) return { rows, hiddenCompleted: 0 };
+  const finished = todos.filter((task) => task.status === "completed");
+  if (finished.length <= limit) return { rows: [...todos], hiddenCompleted: 0 };
 
-  const kept = new Set(finished.slice(finished.length - Math.max(limit, 0)).map((task) => task.id));
+  const kept = new Set(finished.slice(finished.length - Math.max(limit, 0)).map((task) => task.content));
   return {
-    rows: rows.filter((task) => task.status !== "completed" || kept.has(task.id)),
+    rows: todos.filter((task) => task.status !== "completed" || kept.has(task.content)),
     hiddenCompleted: finished.length - kept.size,
   };
 }
@@ -198,61 +198,30 @@ export interface TodoSummary {
   active: number;
   pending: number;
   /**
-   * Subject of the first task in progress, or null when nothing is running (or
+   * Content of the first task in progress, or null when nothing is running (or
    * when the first one is unusable). Several tasks may be in progress at once —
    * parallel work is a real state here — so the summary names one and counts
    * the rest rather than hiding them.
    */
-  activeSubject: string | null;
+  activeContent: string | null;
   /** In-progress tasks beyond the named one; 0 whenever nothing is named. */
   activeExtra: number;
 }
 
 export function summarizeTodos(todos: readonly TodoItem[]): TodoSummary {
-  const visible = visibleTodos(todos);
-  const active = visible.filter((task) => task.status === "in_progress");
+  const active = todos.filter((task) => task.status === "in_progress");
   const first = active[0];
-  const named = first !== undefined && first.subject.trim() !== "";
-  const done = visible.filter((task) => task.status === "completed").length;
+  const named = first !== undefined && first.content.trim() !== "";
+  const done = todos.filter((task) => task.status === "completed").length;
 
   return {
     done,
-    total: visible.length,
+    total: todos.length,
     active: active.length,
-    pending: visible.length - done - active.length,
-    activeSubject: named ? first.subject : null,
+    pending: todos.length - done - active.length,
+    activeContent: named ? first.content : null,
     activeExtra: named ? active.length - 1 : 0,
   };
-}
-
-/** The id this call acted on, when its arguments name one. */
-export function todoCallId(args: Record<string, unknown> | undefined): number | null {
-  const id = args?.id;
-  return typeof id === "number" && Number.isFinite(id) ? id : null;
-}
-
-/** The call's action, when its arguments name one. */
-export function todoCallAction(args: Record<string, unknown> | undefined): string {
-  return nonEmptyString(args?.action) ?? "";
-}
-
-/**
- * What to say about a call whose snapshot is not readable yet: the action, the
- * id it names, and the subject it creates. Used while the call is still running
- * and from a rejected call, whose arguments are kept verbatim.
- *
- * Deliberately not dsh's `deriveSummary`: that one scans for any usable string
- * because dsh's todo call carries a whole list in its arguments. pi's carries an
- * action and an id, so its generic summary would read "update" and nothing else.
- */
-export function todoArgsSummary(args: Record<string, unknown> | undefined): string {
-  const action = todoCallAction(args);
-  if (action === "") return "";
-  const id = todoCallId(args);
-  const subject = nonEmptyString(args?.subject);
-  return [`${action}${id === null ? "" : ` #${String(id)}`}`, subject ?? ""]
-    .filter((part) => part !== "")
-    .join(" · ");
 }
 
 /**
@@ -273,5 +242,5 @@ export function progressLabel(summary: TodoSummary, t: Translate): string {
 /** The collapsed row's summary, matching dsh's `{done}/{total} 已完成 · 当前项`. */
 export function rowSummary(summary: TodoSummary, t: Translate): string {
   const head = t("todo.summaryHead", { done: summary.done, total: summary.total });
-  return summary.activeSubject === null ? head : `${head} · ${summary.activeSubject}`;
+  return summary.activeContent === null ? head : `${head} · ${summary.activeContent}`;
 }

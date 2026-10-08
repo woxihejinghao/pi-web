@@ -78,22 +78,6 @@
   white-space: nowrap;
 }
 
-/* pi's extra fields — dsh's items are a content string and nothing else. Both
-   are secondary: the subject is what the row is about. */
-.activeForm,
-.blocked {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--dsw-alias-label-caption);
-}
-
-.blocked {
-  flex: none;
-}
-
 /*
  * The `+N 项已完成` line stands in for rows this surface chose not to draw. It is
  * indented to the text column, under the subjects it is about rather than under

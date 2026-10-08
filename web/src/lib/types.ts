@@ -426,8 +426,6 @@ export interface WebSettings {
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
-  /** The user closed the task panel's "install rpiv-todo" notice. */
-  todoNoticeDismissed: boolean;
   /**
    * Whether a finished session task raises a browser notification. Off by
    * default; turning it on is what requests the browser permission.
@@ -588,25 +586,6 @@ export interface ExtensionsView {
    * Resolution failure. Present instead of an empty list so the page can tell
    * "you have no extensions" apart from "the read broke".
    */
-  error: string | null;
-}
-
-/**
- * Whether the extension behind pi's `todo` tool would load on the next start.
- *
- * The task panel is a projection of that tool's transcript output, so with the
- * extension missing there is nothing to project. `installed` and `available`
- * are separate: a package can be in pi's settings but disabled, and only the
- * "not installed at all" case is worth offering an install button for.
- */
-export interface TodoView {
-  available: boolean;
-  installed: boolean;
-  packageName: string;
-  source: string;
-  /** Workspace the check was resolved against; null is the user scope only. */
-  projectPath: string | null;
-  /** A broken read (not a missing package): the notice stays hidden. */
   error: string | null;
 }
 

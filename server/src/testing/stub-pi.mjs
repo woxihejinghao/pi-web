@@ -201,7 +201,12 @@ process.stdin.on("data", (chunk) => {
         respond("set_session_name", undefined, message.id);
         break;
       case "prompt":
-        respond("prompt", undefined, message.id);
+        // pi 1.1.0 answers `prompt` with a disposition ("started" | "queued" |
+        // "handled"); `RpcClient.prompt()` reads `data.disposition` and throws on
+        // an undefined payload. 0.86.1 ignores the field, so sending it is safe
+        // on both versions. "started" is what tells the caller to wait for
+        // `agent_settled`, which this stub emits just below.
+        respond("prompt", { disposition: "started" }, message.id);
         write({ type: "agent_start" });
         write({ type: "agent_end", messages: [], willRetry: false });
         write({ type: "agent_settled" });

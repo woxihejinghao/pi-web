@@ -25,7 +25,6 @@ import type {
   StartLocation,
   TerminalInfo,
   TerminalSupport,
-  TodoView,
   UpdatesView,
   WebSettings,
   WorkspaceFileContent,
@@ -374,28 +373,6 @@ export const api = {
     request<ExtensionsView>("/api/extensions", {
       method: "PUT",
       body: JSON.stringify(input),
-    }),
-
-  /**
-   * Whether the extension pi's `todo` tool ships in is in place. The task
-   * panel is a projection of that tool's output, so this is what decides
-   * between showing tasks and showing the install notice.
-   */
-  getTodo: (projectPath: string | null) =>
-    request<TodoView>(
-      `/api/todo${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`,
-    ),
-
-  /**
-   * Install the package behind the `todo` tool, through pi's own package
-   * manager (the same thing `pi install npm:@juicesharp/rpiv-todo` does). Slow
-   * by nature: npm has to resolve and download, so callers keep a progress
-   * state.
-   */
-  installTodo: (projectPath: string | null) =>
-    request<TodoView>("/api/todo/install", {
-      method: "POST",
-      body: JSON.stringify({ projectPath }),
     }),
 
   /**

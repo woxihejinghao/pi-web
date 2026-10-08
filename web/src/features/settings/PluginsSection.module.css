@@ -361,74 +361,11 @@
   word-break: break-all;
 }
 
-/*
- * The task-list extension's install offer.
- *
- * The task panel's own notice can be dismissed, so this is the one that stays:
- * a plugin page that cannot install the plugin a feature is missing would turn
- * "close" into a dead end. Same shell as the MCP section's notice.
- */
-.todoNotice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px;
-  margin-top: 14px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-module-platform);
-}
-
-.todoNoticeText {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.todoNoticeText code {
-  font-family: var(--dsh-code-font-family, ui-monospace, SFMono-Regular, monospace);
-}
-
-.todoNoticeAction {
-  flex: none;
-  box-sizing: border-box;
-  height: 28px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 14px;
-  font: inherit;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-primary-inverted);
-  background: var(--dsw-alias-label-primary);
-  cursor: pointer;
-}
-
-.todoNoticeAction:hover:not(:disabled) {
-  opacity: 0.88;
-}
-
-.todoNoticeAction:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.todoNoticeError {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-state-error-primary);
-}
-
 /* --- update notices -------------------------------------------------------- */
 
 /*
- * The plugins summary. Same shell as the todo install offer below, but it only
- * states the fact — the action lives on each row — so it carries no button.
+ * The plugins summary, for the same slot as the MCP section's notices: it
+ * only states the fact — the action lives on each row — so it carries no button.
  */
 .updateNotice {
   margin-top: 14px;

@@ -8,8 +8,7 @@ import {
   parseTodoSnapshot,
   rowSummary,
   summarizeTodos,
-  todoArgsSummary,
-  visibleTodos,
+  todosInArgs,
 } from "./todo-model.ts";
 import type { ToolExecution } from "./useConversation.ts";
 import styles from "./TodoRow.module.css";
@@ -18,16 +17,16 @@ import { useT } from "../../lib/app-state.ts";
 /**
  * One `todo` call as a disclosure row.
  *
- * dsh's todo row is the same shape — checklist glyph, fixed title, and a
- * `done/total` summary — but its summary can only describe the whole list,
- * because its tool writes the whole list. pi's calls name one task at a time, so
- * the summary here is the list *after* this call: the count plus whichever task
- * is now in progress, which is the thing the reader wants to know from a row
- * that says "update #3".
+ * dsh's row has the same shape — checklist glyph, fixed title, and a
+ * `done/total` summary naming whatever is in progress — because the tool behind
+ * it writes a whole list too. The one thing that differs is where the list comes
+ * from while the call is in flight: this tool carries it in the arguments, so a
+ * running or rejected row still gets a real summary instead of the generic tool
+ * one.
  *
  * Expanded it shows the snapshot the call returned — the plan as it stood right
- * after it — which is strictly more than dsh can show, since a todo call's
- * arguments carry an id and a status rather than a list.
+ * after it — or, for a call that has not answered yet, the list it was asked to
+ * write.
  */
 export function TodoRow({
   call,
@@ -42,21 +41,18 @@ export function TodoRow({
   const running = execution?.running ?? false;
 
   const args = call.arguments ?? execution?.args;
-  const snapshot = parseTodoSnapshot(execution?.details);
-  const tasks = snapshot?.tasks ?? [];
-  // Until the snapshot lands — and for a call whose payload was rejected — the
-  // arguments are the only description of what happened.
-  const summary = snapshot === null ? null : summarizeTodos(tasks);
-  const text = summary === null ? todoArgsSummary(args) : rowSummary(summary, t);
+  // The result is authoritative; the arguments are the fallback, and the only
+  // source for a call that is still running or that failed outright.
+  const todos = parseTodoSnapshot(execution?.details) ?? todosInArgs(args);
+  const summary = todos === null ? null : summarizeTodos(todos);
   const extra = summary?.activeExtra ?? 0;
 
-  const rows = visibleTodos(tasks);
   const body =
-    snapshot === null
+    todos === null
       ? running
         ? t("common.runningEllipsis")
         : t("todo.noSnapshot")
-      : rows.length === 0
+      : todos.length === 0
         ? t("todo.empty")
         : null;
 
@@ -79,14 +75,20 @@ export function TodoRow({
           <>
             <span className={styles.sep} aria-hidden />
             <span className={styles.summary} data-error={execution?.isError || undefined}>
-              {text}
+              {summary === null ? t(running ? "common.runningEllipsis" : "todo.noSnapshot") : rowSummary(summary, t)}
             </span>
             {extra > 0 ? <span className={styles.extra}>{`+${String(extra)}`}</span> : null}
           </>
         }
       >
         <div className={styles.card}>
-          {body === null ? <TodoList todos={tasks} /> : <span className={styles.empty}>{body}</span>}
+          {body === null && todos !== null ? (
+            <TodoList todos={todos} />
+          ) : (
+            <span className={styles.empty}>
+              {body ?? t(running ? "common.runningEllipsis" : "todo.noSnapshot")}
+            </span>
+          )}
         </div>
       </DisclosureRow>
     </div>

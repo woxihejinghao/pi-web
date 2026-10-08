@@ -19,7 +19,6 @@ import type {
   ProjectView,
   SessionView,
   SlashCommand,
-  TodoView,
   UpdatesView,
   WebSettings,
 } from "./types.ts";
@@ -35,7 +34,6 @@ const DEFAULT_SETTINGS: WebSettings = {
   contentFontSize: 15,
   transcriptDisplay: "compact",
   busySendBehavior: "queue",
-  todoNoticeDismissed: false,
   browserNotifications: false,
 };
 
@@ -167,12 +165,8 @@ export interface AppState {
    */
   extensions: ExtensionsView | null;
   /**
-   * Whether the task-list extension is in place, for the workspace last asked
-   * about. `null` means not loaded yet — the panel shows neither tasks nor a
-   * notice until the answer arrives.
+   * MCP inventory for the workspace the page last asked about.
    */
-  todo: TodoView | null;
-  /** MCP inventory for the workspace the page last asked about. */
   mcp: McpView | null;
   /**
    * Update notices, keyed by workspace path (empty string = user scope).
@@ -212,7 +206,6 @@ const initialState: AppState = {
   settingsOpen: false,
   models: null,
   extensions: null,
-  todo: null,
   mcp: null,
   updates: {},
 };
@@ -494,44 +487,6 @@ export const actions = {
     } catch (err) {
       actions.setNotice((err as Error).message);
     }
-  },
-
-  // --- the task-list extension ----------------------------------------------
-
-  /**
-   * Ask whether the extension behind pi's `todo` tool would load for this
-   * workspace. A failure still resolves (the server reports broken reads as
-   * `error`), so the panel can stay silent instead of offering an install for
-   * something that may already be installed.
-   */
-  async loadTodo(projectPath: string | null): Promise<void> {
-    try {
-      const todo = await api.getTodo(projectPath);
-      appStore.update((state) => ({ ...state, todo }));
-    } catch (err) {
-      actions.setNotice((err as Error).message);
-    }
-  },
-
-  /**
-   * Install that extension through pi's own package manager.
-   *
-   * Rethrows instead of routing through `setNotice`: this runs from the notice
-   * itself, which has to stay put and show the reason inline when npm fails —
-   * and it takes long enough that a banner behind it would be missed.
-   */
-  async installTodoExtension(projectPath: string | null): Promise<void> {
-    const todo = await api.installTodo(projectPath);
-    appStore.update((state) => ({ ...state, todo }));
-    actions.setNotice(tr()("notice.todoInstalled"));
-  },
-
-  /**
-   * Close the panel's install notice. Persisted because it is a preference
-   * this UI owns; the same install is always available in the plugins section.
-   */
-  async dismissTodoNotice(): Promise<void> {
-    await actions.updateSettings({ todoNoticeDismissed: true });
   },
 
   // --- update notices ---------------------------------------------------------
