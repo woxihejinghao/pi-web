@@ -1,25 +1,66 @@
+/*
+ * The left sidebar, matched to deepseek-harness's shell.
+ *
+ * The geometry below is dsh's, taken from two sheets rather than guessed:
+ * `ui-sidebar/SidebarRoot.module.css` owns the column (padding, the brand row,
+ * the New Session bar, the section header, the foot) and
+ * `ui-workspace/rows/Rows.module.css` owns the rows (34px workspace, 32px
+ * session, 14px titles, 10px timestamps). Both are MIT; see
+ * THIRD_PARTY_NOTICES.md.
+ *
+ * Three things deliberately do not follow it, each noted where it happens: the
+ * brand is a letter mark rather than dsh's wordmark artwork, the search field
+ * is its own row (dsh expands one inside the section header), and the rows keep
+ * an absolutely positioned action cluster instead of dsh's flex swap.
+ */
+
 .sidebar {
+  /* dsh's `--dsh-sidebar-inline-padding`. The rows below measure their right
+     inset against it (see `.scroll`), so it is declared once, here. */
+  --dsh-sidebar-inline-padding: 12px;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  /* dsh's column padding: 6px vertical, 12px inline. */
+  padding: 6px var(--dsh-sidebar-inline-padding);
+  box-sizing: border-box;
+  font-size: 14px;
+  /* The sidebar is elevated above the conversation surface, so a revealed
+     scrollbar uses the l2 pair. dsh's SidebarRoot rebinds the same two. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/*
+ * The brand row is dsh's `.logoRow`: a 60px box with 8px of vertical padding,
+ * 4px on the left so the mark lines up with the section header's label (both
+ * land at 16px from the column edge), and a 4px foot before the New Session bar.
+ *
+ * The mark is this project's own (a "π" tile); what is matched is the 24px
+ * identity height dsh gives its mark-and-name group, and the 18px/600 name on
+ * a 24px line with the 0.04em tracking. The name is longer than a wordmark, so
+ * the row clips rather than wraps.
+ */
 .brand {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px 10px;
-  flex: 0 0 auto;
+  height: 60px;
+  padding: 8px 0 8px 4px;
+  margin-bottom: 4px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .brandMark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-inverted);
   font-size: 14px;
@@ -29,50 +70,53 @@
 }
 
 .brandName {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  line-height: 24px;
+  letter-spacing: 0.04em;
   color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
 }
 
+/* Not currently rendered by `Sidebar.tsx` (the tile carries the whole mark).
+   Kept in dsh's proportions so a future badge does not have to be resized. */
 .brandBadge {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.06em;
   padding: 2px 5px;
-  border-radius: 5px;
+  border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-inverted);
   flex: 0 0 auto;
 }
 
-/* Top-level primary action, mirroring dsh's full-width "新会话" pill
- * (`.hHd-Xa_newSession`): a 38px box, 8/16 padding, 14px text on a 22px line,
- * and the elevated/floating button fills. The 0.5px border is part of dsh's
- * original rather than a local guard, so it stays a border here (not a shadow)
- * exactly as it does upstream.
+/*
+ * The primary action's own geometry lives on the button: dsh carries the New
+ * Session bar's 2px side margin and its 12px foot, and that margin is the
+ * button's alone — the rows below sit flush on the column padding.
  *
- * The corner is the one deliberate departure: dsh draws 12px, but this sits
- * directly above the composer and reads as its trigger, so it takes 14px — a
- * step rounder than upstream, short of the input card's 22px because a 38px
- * box caps the radius at 19px and anything above that turns the button into a
- * pill. At 14px nothing is capped, so the theme's superellipse applies and the
- * corner keeps the same curvature as the surfaces around it. */
+ * The corner is `--dsw-radius-md`, which is what dsh draws. An earlier version
+ * of this file rounded it to 14px to echo the composer underneath; the corner
+ * is not the composer, and matching the rows around it is worth more than that
+ * echo.
+ */
 .primaryAction {
-  padding: 4px 14px 10px;
-  flex: 0 0 auto;
+  flex: none;
+  display: flex;
 }
 
 .newSession {
   box-sizing: border-box;
-  width: 100%;
+  flex: 1;
   height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 16px;
-  border-radius: 14px;
+  padding: 8px 12px;
+  margin: 0 2px 12px;
+  border-radius: var(--dsw-radius-md);
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
@@ -91,62 +135,94 @@
   cursor: default;
 }
 
+/*
+ * Section header: dsh's 36px box with a 4px gap, 4px of leading padding and a
+ * −4px right margin that lets the trailing controls sit out past the column
+ * padding, level with the rows' own right edge.
+ *
+ * `space-between` rather than dsh's `flex-end`: its header lets the label
+ * collapse to make room for an inline search field, and a label that never
+ * collapses reads the same either way.
+ */
 .sectionHeader {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 6px 10px 4px 16px;
-  min-height: 28px;
-  flex: 0 0 auto;
+  gap: 4px;
+  height: 36px;
+  padding-left: 4px;
+  margin: 2px -4px 4px 0;
+  box-sizing: border-box;
+  border-radius: var(--dsw-radius-md);
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
 }
 
+/* dsh states no size here, so it inherits the column's 14px on a 20px line. */
 .sectionLabel {
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
+  flex: none;
+  min-width: 0;
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
+  line-height: 20px;
 }
 
 .sectionActions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 0 0 auto;
 }
 
+/*
+ * The header's icon buttons: dsh's 28px control on the 8px corner, in the
+ * secondary ink. Hover adds the surface and leaves the ink alone — the icon is
+ * already legible, and brightening it as well reads as a second, unrelated
+ * state.
+ */
 .iconButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  color: var(--dsw-alias-label-tertiary);
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
   flex: 0 0 auto;
+  cursor: pointer;
 }
 
 .iconButton:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Held while a toggle's own surface is open (the search field). */
 .iconButtonActive {
-  background: var(--dsw-specific-sidebar-nav-item-active);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
+/*
+ * The search field is its own row rather than dsh's inline header expansion:
+ * this shell opens it as a mode (`state.searchOpen`) instead of as part of a
+ * header that grows. It keeps the rows' 2px inset so its edges line up with
+ * them.
+ */
 .searchRow {
-  padding: 2px 12px 8px;
   flex: 0 0 auto;
+  padding: 0 0 8px;
 }
 
 .searchInput {
   width: 100%;
   height: 30px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-sm);
   border: 0.5px solid var(--dsw-alias-border-l3);
   background: var(--dsw-alias-bg-layer-1);
   font-size: 12.5px;
@@ -157,29 +233,58 @@
   border-color: var(--dsw-alias-border-l4);
 }
 
+/*
+ * The one scrolling region.
+ *
+ * dsh puts the scrollbar at the column's own right edge instead of inside the
+ * padding: `.listArea` cancels the shell's inline padding with a negative
+ * margin, and `.list` adds a 2px offset back plus a right padding equal to
+ * `edge-inset − scrollbar − offset`, so rows land exactly where they would
+ * without a bar. Both numbers are reproduced here in one element, and the
+ * scrollbar width is read from this project's own variable rather than dsh's
+ * hardcoded 5px — dsh's global bar is 5px and this shell's is 8px, and the
+ * padding is what has to follow, not the bar.
+ *
+ * Rows are separated by 2px (`* + *`) exactly as dsh's list is, rather than by
+ * a flex gap: a gap would also space anything else that ever lands here.
+ */
 .scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  margin-right: calc(-1 * var(--dsh-sidebar-inline-padding) + 2px);
+  padding: 0 calc(var(--dsh-sidebar-inline-padding) - var(--dsh-scrollbar-width) - 2px) 16px 0;
+  scrollbar-gutter: stable;
+}
+
+.scroll > * + * {
+  margin-top: 2px;
+}
+
+/*
+ * dsh's group rhythm: 2px between rows, 4px between workspace groups. A
+ * workspace header opens a group, so it takes the extra step — the same 4px
+ * total `.groupSection + .groupSection` produces upstream, reached here by
+ * adding to the 2px above rather than by wrapping each group in an element.
+ * `:not(:first-child)` keeps the first group's header off the top edge.
+ */
+.scroll > [data-workspace-row]:not(:first-child) {
+  margin-top: 2px;
 }
 
 /* --- footer ------------------------------------------------------------- */
 
 /*
  * The settings entry, pinned below the scroll region rather than inside it, so
- * a long project list cannot push it out of reach. Metrics are dsh's sidebar
- * foot trigger (42px tall, 12px radius).
+ * a long workspace list cannot push it out of reach. dsh's foot seat carries no
+ * padding of its own — the column's padding is the inset — and the trigger
+ * keeps dsh's 42px/12px metrics.
  */
 .footer {
   flex: none;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px 12px;
 }
 
 .settingsTrigger {
@@ -196,7 +301,7 @@
   color: var(--dsw-alias-label-primary);
   background: none;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md);
   cursor: pointer;
   overflow: hidden;
 }
@@ -218,36 +323,62 @@
   background: var(--dsw-alias-state-warn-primary);
 }
 
-/* --- project row --- */
+/* --- workspace row --- */
 
+/*
+ * dsh's workspace row: 34px tall, 6px gaps, 8px of text padding and 12px
+ * corners, sitting flush on the column's padding — the row's own padding is
+ * the whole inset, with no margin of its own. (The New Session bar above does
+ * carry 2px; that is dsh's own asymmetry, and it belongs to the button rather
+ * than to the list.)
+ *
+ * The leading padding is written inline by the tree (`8px + depth × 12px`), so
+ * what is here is the trailing half plus the fallback for a row at depth 0.
+ */
 .projectRow {
   display: flex;
   align-items: center;
-  border-radius: 8px;
-  min-height: 32px;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: var(--dsw-radius-md);
   position: relative;
   cursor: pointer;
+  user-select: none;
+  color: var(--dsw-alias-label-primary);
 }
 
 .projectRow:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/*
+ * The workspace the transcript belongs to. dsh marks its selected row with the
+ * same surface as hover (a selected sidebar row is not a different weight of
+ * fill); what tells the two apart is that the mark beside it takes the brand
+ * color — see `.projectGlyphAccent`.
+ */
+.projectRowCurrent {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .projectMain {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
   text-align: left;
   color: inherit;
 }
 
 /*
- * The workspace's leading slot. It is one 16px square holding two marks, because
- * dsh never shows both at once: the folder states whether the workspace is open,
- * and the caret takes its place under the pointer.
+ * The workspace's leading slot. It is one 16×20 cell holding two marks, because
+ * dsh never shows both at once: the folder states whether the workspace is
+ * open, and the caret takes its place under the pointer. That cell is also what
+ * lines this row's text up with a session row's, whose status slot is the same
+ * size.
  */
 .projectGlyph {
   position: relative;
@@ -255,7 +386,7 @@
   align-items: center;
   justify-content: center;
   width: 16px;
-  height: 16px;
+  height: 20px;
   flex: 0 0 auto;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -270,7 +401,7 @@
 /*
  * The caret is pointer chrome, not a state mark, so it keeps a grey even on the
  * selected workspace — the folder is what carries the tint. It rides dsh's
- * caption grey, which is one step lighter than the folder's tertiary.
+ * caption grey, one step lighter than the folder's tertiary.
  */
 .projectCaret {
   display: none;
@@ -295,18 +426,19 @@
 .projectTitle {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 14px;
+  line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--dsw-alias-label-primary);
 }
 
-/* The selected workspace's mark reads in the brand color, so the row matches the
- * workspace named above the composer — but only while it is open. A collapsed
- * workspace is not the one the transcript is showing, and tinting it would claim
- * otherwise. The name stays the ordinary label color: the mark is the state, the
- * name is just what the workspace is called. */
+/* The selected workspace's mark reads in the brand color, so the row matches
+ * the workspace named above the composer — but only while it is open. A
+ * collapsed workspace is not the one the transcript is showing, and tinting it
+ * would claim otherwise. The name stays the ordinary label color: the mark is
+ * the state, the name is just what the workspace is called. */
 .projectGlyphAccent {
   color: var(--dsw-alias-state-business-primary);
 }
@@ -337,7 +469,7 @@
   gap: 8px;
   height: 32px;
   padding: 0 8px;
-  border-radius: 7px;
+  border-radius: var(--dsw-radius-sm);
   background: none;
   font: inherit;
   font-size: 13px;
@@ -357,31 +489,43 @@
 
 /* --- session row --- */
 
+/*
+ * dsh's session row is 32px with no flex gap: its leading slot and title are
+ * separated by the title's own margin, which is what keeps the timestamp hard
+ * against the right edge whatever the title does. Leading padding is inline
+ * (`8px + the workspace's depth indent`), the same value its workspace header
+ * carries — upstream gives both one `--dsh-workspace-indent`.
+ */
 .sessionRow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 5px 8px;
-  border-radius: 8px;
+  gap: 0;
+  height: 32px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: var(--dsw-radius-md);
   position: relative;
   cursor: pointer;
+  user-select: none;
   color: var(--dsw-alias-label-secondary);
 }
 
 .sessionRow:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .sessionRowActive {
-  background: var(--dsw-specific-sidebar-nav-item-active);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
+/* dsh's cell: 4px after the status slot, 6px before the timestamp. */
 .sessionTitle {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  margin: 0 6px 0 4px;
+  font-size: 14px;
+  line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -416,13 +560,14 @@
  * dsh's leading slot on a session row, holding the run-state mark. It only
  * exists while there is a mark to show — an idle session keeps the clean
  * left edge it had before — and it is not interactive, so the stretched title
- * target underneath still owns the row.
+ * target underneath still owns the row. Same 16×20 cell as the workspace row's.
  */
 .sessionStatus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 16px;
+  height: 20px;
   pointer-events: none;
 }
 
@@ -438,7 +583,8 @@
 
 .sessionTime {
   flex: 0 0 auto;
-  font-size: 11.5px;
+  font-size: 10px;
+  line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -446,15 +592,23 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Row actions stay hidden until hover, so the list reads as plain text. */
+/*
+ * Row actions stay hidden until hover, so the list reads as plain text.
+ *
+ * dsh swaps them into the flex row and hides the timestamp; this keeps the
+ * absolutely positioned cluster instead, because the stretched title target
+ * above needs the trailing strip to be something it can sit *under* — a
+ * statically placed cluster would be painted over by `::after` and stop taking
+ * clicks. What is matched from dsh is the metrics: 16px glyphs on a 10px gap.
+ */
 .rowActions {
   display: none;
   align-items: center;
-  gap: 2px;
+  gap: 10px;
   position: absolute;
   right: 4px;
   padding-left: 20px;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--dsw-radius-md) var(--dsw-radius-md) 0;
   /*
    * The gradient fades in from transparent, and that faded part is painted on
    * top of the row. Hit testing uses the padding box, so without this the whole
@@ -467,12 +621,16 @@
   background: linear-gradient(
     to right,
     transparent,
-    var(--dsw-specific-sidebar-nav-item-hover) 20px
+    var(--dsw-alias-interactive-bg-hover) 20px
   );
 }
 
 .rowActions .iconButton {
   pointer-events: auto;
+  /* The row's own buttons are dsh's 16px glyphs, not the header's 28px one. */
+  width: 16px;
+  height: 16px;
+  border-radius: var(--dsw-radius-xs);
 }
 
 .projectRow:hover .rowActions,
@@ -484,28 +642,35 @@
   background: linear-gradient(
     to right,
     transparent,
-    var(--dsw-specific-sidebar-nav-item-active) 20px
+    var(--dsw-alias-interactive-bg-hover) 20px
   );
 }
 
+/*
+ * dsh's `.sessionOverflowButton`: a 28px row on the 8px corner, indented past
+ * the session rows it belongs to (its leading padding is 28px + the group's
+ * depth, written inline), and with no hover fill — it is a disclosure, not a
+ * row, and the text lightening one step is the whole affordance there too.
+ */
 .revealMore {
+  height: 28px;
+  padding: 0 12px;
   text-align: left;
-  padding: 4px 8px;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-sm);
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
 }
 
 .revealMore:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
-  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .missing {
   font-size: 10px;
   color: var(--dsw-alias-label-dimmed);
   border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-xs);
   padding: 0 5px;
   flex: 0 0 auto;
 }

@@ -7,13 +7,19 @@
 }
 
 .sidebar {
-  flex: 0 0 var(--piws-sidebar-width, 268px);
-  width: var(--piws-sidebar-width, 268px);
+  /* dsh's SIDEBAR_DEFAULT (columns.ts). Its 264/420 clamp pair only matters
+     while dragging, and this shell has no sidebar drag handle — the width is
+     the default and nothing else. */
+  flex: 0 0 var(--piws-sidebar-width, 280px);
+  width: var(--piws-sidebar-width, 280px);
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--dsw-specific-sidebar-fill);
-  border-right: 0.5px solid var(--dsw-alias-border-l2);
+  /* l3 rather than l2: dsh's AppFrame draws the column separator in l3, and a
+     sidebar that is one step lighter than the rest of the chrome reads as a
+     seam under the hover fills. */
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
 }
 
 .main {

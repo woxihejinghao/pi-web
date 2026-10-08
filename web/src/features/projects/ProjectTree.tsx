@@ -175,7 +175,7 @@ function SessionRow({
   return (
     <div
       className={clsx(styles.sessionRow, active && styles.sessionRowActive)}
-      style={{ marginLeft: indent }}
+      style={{ paddingLeft: 8 + indent }}
       title={sessionPath}
     >
       {status === undefined ? null : (
@@ -234,8 +234,16 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   const t = useT();
   const state = useStore(appStore);
   const project = node.project;
-  const indent = node.depth * 16;
-  const sessionIndent = indent + 26;
+  // dsh's geometry, applied the way dsh applies it: 12px per nesting level, and
+  // as the row's own leading *padding* rather than a margin — a row that is
+  // pushed over by a margin drags its hover and selected fill with it, and the
+  // fill is supposed to span the column (see `Rows.module.css` upstream).
+  //
+  // Session rows take their workspace's indent, not an extra step of their own:
+  // upstream gives the workspace header and its sessions one shared
+  // `--dsh-workspace-indent`. The workspace row also marks itself as a group
+  // opening, which is what gives the 4px rhythm between groups.
+  const indent = node.depth * 12;
 
   const expanded = Boolean(state.expandedProjects[project.id]);
   const current = project.id === state.selectedProjectId;
@@ -317,7 +325,8 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
     <>
       <div
         className={clsx(styles.projectRow, current && styles.projectRowCurrent)}
-        style={{ marginLeft: indent }}
+        data-workspace-row=""
+        style={{ paddingLeft: 8 + indent }}
         title={project.path}
       >
         <button
@@ -395,7 +404,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               active={path === selected}
               external={false}
               status={sessionStatus(state.sessionActivity[path], pendingFor(path))}
-              indent={sessionIndent}
+              indent={indent}
               canDelete={false}
             />
           ))}
@@ -412,7 +421,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
                 state.sessionActivity[session.path],
                 pendingFor(session.path),
               )}
-              indent={sessionIndent}
+              indent={indent}
             />
           ))}
 
@@ -420,7 +429,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
             <button
               type="button"
               className={styles.revealMore}
-              style={{ marginLeft: sessionIndent }}
+              style={{ paddingLeft: 28 + indent }}
               onClick={() => actions.revealMoreSessions(project.id, limit + PAGE_SIZE)}
             >
               {t("session.expandAll", { count: remaining })}
@@ -428,7 +437,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
           ) : null}
 
           {unsaved.length === 0 && shown.length === 0 && !searching ? (
-            <p className={styles.emptyList} style={{ marginLeft: sessionIndent }}>{t("session.empty")}</p>
+            <p className={styles.emptyList} style={{ marginLeft: indent }}>{t("session.empty")}</p>
           ) : null}
         </>
       ) : null}

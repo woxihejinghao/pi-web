@@ -15,6 +15,9 @@
 ### 变更
 
 - **服务端不再有一个没人读的终端标题**：`TerminalInfo.title`、`TerminalRecord.title`、`TerminalManager.rename` 与 `POST /api/terminal/:id/rename` 一起删掉了。它们从来没有消费者——标签名一直存在右侧栏的布局里（`RightbarTab.title`，`tabTitle` 读的就是它），而服务端那个字段只在内存里，刷新和重启都活不过去，连 SSE 事件都不带它。留着它等于给「标签叫什么」第二个答案，而这次要接重命名，得先定下这个答案只有一个。（实测：那个路由现在 404，终端信息里只剩 `id / sessionPath / cols / rows / shell / exitCode`。）
+- **左侧栏按 dsh 的规范重排**：列几何照 `ui-sidebar/SidebarRoot.module.css`（`6px 12px` 内边距、60px 品牌行、36px 分组头、42px 设置项），行几何照 `ui-workspace/rows/Rows.module.css`（工作区行 34px、会话行 32px、标题 14px/20px、时间戳 10px/16px、12px 圆角、悬停与选中同用 `--dsw-alias-interactive-bg-hover`）。列宽 268 → **280**（dsh 的 `SIDEBAR_DEFAULT`）；列分隔线 `border-l2` → **l3**；品牌名 14px → **18px**；头部图标按钮 24px → **28px**；“新会话”的圆角从刻意偏离的 14px 回到 dsh 的 **12px**；`--dsw-radius-*` 四档 token 补进设计 token 表（此前未移植）。滚动条照 dsh 贴到列自己的右边缘：负外边距抵消列内边距，行落点用 `edge − 滚动条 − 2` 算回原位，公式读的是本项目自己的 `--dsh-scrollbar-width`（这里全局 8px，dsh 是 5px —— 要跟的是行的落点，不是条本身的粗细）。
+- **缩进改用行内 `padding-inline-start` 而不是外边距，会话行不再比工作区行多缩 26px**：被外边距推开的是整行连背景一起，而 dsh 的悬停/选中填充要铺满整列；两个层级在 dsh 里共用同一个 `--dsh-workspace-indent`（每层 12px）。工作区行之间恢复 dsh 的 4px 组间距（组内 2px）。「展开其余 N 个会话」照 dsh 的 `.sessionOverflowButton`：28px 行高、8px 圆角、**悬停不变底色**只提亮文字。顺带补上 `.projectRowCurrent` —— 它一直被 `ProjectTree.tsx` 引用却从没在样式表里定义过，当前工作区因此一直没有行底色。
+- 三处刻意不跟 dsh，代码里各自注明：品牌是字母标记而不是 dsh 的字标美术件；搜索是独立的行，dsh 是在分组头里就地展开一个；行的操作按钮仍是绝对定位的一簇，因为下面那个拉伸的标题伪元素需要它盖在自己之上才有得点 —— dsh 是把按钮换进 flex 行、把时间戳挤掉，那套在这里会和 `::after` 抢点击。
 
 ### 修复
 

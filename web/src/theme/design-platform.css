@@ -355,3 +355,15 @@ html[data-appearance="dark"] body {
   --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-850);
   --dsw-specific-tip: var(--dsw-static-neutral-bluish-800);
 }
+
+/* Corner radii, ported from the same upstream sheet: deepseek-harness's
+   ui-theme base.css declares these four, and every component there rounds with
+   them — a sidebar row uses `-md`, an icon button `-sm`. They are
+   theme-independent, so they live in one block rather than in each appearance
+   block above (which is where the colour tokens have to be, twice). */
+body {
+  --dsw-radius-xs: 4px;
+  --dsw-radius-sm: 8px;
+  --dsw-radius-md: 12px;
+  --dsw-radius-lg: 16px;
+}
