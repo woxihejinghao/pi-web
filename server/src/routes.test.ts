@@ -1189,11 +1189,31 @@ describe("settings", () => {
       appearance: "system",
       language: "system",
       contentFontSize: 15,
-      transcriptDisplay: "compact",
+      transcriptDisplay: "detailed",
       busySendBehavior: "queue",
-      todoNoticeDismissed: false,
       browserNotifications: false,
     });
+  });
+
+  it("reads a two-mode generation's saved `normal` as detailed", async () => {
+    await writeFile(
+      join(home, "store.json"),
+      JSON.stringify({
+        version: 1,
+        projects: [],
+        sessionOverrides: {},
+        settings: { transcriptDisplay: "normal" },
+      }),
+    );
+    const store = await import("./store.ts");
+    store.resetStoreCache();
+
+    // dsh reads its own `normal` / `expanded` legacy values as `detailed`, and
+    // this store has been writing the same two-mode value since before the
+    // four-mode setting existed — it must migrate rather than fall back.
+    const res = await api("/api/settings");
+    expect(res.status).toBe(200);
+    expect(res.body.transcriptDisplay).toBe("detailed");
   });
 
   it("round-trips a partial patch and persists it", async () => {
@@ -1207,27 +1227,13 @@ describe("settings", () => {
       appearance: "dark",
       language: "system",
       contentFontSize: 15,
-      transcriptDisplay: "compact",
+      transcriptDisplay: "detailed",
       busySendBehavior: "queue",
-      todoNoticeDismissed: false,
       browserNotifications: false,
     });
 
     const reread = await api("/api/settings");
     expect(reread.body.appearance).toBe("dark");
-  });
-
-  it("persists the task-panel notice dismissal", async () => {
-    const patched = await api("/api/settings", {
-      method: "PUT",
-      body: JSON.stringify({ todoNoticeDismissed: true }),
-    });
-
-    expect(patched.status).toBe(200);
-    expect(patched.body.todoNoticeDismissed).toBe(true);
-    // The whole point of storing it here: closing the notice must survive a
-    // reload, or the panel would ask again on every visit.
-    expect((await api("/api/settings")).body.todoNoticeDismissed).toBe(true);
   });
 
   it("persists the browser-notification preference", async () => {

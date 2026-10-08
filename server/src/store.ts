@@ -49,11 +49,20 @@ export type LanguagePreference = "system" | "zh-CN" | "en";
 
 /**
  * How completed turns present their process content (thinking + tool calls).
- * Ported from dsh's `ui-chat` transcript-mode setting: `normal` lays every
- * process row out in place, `compact` gathers a finished turn's process rows
- * into one collapsible group so the answers stay readable.
+ * Ported from dsh's `ui-chat` transcript-view setting, which offers four modes:
+ *
+ * - `compact` folds a finished turn behind its completion header and hides a
+ *   settled reasoning row's one-line summary (dsh's `settledReasoningPreview`).
+ * - `standard` folds too, but keeps that summary.
+ * - `detailed` is dsh's own default; here it presents the same as `standard`
+ *   until this UI grows dsh's per-step grouping, which is the only thing that
+ *   tells the two apart upstream.
+ * - `verbose` is the only mode that does not fold a finished turn.
  */
-export type TranscriptDisplay = "normal" | "compact";
+export type TranscriptDisplay = "compact" | "standard" | "detailed" | "verbose";
+
+/** Saved modes from dsh's older generations; both read as `detailed`. */
+const LEGACY_TRANSCRIPT_VALUES: readonly string[] = ["normal", "expanded"];
 
 /**
  * What Enter does while the agent is running. `queue` waits for the run to
@@ -64,7 +73,7 @@ export type TranscriptDisplay = "normal" | "compact";
 export type BusySendBehavior = "queue" | "steer";
 
 const APPEARANCE_VALUES: readonly AppearancePreference[] = ["light", "dark", "system"];
-const TRANSCRIPT_VALUES: readonly TranscriptDisplay[] = ["normal", "compact"];
+const TRANSCRIPT_VALUES: readonly TranscriptDisplay[] = ["compact", "standard", "detailed", "verbose"];
 const LANGUAGE_VALUES: readonly LanguagePreference[] = ["system", "zh-CN", "en"];
 const BUSY_SEND_VALUES: readonly BusySendBehavior[] = ["queue", "steer"];
 
@@ -97,12 +106,6 @@ export interface WebSettings {
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
   /**
-   * The user closed the todo panel's "install rpiv-todo" notice. Stored here
-   * because it is a preference this UI owns: pi has no notion of a dismissed
-   * hint, and the panel must not reappear on every reload once it is closed.
-   */
-  todoNoticeDismissed: boolean;
-  /**
    * Whether a finished session task raises a browser notification. Off by
    * default: the browser only grants the permission behind a user gesture, so
    * turning this on is what asks for it — a page load never does.
@@ -117,14 +120,13 @@ export function defaultSettings(): WebSettings {
     // before this setting existed; English is what other locales resolve to.
     language: "system",
     contentFontSize: FONT_SIZE_DEFAULT,
-    // Compact is dsh's own default, and a fresh reader has no reason to want a
-    // finished turn's every tool call spelled out. Only the *default* moves: a
-    // store that already names a mode keeps it.
-    transcriptDisplay: "compact",
+    // dsh's own default. Only the *default* moves: a store that already names a
+    // mode keeps it, and the two-mode generation's saved `normal` is read as
+    // `detailed` below.
+    transcriptDisplay: "detailed",
     // Queueing is the safe default: steering interrupts an in-flight run, so it
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
-    todoNoticeDismissed: false,
     browserNotifications: false,
   };
 }
@@ -196,20 +198,21 @@ function normalizeSettings(raw: unknown): WebSettings {
   ) {
     settings.language = raw.language as LanguagePreference;
   }
-  if (
-    typeof raw.transcriptDisplay === "string" &&
-    (TRANSCRIPT_VALUES as readonly string[]).includes(raw.transcriptDisplay)
-  ) {
-    settings.transcriptDisplay = raw.transcriptDisplay as TranscriptDisplay;
+  if (typeof raw.transcriptDisplay === "string") {
+    // A mode saved by the two-mode generation is read as `detailed`, the same
+    // way dsh reads its own `normal` / `expanded` legacy values.
+    const value = LEGACY_TRANSCRIPT_VALUES.includes(raw.transcriptDisplay)
+      ? "detailed"
+      : raw.transcriptDisplay;
+    if ((TRANSCRIPT_VALUES as readonly string[]).includes(value)) {
+      settings.transcriptDisplay = value as TranscriptDisplay;
+    }
   }
   if (
     typeof raw.busySendBehavior === "string" &&
     (BUSY_SEND_VALUES as readonly string[]).includes(raw.busySendBehavior)
   ) {
     settings.busySendBehavior = raw.busySendBehavior as BusySendBehavior;
-  }
-  if (typeof raw.todoNoticeDismissed === "boolean") {
-    settings.todoNoticeDismissed = raw.todoNoticeDismissed;
   }
   if (typeof raw.browserNotifications === "boolean") {
     settings.browserNotifications = raw.browserNotifications;

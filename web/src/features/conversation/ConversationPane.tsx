@@ -220,7 +220,7 @@ export function ConversationPane() {
         view={conversation}
         cwd={project?.path}
         home={state.home}
-        compactTranscript={state.settings.transcriptDisplay === "compact"}
+        transcriptView={state.settings.transcriptDisplay}
         onFork={onFork}
         {...(sessionPath === null
           ? {}

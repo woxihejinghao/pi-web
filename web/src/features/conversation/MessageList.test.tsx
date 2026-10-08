@@ -309,7 +309,7 @@ describe("MessageList streaming message", () => {
         ])}
         cwd={CWD}
         home="/Users/dev"
-        compactTranscript
+        transcriptView="compact"
       />,
     );
 
@@ -320,7 +320,28 @@ describe("MessageList streaming message", () => {
     expect(html).not.toContain("想过的东西");
   });
 
-  it("keeps a live turn's rows open in the compact display", () => {
+  it("folds a finished turn in the detailed display too", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([
+          { role: "user", content: "跑一下", timestamp: 0 },
+          { role: "assistant", content: [thought("想过的东西")], timestamp: 92_000 },
+        ])}
+        cwd={CWD}
+        home="/Users/dev"
+        transcriptView="detailed"
+      />,
+    );
+
+    // dsh's `foldCompletedTurns` is on for every presentation mode but verbose,
+    // so a non-compact mode is not a "lay every process row out in place" mode:
+    // a finished turn still folds behind its completion header. Only `verbose`
+    // leaves the rows in place.
+    expect(processHeaderText(html)).toBe("已完成，用时 1分32秒");
+    expect(html).not.toContain("想过的东西");
+  });
+
+  it("leaves a streaming turn's rows in place under the detailed display", () => {
     const html = renderToStaticMarkup(
       <MessageList
         view={view([asked("跑一下"), answered([thought("已经想完的")])], {
@@ -329,19 +350,41 @@ describe("MessageList streaming message", () => {
         })}
         cwd={CWD}
         home="/Users/dev"
-        compactTranscript
+        transcriptView="detailed"
       />,
     );
 
-    // The header is a completion report, so a turn that has not completed gets
-    // no header at all: both the settled row and the streamed one stay visible.
+    // `stepGrouping: 'history'` groups closed turns only, and the whole-turn
+    // header is a completion report a live turn cannot carry — so under the
+    // default mode a streaming turn's rows, committed and streamed, stay put.
     expect(html).not.toContain("已完成");
     expect(html).toContain("已经想完的");
     expect(html).toContain("正在想的");
   });
 
+  it("folds a streaming turn's committed process under the compact display", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("跑一下"), answered([thought("已经想完的")])], {
+          partial: [thought("正在想的")],
+          isStreaming: true,
+        })}
+        cwd={CWD}
+        home="/Users/dev"
+        transcriptView="compact"
+      />,
+    );
+
+    // `stepGrouping: 'collapsed'` folds every stretch, live or not, so the
+    // committed reasoning disappears behind its group header while the streamed
+    // row — an answer, never a group — stays visible.
+    expect(html).toContain("已完成分析");
+    expect(html).not.toContain("已经想完的");
+    expect(html).toContain("正在想的");
+  });
+
   it("drops a settled reasoning row's summary under the compact policy", () => {
-    const transcript = (compactTranscript: boolean) =>
+    const transcript = (transcriptView: "compact" | "detailed") =>
       renderToStaticMarkup(
         <MessageList
           view={view([asked("想想"), answered([thought("已经想完的")])], {
@@ -350,15 +393,16 @@ describe("MessageList streaming message", () => {
           })}
           cwd={CWD}
           home="/Users/dev"
-          compactTranscript={compactTranscript}
+          transcriptView={transcriptView}
         />,
       );
 
-    // dsh's `settledReasoningPreview`: the compact display leaves the text one
-    // click away, while the streaming row keeps its line — that line is the only
-    // sign of what the model is doing, so no policy may take it away.
-    expect(transcript(true).match(/data-preview/g)).toHaveLength(1);
-    expect(transcript(false).match(/data-preview/g)).toHaveLength(2);
+    // dsh's `settledReasoningPreview`: the compact mode leaves the text one
+    // click away, while every other mode keeps it and the streaming row keeps
+    // its line regardless — that line is the only sign of what the model is
+    // doing, so no policy may take it away.
+    expect(transcript("compact").match(/data-preview/g)).toHaveLength(1);
+    expect(transcript("detailed").match(/data-preview/g)).toHaveLength(2);
   });
 
   it("still renders a streamed message with no turn to attach to", () => {

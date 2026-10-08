@@ -6,7 +6,7 @@
  * the table. Kept separate from the component so the summary rules — which are
  * the part that silently rots — can be tested directly.
  */
-import type { Translate } from "../../lib/i18n/index.ts";
+import type { MessageKey, Translate } from "../../lib/i18n/index.ts";
 
 
 /** Row variant: decides both the glyph and the title. */
@@ -202,4 +202,134 @@ export function splitForCompact<T extends { block: { type?: string }; live?: boo
     (step.live === true || !isProcessBlock(step.block) ? answers : process).push(step);
   }
   return { process, answers };
+}
+
+/**
+ * dsh's `ProcessActivity`, narrowed to the categories pi's tool names produce.
+ * `thinking` is not a tool category — it is what a segment with no tool calls
+ * (reasoning only) reads as.
+ */
+export type ProcessActivity =
+  | "thinking"
+  | "read"
+  | "write"
+  | "edit"
+  | "search"
+  | "commands"
+  | "code"
+  | "tools";
+
+/** Row variant → dsh's process-activity category, its `activity()` table. */
+const ACTIVITY_BY_VARIANT: Record<Variant, ProcessActivity> = {
+  bash: "commands",
+  read: "read",
+  write: "write",
+  edit: "edit",
+  search: "search",
+  code: "code",
+  others: "tools",
+};
+
+/** The activity category a tool name belongs to. */
+export function processActivityOf(toolName: string): ProcessActivity {
+  return ACTIVITY_BY_VARIANT[classify(toolName)];
+}
+
+const LIVE_TITLE_KEYS: Record<ProcessActivity, MessageKey> = {
+  thinking: "message.stepProcess.thinking",
+  read: "message.stepProcess.read",
+  write: "message.stepProcess.write",
+  edit: "message.stepProcess.edit",
+  search: "message.stepProcess.search",
+  commands: "message.stepProcess.commands",
+  code: "message.stepProcess.code",
+  tools: "message.stepProcess.tools",
+};
+
+const DONE_TITLE_KEYS: Record<ProcessActivity, MessageKey> = {
+  thinking: "message.stepProcess.done.thinking",
+  read: "message.stepProcess.done.read",
+  write: "message.stepProcess.done.write",
+  edit: "message.stepProcess.done.edit",
+  search: "message.stepProcess.done.search",
+  commands: "message.stepProcess.done.commands",
+  code: "message.stepProcess.done.code",
+  tools: "message.stepProcess.done.tools",
+};
+
+/**
+ * One ordered run of a turn's steps: either process (thinking + tool calls) or
+ * answers. Ported from dsh's process grouping, which cuts a Turn at every reply
+ * or user input; a streaming step always lands in an answer run, because a group
+ * would hide the one thing the reader is watching arrive.
+ */
+export type ProcessSegment<T> =
+  | { kind: "process"; steps: T[] }
+  | { kind: "answer"; steps: T[] };
+
+/** Cut a turn's steps into ordered process / answer runs. */
+export function splitIntoProcessSegments<
+  T extends { block: { type?: string }; live?: boolean },
+>(steps: T[]): ProcessSegment<T>[] {
+  const segments: ProcessSegment<T>[] = [];
+  for (const step of steps) {
+    const kind = step.live === true || !isProcessBlock(step.block) ? "answer" : "process";
+    const last = segments[segments.length - 1];
+    if (last !== undefined && last.kind === kind) last.steps.push(step);
+    else segments.push({ kind, steps: [step] });
+  }
+  return segments;
+}
+
+/**
+ * Compose a closed segment's title from its tool calls, ported from dsh's
+ * `processTitle`. Categories rank by distinct call count; a segment with no tool
+ * calls reads as thinking.
+ */
+export function processTitle(counts: ReadonlyMap<ProcessActivity, number>, t: Translate): string {
+  const ranked = [...counts].sort((a, b) => b[1] - a[1]).map(([kind]) => kind);
+  const labels = ranked.slice(0, 3).map((kind) => t(DONE_TITLE_KEYS[kind]));
+  const first = labels[0];
+  if (first === undefined) return t("message.stepProcess.done.thinking");
+  const second = labels[1];
+  if (second === undefined) return first;
+  // dsh's `continuation`: everything after the first label loses its sentence
+  // case, so the joined title reads as one phrase rather than several.
+  const continuation = (label: string): string => label.charAt(0).toLowerCase() + label.slice(1);
+  if (labels.length === 2) {
+    const prefix = t("message.stepProcess.sharedPrefix");
+    const shared = prefix !== "" && first.startsWith(prefix) && second.startsWith(prefix);
+    return t("message.stepProcess.joinTwo", {
+      first,
+      second: continuation(shared ? second.slice(prefix.length) : second),
+    });
+  }
+  const title = [first, ...labels.slice(1).map(continuation)].join(t("message.stepProcess.comma"));
+  return ranked.length > 3 ? t("message.stepProcess.more", { title }) : title;
+}
+
+/** A process segment's header: the running activity, or a closed summary. */
+export interface ProcessSegmentTitle {
+  title: string;
+  activity: ProcessActivity;
+  running: boolean;
+}
+
+/** Title, category and run state for one process segment. */
+export function processSegmentTitle<
+  T extends { block: { type?: string }; live?: boolean },
+>(steps: T[], t: Translate): ProcessSegmentTitle {
+  const counts = new Map<ProcessActivity, number>();
+  let running: ProcessActivity | undefined;
+  for (const step of steps) {
+    if (step.block.type !== "toolCall") continue;
+    const activity = processActivityOf((step.block as { name?: string }).name ?? "");
+    counts.set(activity, (counts.get(activity) ?? 0) + 1);
+    if (step.live === true) running = activity;
+  }
+  if (running !== undefined) {
+    return { title: t(LIVE_TITLE_KEYS[running]), activity: running, running: true };
+  }
+  const activity = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "thinking";
+  return { title: processTitle(counts, t), activity, running: false };
 }

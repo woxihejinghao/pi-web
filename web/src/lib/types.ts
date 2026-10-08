@@ -401,11 +401,12 @@ export type AppearancePreference = "light" | "dark" | "system";
 export type LanguagePreference = "system" | "zh-CN" | "en";
 
 /**
- * How completed turns present their process content (thinking + tool calls).
- * `normal` keeps every process row in place; `compact` gathers a finished
- * turn's process rows into one collapsible group so the answers stay readable.
+ * How completed turns present their process content (thinking + tool calls):
+ * `compact` / `standard` / `detailed` fold a finished turn behind its
+ * completion header (the first also hides a settled reasoning row's summary),
+ * while `verbose` leaves every process row in place.
  */
-export type TranscriptDisplay = "normal" | "compact";
+export type TranscriptDisplay = "compact" | "standard" | "detailed" | "verbose";
 
 /**
  * What a plain Enter does while the agent is running. `queue` waits for the

@@ -13,7 +13,6 @@ import {
   readExtensions,
   setExtensionEnabled,
 } from "./extensions.ts";
-import { TodoConfigError, installTodoExtension, readTodo } from "./todo.ts";
 import {
   UpdatesConfigError,
   readUpdates,
@@ -421,7 +420,6 @@ function toHttpError(err: unknown): HttpError {
   // error banner as a 500.
   if (err instanceof ModelConfigError) return badRequest(err.message);
   if (err instanceof ExtensionConfigError) return badRequest(err.message);
-  if (err instanceof TodoConfigError) return badRequest(err.message);
   if (err instanceof UpdatesConfigError) return badRequest(err.message);
   if (err instanceof McpConfigError) return badRequest(err.message);
   // A git write that git itself refused — nothing staged, no identity, a
@@ -648,7 +646,7 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       if (patch.transcriptDisplay !== undefined) {
         next.transcriptDisplay = requireChoice<TranscriptDisplay>(
           patch.transcriptDisplay,
-          ["normal", "compact"],
+          ["compact", "standard", "detailed", "verbose"],
           "transcriptDisplay",
         );
       }
@@ -658,12 +656,6 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
           ["queue", "steer"],
           "busySendBehavior",
         );
-      }
-      if (patch.todoNoticeDismissed !== undefined) {
-        if (typeof patch.todoNoticeDismissed !== "boolean") {
-          throw badRequest("todoNoticeDismissed must be a boolean");
-        }
-        next.todoNoticeDismissed = patch.todoNoticeDismissed;
       }
       if (patch.browserNotifications !== undefined) {
         if (typeof patch.browserNotifications !== "boolean") {
@@ -859,37 +851,6 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       requireString(payload, "source"),
     );
     await registry.closeAllExcept(null, "extensions-updated");
-    json(res, 200, view);
-  });
-
-  // --- the task-list extension ----------------------------------------------
-
-  /**
-   * Whether the next pi start would load the extension behind the `todo` tool.
-   *
-   * The task panel is a projection of that tool's transcript output, so with
-   * the extension missing there is nothing to project. The answer separates
-   * `available` (loadable now) from `installed` (referenced in pi's settings at
-   * all), so the UI can tell "not installed" apart from "installed but
-   * disabled" — only the first one should offer an install button.
-   */
-  route("GET", "/api/todo", async ({ res, query }) => {
-    const projectPath = query.get("projectPath");
-    json(res, 200, await readTodo(projectPath && projectPath.length > 0 ? projectPath : null));
-  });
-
-  /**
-   * Install the extension the `todo` tool ships in.
-   *
-   * The same operation as `pi install npm:@juicesharp/rpiv-todo`, through pi's
-   * own package manager. Slow by nature (npm has to resolve and download), and
-   * the resident pi processes have to be retired afterwards so the next message
-   * actually loads it.
-   */
-  route("POST", "/api/todo/install", async ({ res, body }) => {
-    const payload = body === undefined ? {} : asObject(body);
-    const view = await installTodoExtension(optionalProjectPath(payload));
-    await registry.closeAllExcept(null, "todo-extension-installed");
     json(res, 200, view);
   });
 

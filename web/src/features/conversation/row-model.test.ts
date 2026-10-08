@@ -18,6 +18,11 @@ import {
   relativizeToCwd,
   shortenPath,
   splitForCompact,
+  splitIntoProcessSegments,
+  processTitle,
+  processSegmentTitle,
+  processActivityOf,
+  type ProcessActivity,
   type Variant,
 } from "./row-model.ts";
 
@@ -239,5 +244,78 @@ describe("splitForCompact", () => {
     expect(splitForCompact([call("a"), call("b")]).answers).toEqual([]);
     expect(splitForCompact([text("hi")]).process).toEqual([]);
     expect(splitForCompact([])).toEqual({ process: [], answers: [] });
+  });
+});
+
+describe("splitIntoProcessSegments", () => {
+  const text = (t: string) => ({ block: { type: "text", text: t }, at: t });
+  const thinking = (t: string) => ({ block: { type: "thinking", thinking: t }, at: t });
+  const call = (id: string) => ({ block: { type: "toolCall", id, name: "bash", arguments: {} }, at: id });
+
+  it("cuts a turn at every answer, keeping process runs separate", () => {
+    const segments = splitIntoProcessSegments([
+      thinking("a"), call("1"), text("first"), thinking("b"), call("2"), text("second"),
+    ]);
+    expect(segments.map((segment) => segment.kind)).toEqual([
+      "process", "answer", "process", "answer",
+    ]);
+    expect(segments[2]?.steps.map((step) => step.at)).toEqual(["b", "2"]);
+  });
+
+  it("keeps a streamed step in an answer run", () => {
+    const segments = splitIntoProcessSegments([
+      { block: { type: "thinking" }, at: "settled" },
+      { block: { type: "thinking" }, at: "live", live: true },
+    ]);
+    expect(segments.map((segment) => segment.kind)).toEqual(["process", "answer"]);
+  });
+});
+
+describe("processActivityOf", () => {
+  it("maps pi tool names onto dsh's activity categories", () => {
+    expect(processActivityOf("bash")).toBe("commands");
+    expect(processActivityOf("read")).toBe("read");
+    expect(processActivityOf("grep")).toBe("search");
+    expect(processActivityOf("edit")).toBe("edit");
+    expect(processActivityOf("write")).toBe("write");
+    expect(processActivityOf("mystery")).toBe("tools");
+  });
+});
+
+describe("processTitle", () => {
+  it("joins two categories without the shared prefix", () => {
+    const counts = new Map<ProcessActivity, number>([["read", 1], ["search", 1]]);
+    expect(processTitle(counts, zh)).toBe("已读取文件并搜索代码");
+  });
+
+  it("lists three categories and truncates beyond that", () => {
+    const three = new Map<ProcessActivity, number>([["read", 1], ["search", 1], ["commands", 1]]);
+    expect(processTitle(three, zh)).toBe("已读取文件，已搜索代码，执行了命令");
+    const four = new Map<ProcessActivity, number>([
+      ["read", 1], ["search", 1], ["commands", 1], ["edit", 1],
+    ]);
+    expect(processTitle(four, zh)).toBe("已读取文件，已搜索代码，执行了命令等");
+  });
+});
+
+describe("processSegmentTitle", () => {
+  const call = (name: string) => ({ block: { type: "toolCall", id: name, name, arguments: {} } });
+  const thinking = () => ({ block: { type: "thinking", thinking: "…" } });
+
+  it("names a run by its tool categories, ranking by count", () => {
+    const heading = processSegmentTitle([call("read"), call("read"), call("grep")], zh);
+    expect(heading.title).toBe("已读取文件并搜索代码");
+    expect(heading.activity).toBe("read");
+    expect(heading.running).toBe(false);
+  });
+
+  it("reads a tool-free run as thinking", () => {
+    expect(processSegmentTitle([thinking()], zh).title).toBe("已完成分析");
+  });
+
+  it("uses the live label while a run is still streaming", () => {
+    const heading = processSegmentTitle([{ ...call("bash"), live: true }], zh);
+    expect(heading.title).toBe("正在运行命令");
+    expect(heading.running).toBe(true);
   });
 });

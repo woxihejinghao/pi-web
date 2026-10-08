@@ -1,0 +1,108 @@
+/*
+ * Ported from dsh's `ChatGroupSeat.module.css`, minus its scroll window: the
+ * rows are already all in memory here, so the group is a plain fold rather than
+ * a paginated viewport with its own fade masks.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta-secondary, 0px));
+  text-align: left;
+  cursor: pointer;
+  transition: color 100ms ease;
+}
+
+.header:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The leading box carries the activity glyph and the chevron in the same 16px
+   square; hovering cross-fades one into the other, so the row never grows a
+   separate chevron column. */
+.leading {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
+  color: inherit;
+}
+
+.leading svg {
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+}
+
+.activityIcon,
+.chevron {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+
+.activityIcon {
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.chevron {
+  opacity: 0;
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+.header:hover .activityIcon,
+.root[data-open] .activityIcon {
+  opacity: 0;
+}
+
+.header:hover .chevron,
+.root[data-open] .chevron {
+  opacity: 1;
+}
+
+.root[data-open] .chevron {
+  transform: rotate(180deg);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The rows inside a group keep the transcript's own 16px flow gap, so opening a
+   stretch reads as unfolding those rows rather than switching to a denser list. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header,
+  .activityIcon,
+  .chevron {
+    transition: none;
+  }
+}

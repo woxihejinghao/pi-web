@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentMessage,
   AssistantMessage,
@@ -10,6 +10,7 @@ import type {
   ThinkingBlock as ThinkingBlockType,
   ToolCallBlock,
   ToolResultMessage,
+  TranscriptDisplay,
   UserMessage,
 } from "../../lib/types.ts";
 import { ImageThumb } from "../../components/ImageLightbox.tsx";
@@ -26,7 +27,9 @@ import { RetryNotice } from "./RetryNotice.tsx";
 import { TurnFailure } from "./TurnFailure.tsx";
 import { TurnStatus } from "./TurnStatus.tsx";
 import { TurnNavigator } from "./TurnNavigator.tsx";
-import { splitForCompact } from "./row-model.ts";
+import { processSegmentTitle, splitIntoProcessSegments } from "./row-model.ts";
+import { transcriptPolicyFor, type TranscriptPolicy } from "./transcript-policy.ts";
+import { StepProcessGroup } from "./StepProcessGroup.tsx";
 import { displayUserText, parseSkillCall, skillCommandLabel } from "./skill-block.ts";
 import { groupTurns } from "./turn-rail.ts";
 import { textFromContent, type ConversationView, type ToolExecution } from "./useConversation.ts";
@@ -156,6 +159,7 @@ function TurnBody({
   results,
   streaming,
   compact,
+  stepGrouping,
   processDurationMs,
   previewSettled,
   cwd,
@@ -166,17 +170,21 @@ function TurnBody({
   results: Record<string, ToolResultMessage>;
   streaming: boolean;
   /**
-   * Collapse this turn's process steps into one group. Only ever true for a turn
-   * that already finished: the group's header reports a completion, so folding a
-   * turn that is still running (or one that failed) would put a summary on the
-   * one turn that has none to give.
+   * Collapse this turn's process steps into one group. Both display modes ask
+   * for this (dsh's `foldCompletedTurns`), and it only ever takes effect on a
+   * turn that already finished: the group's header reports a completion, so
+   * folding a turn that is still running (or one that failed) would put a
+   * summary on the one turn that has none to give.
    */
   compact: boolean;
+  /** dsh's `stepGrouping`: fold a turn's process runs, and for which turns. */
+  stepGrouping: TranscriptPolicy["stepGrouping"];
   /** Wall-clock span of this turn, for the group's header. */
   processDurationMs: number | null;
   /** Whether settled reasoning rows may carry their one-line summary. */
   previewSettled: boolean;
 } & PathContext) {
+  const t = useT();
   const renderStep = (step: TurnStep) => (
     <BlockView
       key={`${String(step.messageIndex)}-${String(step.blockIndex)}`}
@@ -190,21 +198,60 @@ function TurnBody({
     />
   );
 
+  // dsh's `stepGrouping`: `collapsed` folds every turn's stretches, `history`
+  // only a turn that has already closed, `none` never. A still-streaming turn is
+  // the one whose status is open, which is exactly what `streaming` reports.
+  const grouped = stepGrouping === "collapsed" || (stepGrouping === "history" && !streaming);
+
+  const renderProcess = (segmentSteps: TurnStep[], index: number) => {
+    const rows = segmentSteps.map((step) => renderStep(step));
+    if (!grouped) return rows;
+    const heading = processSegmentTitle(segmentSteps, t);
+    return (
+      <StepProcessGroup
+        key={`group-${String(index)}`}
+        title={heading.title}
+        activity={heading.activity}
+        running={heading.running}
+      >
+        {rows}
+      </StepProcessGroup>
+    );
+  };
+
+  const segments = splitIntoProcessSegments(steps);
+
   if (!compact) {
     return (
-      <div className={styles.assistantTurn}>{steps.map((step) => renderStep(step))}</div>
+      <div className={styles.assistantTurn}>
+        {segments.map((segment, index) => (
+          <Fragment key={`segment-${String(index)}`}>
+            {segment.kind === "process"
+              ? renderProcess(segment.steps, index)
+              : segment.steps.map((step) => renderStep(step))}
+          </Fragment>
+        ))}
+      </div>
     );
   }
 
-  const { process, answers } = splitForCompact(steps);
+  // A folded turn gathers every process run into the one whole-turn group and
+  // keeps the answers after it, in order. The runs stay distinct inside it, so
+  // the fold reads as "this was the work, that is the reply" at both levels.
+  const processSegments: TurnStep[][] = [];
+  const answerSteps: TurnStep[] = [];
+  for (const segment of segments) {
+    if (segment.kind === "process") processSegments.push(segment.steps);
+    else answerSteps.push(...segment.steps);
+  }
   return (
     <div className={styles.assistantTurn}>
-      {process.length > 0 ? (
+      {processSegments.length > 0 ? (
         <TurnProcessGroup durationMs={processDurationMs}>
-          {process.map((step) => renderStep(step))}
+          {processSegments.map((segmentSteps, index) => renderProcess(segmentSteps, index))}
         </TurnProcessGroup>
       ) : null}
-      {answers.map((step, index) => (
+      {answerSteps.map((step, index) => (
         // The wrapper exists only to carry dsh's `data-turn-process-answer`
         // flag: it is what tells the flow gap to tighten to 8px for the answer
         // that ends the group above it.
@@ -426,14 +473,14 @@ export function MessageList({
   view,
   cwd,
   home,
-  compactTranscript = false,
+  transcriptView = "detailed",
   onFork,
   onOpenFile,
   onRetry,
 }: {
   view: ConversationView;
-  /** Collapse finished turns' process rows into one group (see settings). */
-  compactTranscript?: boolean;
+  /** Work-details presentation mode; see `transcript-policy.ts`. */
+  transcriptView?: TranscriptDisplay;
   /** Fork the session at a user message. Absent means the action is not shown. */
   onFork?: (entryId: string) => void;
   /**
@@ -448,6 +495,8 @@ export function MessageList({
   onRetry?: (text: string, images: ImageBlock[]) => void;
 } & PathContext) {
   const t = useT();
+  const { foldCompletedTurns, stepGrouping, settledReasoningPreview } =
+    transcriptPolicyFor(transcriptView);
   const scrollRef = useRef<HTMLDivElement>(null);
   // The message column, watched so that a fold or an image load — anything that
   // resizes the transcript without touching `view.messages` — still puts a
@@ -850,12 +899,17 @@ export function MessageList({
                   // report ("已完成，用时 2分33秒"), so folding a turn that is
                   // still running would put that claim on the one turn that has
                   // nothing to report yet — dsh refuses to fold a live, stopped,
-                  // or failed turn for the same reason.
-                  compact={compactTranscript && !isLiveTurn && failed === null}
+                  // or failed turn for the same reason. Both display modes fold
+                  // (dsh's `foldCompletedTurns` is on for every mode but
+                  // verbose); the mode only decides whether a settled reasoning
+                  // row keeps its summary line, via `previewSettled` below.
+                  compact={foldCompletedTurns && !isLiveTurn && failed === null}
+                  stepGrouping={stepGrouping}
                   processDurationMs={turnMeta.get(group.turn)?.durationMs ?? null}
-                  // dsh's `settledReasoningPreview`: the compact display drops
-                  // the line beside "思考" and leaves the text one click away.
-                  previewSettled={!compactTranscript}
+                  // dsh's `settledReasoningPreview`: the compact mode drops the
+                  // line beside "思考" and leaves the text one click away; every
+                  // other mode keeps it.
+                  previewSettled={settledReasoningPreview}
                   cwd={cwd}
                   home={home}
                 />
@@ -920,12 +974,14 @@ export function MessageList({
             streaming={view.isStreaming}
             // The live turn keeps its rows open regardless of the setting:
             // folding them would hide exactly what the user is waiting on, and
-            // the group's header would have no completion to report.
-            compact={compactTranscript && !view.isStreaming}
+            // the group's header would have no completion to report. Every
+            // settled turn folds, in either display mode.
+            compact={foldCompletedTurns && !view.isStreaming}
+            stepGrouping={stepGrouping}
             // Nothing to time: this path exists for a stream with no turn to
             // attach to, so there is no start or end stamp anywhere.
             processDurationMs={null}
-            previewSettled={!compactTranscript}
+            previewSettled={settledReasoningPreview}
             cwd={cwd}
             home={home}
           />
