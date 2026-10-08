@@ -46,6 +46,44 @@ body,
   height: 100%;
 }
 
+/*
+ * The document is never a scroll container; the shell owns the viewport.
+ *
+ * `.shell` is `overflow: hidden`, but that only *clips* — it does not stop the
+ * window from scrolling. `html`/`body` keep their default `overflow: visible`,
+ * so the document's scroll area is whatever the browser computes from `body`'s
+ * children, and anything that escapes the shell enlarges it: a portal that is
+ * not `position: fixed`, an absolutely positioned box whose containing block
+ * is the initial containing block (no positioned ancestor), or a browser whose
+ * ICB is taller than the visible viewport (mobile chrome with a dynamic URL
+ * bar). When that happens the whole three-column layout slides up and down and
+ * the top of the app can be scrolled out of sight, with no visible cause —
+ * `.shell` looks clipped either way.
+ *
+ * Pinning the root removes the failure mode instead of chasing every escape
+ * hatch. `overscroll-behavior` is the other half: without it a wheel or
+ * trackpad gesture at the end of a pane chains to the document and
+ * rubber-bands the page even when there is nothing to scroll.
+ *
+ * `position: fixed` elements (every overlay portal: floating panels, tab and
+ * row menus, the lightbox, dialogs) are not clipped by this and keep working
+ * outside the frame; they are laid out against the viewport, not against
+ * `body`.
+ */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Belt and braces for the shell's own frame: clip stray absolutely positioned
+ * descendants at the app frame, and give them a containing block inside it so
+ * they cannot enlarge the document. */
+#root {
+  overflow: hidden;
+  position: relative;
+}
+
 body {
   margin: 0;
   color: var(--dsw-alias-label-primary);
