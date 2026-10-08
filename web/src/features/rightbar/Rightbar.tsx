@@ -20,11 +20,13 @@ import { PaneView } from "./PaneView.tsx";
 import { FloatLayer } from "./FloatLayer.tsx";
 import {
   WIDTH_DEFAULT,
+  canRenameTab,
   canSplitDock,
   rightbarActions,
   rightbarStore,
   tabTitle,
   type RightbarSurface,
+  type RightbarTab,
 } from "./rightbar-state.ts";
 import { TabMenu } from "./TabMenu.tsx";
 import { closeTabs } from "./close-tabs.ts";
@@ -38,6 +40,27 @@ interface MenuState {
   readonly anchor: HTMLElement;
   readonly x: number;
   readonly y: number;
+}
+
+/**
+ * Rename a tab from its context menu.
+ *
+ * `window.prompt` rather than an editor drawn into the chip: the sidebar renames
+ * sessions and workspaces the same way, and the platform supplies the keyboard,
+ * the screen reader and the IME for free. One rename gesture in the app beats
+ * three that each behave slightly differently.
+ *
+ * An empty answer is treated as a cancellation rather than as a name: storing it
+ * would make `tabTitle` fall back to the kind's own wording, so the tab would
+ * read as reset instead of renamed — and there is no way to tell that apart from
+ * a rename that worked badly.
+ */
+function renameTab(key: string, tab: RightbarTab, label: string, prompt: string): void {
+  const next = window.prompt(prompt, label);
+  if (next === null) return;
+  const name = next.trim();
+  if (name.length === 0) return;
+  rightbarActions.setTabTitle(key, tab.id, name);
 }
 
 /** The chip being dragged, and where its release would land right now. */
@@ -316,13 +339,16 @@ function Panel({
           anchor={menu.anchor}
           position={{ x: menu.x, y: menu.y }}
           tabTitle={tabTitle(menuTab, t)}
+          canRename={canRenameTab(menuTab.kind)}
           hasSiblings={Object.keys(surface.tabs).length > 1}
           onDismiss={() => {
             setMenu(null);
           }}
           onPick={(action) => {
             if (action === "close") closeTabs(sessionPath, [menuTab.id]);
-            else if (action === "closeOthers") {
+            else if (action === "rename") {
+              renameTab(sessionPath, menuTab, tabTitle(menuTab, t), t("rightbar.renamePrompt"));
+            } else if (action === "closeOthers") {
               closeTabs(
                 sessionPath,
                 Object.keys(surface.tabs).filter((id) => id !== menuTab.id),

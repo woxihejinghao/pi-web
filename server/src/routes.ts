@@ -1677,10 +1677,6 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(res, 200, { ok: true });
   });
 
-  route("POST", "/api/terminal/:id/rename", ({ res, params, body }) => {
-    json(res, 200, terminals.rename(params.id!, requireString(asObject(body), "title")));
-  });
-
   /**
    * Close a shell.
    *

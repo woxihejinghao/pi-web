@@ -22,7 +22,6 @@ function info(overrides: Partial<TerminalInfo> = {}): TerminalInfo {
   return {
     id: "t1",
     sessionPath: "sess-1",
-    title: "",
     cols: 80,
     rows: 24,
     shell: "/bin/zsh",

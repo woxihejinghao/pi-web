@@ -1772,7 +1772,6 @@ describe("terminal api", () => {
       return {
         id: `t-${String(opened.length)}`,
         sessionPath: input.sessionPath,
-        title: "",
         cols: input.cols,
         rows: input.rows,
         // Echoes what was asked for, so a test can see the request arrive.
@@ -1782,15 +1781,6 @@ describe("terminal api", () => {
     },
     write: () => undefined,
     resize: () => undefined,
-    rename: (_id, title) => ({
-      id: "t-1",
-      sessionPath: "",
-      title,
-      cols: 80,
-      rows: 24,
-      shell: "/bin/sh",
-      exitCode: null,
-    }),
     close: () => true,
     closeForSession: () => undefined,
   };

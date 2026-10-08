@@ -171,12 +171,6 @@ export const api = {
       body: JSON.stringify({ cols, rows }),
     }),
 
-  renameTerminal: (id: string, title: string) =>
-    request<TerminalInfo>(`/api/terminal/${encodeURIComponent(id)}/rename`, {
-      method: "POST",
-      body: JSON.stringify({ title }),
-    }),
-
   closeTerminal: (id: string) =>
     request<{ closed: boolean }>(`/api/terminal/${encodeURIComponent(id)}`, { method: "DELETE" }),
 

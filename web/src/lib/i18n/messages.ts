@@ -281,6 +281,8 @@ export const zhCN = {
   // ✕'s own words, name and all — so the two ways of closing one tab cannot
   // drift apart.
   "rightbar.tabMenu": "标签页操作",
+  "rightbar.renameTab": "重命名",
+  "rightbar.renamePrompt": "标签页名称",
   "rightbar.closeOtherTabs": "关闭其他标签页",
   "rightbar.closeAllTabs": "关闭全部标签页",
   "tab.files": "文件",
@@ -906,6 +908,8 @@ export const en: Record<MessageKey, string> = {
   "rightbar.dropLeft": "Split left",
   "rightbar.dropRight": "Split right",
   "rightbar.tabMenu": "Tab actions",
+  "rightbar.renameTab": "Rename",
+  "rightbar.renamePrompt": "Tab name",
   "rightbar.closeOtherTabs": "Close other tabs",
   "rightbar.closeAllTabs": "Close all tabs",
   "tab.files": "Files",

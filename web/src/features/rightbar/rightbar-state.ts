@@ -540,6 +540,20 @@ export function tabTitle(tab: RightbarTab, t: Translate): string {
   return t(TAB_TITLE_KEYS[tab.kind]);
 }
 
+/**
+ * Whether a tab's name belongs to the tab rather than to the message table.
+ *
+ * Exactly the two kinds `tabTitle` reads a title from: a preview names itself
+ * after its file, a terminal after its shell — or after whatever the user last
+ * called it. The other three are named by the UI's own wording, so a rename
+ * offered on them would be stored and never seen. Kept next to `tabTitle`
+ * because the two have to agree: widening one without the other is how a menu
+ * item ends up doing nothing.
+ */
+export function canRenameTab(kind: RightbarTabKind): boolean {
+  return kind === "preview" || kind === "terminal";
+}
+
 export function makeFilesTab(): RightbarTab {
   return { id: nextTabId("files"), kind: "files", title: "", target: "" };
 }

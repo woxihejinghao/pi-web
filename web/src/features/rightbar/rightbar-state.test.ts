@@ -7,6 +7,7 @@ import {
   WIDTH_MAX,
   WIDTH_MIN,
   clampWidth,
+  canRenameTab,
   normalizeUrl,
   paneTabs,
   resetRightbarState,
@@ -301,6 +302,16 @@ describe("tabs", () => {
     // string: the host reads an absent field as the login shell, and one fact
     // with two spellings is how a layout ends up meaning two things.
     expect(terminals[1]?.shell).toBeUndefined();
+  });
+
+  it("renames a tab, and the strip reads the new name", () => {
+    rightbarActions.openTerminalTab(KEY, undefined, "/bin/zsh");
+    const id = ids()[0]!;
+    rightbarActions.setTabTitle(KEY, id, "build");
+    const tab = tabsOf(pane())[0]!;
+    expect(tab.title).toBe("build");
+    // The name is what the strip draws, and it outranks the kind's own wording.
+    expect(tabTitle(tab, zh)).toBe("build");
   });
 });
 
@@ -696,6 +707,19 @@ describe("width", () => {
   });
 });
 
+describe("canRenameTab", () => {
+  it("is true only for the kinds whose name lives on the tab itself", () => {
+    // These two are the ones `tabTitle` reads a stored title from; the other
+    // three take their wording from the message table, so a rename on them
+    // would be stored and never drawn.
+    expect(canRenameTab("preview")).toBe(true);
+    expect(canRenameTab("terminal")).toBe(true);
+    expect(canRenameTab("files")).toBe(false);
+    expect(canRenameTab("changes")).toBe(false);
+    expect(canRenameTab("browser")).toBe(false);
+  });
+});
+
 describe("persistence", () => {
   it("restores panes, tabs, divider and width for the same session, closed", () => {
     const store = installStorage();
@@ -730,6 +754,20 @@ describe("persistence", () => {
     // that came back without it would restart on the login shell instead, which
     // is a different program than the one the user picked.
     expect(terminal?.shell).toBe("/bin/zsh");
+  });
+
+  it("brings a renamed tab back with its name", () => {
+    installStorage();
+    rightbarActions.openTerminalTab(KEY, undefined, "/bin/zsh");
+    const id = ids()[0]!;
+    rightbarActions.setTabTitle(KEY, id, "build");
+
+    resetRightbarState();
+    rightbarActions.ensureSurface(KEY);
+    const terminal = tabsOf(surface().panes[0]!).find((tab) => tab.kind === "terminal");
+    // A name that did not survive the reload would come back as the shell's own
+    // name, which is a different tab than the one the reader left behind.
+    expect(terminal?.title).toBe("build");
   });
 
   it("restores a floating panel where it was left", () => {

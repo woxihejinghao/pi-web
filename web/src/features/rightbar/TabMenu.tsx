@@ -2,12 +2,13 @@
  * The chip's context menu: what a secondary press on a tab offers.
  *
  * dsh's kit menu carries exactly one item of its own — close this tab — and lets
- * the embedder append the rest (its tab menu is a slot for precisely that). Two
- * more are appended here, both of them the same act applied to a group: with a
- * strip of shells and previews, closing them one at a time is the chore a menu
- * exists to remove. The kit's own item stays first, where a reader looks for it,
- * and it is the only one that survives when there is nothing else to close —
- * three names for one action is worse than one.
+ * the embedder append the rest (its tab menu is a slot for precisely that).
+ * Appended here: a rename, offered only for the two kinds that carry a name of
+ * their own, and two group closes — with a strip of shells and previews, closing
+ * them one at a time is the chore a menu exists to remove. The kit's own item
+ * stays first, where a reader looks for it, and it is the only one that survives
+ * when there is nothing else to offer — three names for one action is worse than
+ * one.
  *
  * Rendered into `document.body` rather than next to the chip: the strip scrolls
  * its overflow on purpose (so four tabs do not shrink every title to two
@@ -30,11 +31,30 @@ export interface TabMenuPosition {
 }
 
 /** What the menu can be asked to do. */
-export type TabMenuAction = "close" | "closeOthers" | "closeAll";
+export type TabMenuAction = "close" | "rename" | "closeOthers" | "closeAll";
 
-/** The actions that make sense for a strip of this size. */
-export function tabMenuActions(hasSiblings: boolean): readonly TabMenuAction[] {
-  return hasSiblings ? ["close", "closeOthers", "closeAll"] : ["close"];
+/**
+ * The actions that make sense for a tab on a strip of this size.
+ *
+ * `canRename` is about the tab, not the strip: a preview is named after its file
+ * and a terminal after its shell (or whatever the user last called it), so both
+ * have a name to change, while files / changes / browser are named by the message
+ * table and a title written on them would never be read.
+ *
+ * Order: the kit's own item first, then the one action on *this* tab, then the
+ * two that reach across the strip. A reader looking for "close" finds it in the
+ * same place every time, and the two nested-thirds that close other tabs are
+ * kept away from the single-tab entries they would otherwise sit beside.
+ */
+export function tabMenuActions(
+  canRename: boolean,
+  hasSiblings: boolean,
+): readonly TabMenuAction[] {
+  return [
+    "close",
+    ...(canRename ? (["rename"] as const) : []),
+    ...(hasSiblings ? (["closeOthers", "closeAll"] as const) : []),
+  ];
 }
 
 /**
@@ -75,17 +95,27 @@ export function placeMenu(
  */
 export function TabMenuItems({
   tabTitle,
+  canRename,
   hasSiblings,
   onPick,
 }: {
   tabTitle: string;
+  canRename: boolean;
   hasSiblings: boolean;
   onPick: (action: TabMenuAction) => void;
 }) {
   const t = useT();
+  // A map rather than nested ternaries: with four actions the chain was deeper
+  // than the thing it described.
+  const label = (action: TabMenuAction): string => {
+    if (action === "close") return t("rightbar.closeTab", { title: tabTitle });
+    if (action === "rename") return t("rightbar.renameTab");
+    if (action === "closeOthers") return t("rightbar.closeOtherTabs");
+    return t("rightbar.closeAllTabs");
+  };
   return (
     <>
-      {tabMenuActions(hasSiblings).map((action) => (
+      {tabMenuActions(canRename, hasSiblings).map((action) => (
         <button
           key={action}
           type="button"
@@ -93,11 +123,7 @@ export function TabMenuItems({
           role="menuitem"
           onClick={() => onPick(action)}
         >
-          {action === "close"
-            ? t("rightbar.closeTab", { title: tabTitle })
-            : action === "closeOthers"
-              ? t("rightbar.closeOtherTabs")
-              : t("rightbar.closeAllTabs")}
+          {label(action)}
         </button>
       ))}
     </>
@@ -110,6 +136,8 @@ export interface TabMenuProps {
   readonly position: TabMenuPosition;
   /** The tab's display name, for the close item's wording. */
   readonly tabTitle: string;
+  /** Whether this kind carries a name of its own — see `tabMenuActions`. */
+  readonly canRename: boolean;
   /** Whether the strip holds another tab, i.e. whether a group can be closed. */
   readonly hasSiblings: boolean;
   /** Close the menu without acting — what every dismissal gesture calls. */
@@ -126,6 +154,7 @@ export function TabMenu({
   anchor,
   position,
   tabTitle,
+  canRename,
   hasSiblings,
   onDismiss,
   onPick,
@@ -205,6 +234,7 @@ export function TabMenu({
     >
       <TabMenuItems
         tabTitle={tabTitle}
+        canRename={canRename}
         hasSiblings={hasSiblings}
         onPick={(action) => {
           onDismiss();

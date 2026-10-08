@@ -99,7 +99,6 @@ export interface TerminalSupport {
 export interface TerminalInfo {
   id: string;
   sessionPath: string;
-  title: string;
   cols: number;
   rows: number;
   /**
@@ -121,7 +120,6 @@ interface TerminalRecord {
   readonly proc: PtyProcess;
   /** What `pickShell` settled on; kept so every later read reports the same thing. */
   readonly shell: string;
-  title: string;
   cols: number;
   rows: number;
   exitCode: number | null;
@@ -171,7 +169,6 @@ export interface TerminalHost {
   create(input: CreateTerminalInput): TerminalInfo;
   write(id: string, data: string): void;
   resize(id: string, cols: number, rows: number): void;
-  rename(id: string, title: string): TerminalInfo;
   close(id: string): boolean;
   closeForSession(sessionPath: string): void;
 }
@@ -263,7 +260,6 @@ export class TerminalManager implements TerminalHost {
       sessionPath: input.sessionPath,
       proc,
       shell: file,
-      title: "",
       cols,
       rows,
       exitCode: null,
@@ -340,13 +336,6 @@ export class TerminalManager implements TerminalHost {
       // The shell can die between the check above and here. Nothing to do about
       // it, and the exit event is already on its way.
     }
-  }
-
-  rename(id: string, title: string): TerminalInfo {
-    const record = this.terminals.get(id);
-    if (record === undefined) throw notFound(`终端不存在：${id}`);
-    record.title = title.slice(0, 80);
-    return infoOf(record);
   }
 
   close(id: string): boolean {
@@ -434,7 +423,6 @@ function infoOf(record: TerminalRecord): TerminalInfo {
   return {
     id: record.id,
     sessionPath: record.sessionPath,
-    title: record.title,
     cols: record.cols,
     rows: record.rows,
     shell: record.shell,

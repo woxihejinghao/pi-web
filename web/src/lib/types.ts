@@ -334,7 +334,6 @@ export interface TerminalSupport {
 export interface TerminalInfo {
   id: string;
   sessionPath: string;
-  title: string;
   cols: number;
   rows: number;
   /** The program actually started, after the host resolved the request. */

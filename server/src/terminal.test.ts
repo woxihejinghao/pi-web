@@ -402,7 +402,6 @@ describe("TerminalManager", () => {
       const h = harness();
       expect(statusOf(() => h.manager.write("nope", "x"))).toBe(404);
       expect(statusOf(() => h.manager.resize("nope", 80, 24))).toBe(404);
-      expect(statusOf(() => h.manager.rename("nope", "t"))).toBe(404);
     });
   });
 
@@ -469,13 +468,6 @@ describe("TerminalManager", () => {
       expect(h.manager.list("/sessions/a.jsonl")).toHaveLength(2);
       expect(h.manager.list("/sessions/b.jsonl")).toHaveLength(1);
       expect(h.manager.list()).toHaveLength(3);
-    });
-
-    it("renames a tab, within reason", () => {
-      const h = harness();
-      const info = open(h);
-      expect(h.manager.rename(info.id, "build").title).toBe("build");
-      expect(h.manager.rename(info.id, "x".repeat(200)).title.length).toBe(80);
     });
   });
 });
