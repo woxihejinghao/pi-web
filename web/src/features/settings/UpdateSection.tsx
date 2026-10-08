@@ -2,35 +2,23 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
-import {
-  extensionUpdateCount,
-  extensionUpdateStatus,
-  piVersionStatus,
-} from "../../lib/updates.ts";
+import { piVersionStatus } from "../../lib/updates.ts";
 import { SettingsGroup, SettingsRow } from "./SettingsRow.tsx";
 import styles from "./UpdateSection.module.css";
 
 /**
- * The update notices, at the bottom of 通用设置.
+ * The pi-version notice, at the bottom of 通用设置.
  *
- * Two rows, because they are two different facts with two different remedies.
- * **pi itself** is an npm dependency of this server: a newer release moves with
- * the lockfile and takes a server restart, so the row reports the version and
- * offers its command to copy rather than a button that would have to half-do
- * the job. **Packages** move through pi's own manager, which the plugins page
- * already does per row — so this row counts them and points there.
+ * One row, because there is one fact to report. **pi itself** is an npm
+ * dependency of this server: a newer release moves with the lockfile and takes a
+ * server restart, so the row reports the version and offers its command to copy
+ * rather than a button that would have to half-do the job.
  *
- * Neither check is run from the browser: the server owns both, and its short
- * cache means visiting the page does not spawn a check per package. The 检查更新
- * button is the explicit "ask upstream again".
+ * The check is not run from the browser: the server owns it, and its short cache
+ * means visiting the page does not spawn a check. The 检查更新 button is the
+ * explicit "ask upstream again".
  */
-export function UpdateSection({
-  projectPath,
-  onOpenPlugins,
-}: {
-  projectPath: string | null;
-  onOpenPlugins?: () => void;
-}) {
+export function UpdateSection({ projectPath }: { projectPath: string | null }) {
   const t = useT();
   const state = useStore(appStore);
   const [checking, setChecking] = useState(false);
@@ -40,7 +28,6 @@ export function UpdateSection({
   // on switch. Keyed by workspace: the user-scope answer lives under "".
   const view = state.updates[projectPath ?? ""] ?? null;
   const info = view?.pi ?? null;
-  const count = extensionUpdateCount(view);
 
   useEffect(() => {
     if (view === null) void actions.loadUpdates(projectPath);
@@ -101,22 +88,6 @@ export function UpdateSection({
           <button type="button" className={styles.ghost} disabled={checking} onClick={check}>
             {checking ? t("settings.updates.checking") : t("settings.updates.check")}
           </button>
-        </div>
-      </SettingsRow>
-
-      <SettingsRow
-          title={t("settings.updates.pluginUpdates")}
-          description={t("settings.updates.pluginUpdatesDescription")}
-        >
-        <div className={styles.control}>
-          <span className={clsx(styles.status, count > 0 && styles.statusNew)}>
-            {extensionUpdateStatus(view, t)}
-          </span>
-          {count > 0 && onOpenPlugins !== undefined ? (
-            <button type="button" className={styles.ghost} onClick={onOpenPlugins}>
-              {t("settings.updates.goToPlugins")}
-            </button>
-          ) : null}
         </div>
       </SettingsRow>
     </SettingsGroup>

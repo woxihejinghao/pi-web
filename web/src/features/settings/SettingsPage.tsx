@@ -68,10 +68,7 @@ export function SettingsPage() {
       <div className={styles.content}>
         <div className={styles.inner}>
           {section === "general" ? (
-            <GeneralSection
-              className={styles.section}
-              onOpenPlugins={() => setSection("plugins")}
-            />
+            <GeneralSection className={styles.section} />
           ) : section === "models" ? (
             <ModelsSection className={styles.section} />
           ) : section === "plugins" ? (

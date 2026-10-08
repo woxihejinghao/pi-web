@@ -29,7 +29,9 @@ import { UpdateSection } from "./UpdateSection.tsx";
  * These labels were dsh's zh dictionary verbatim (`appearance.*`, `fontSize.*`,
  * `settings.transcript.*`, `settings.enter.*`), so the wording matched the UI
  * this page is ported from; they now live in `lib/i18n`, with that same Chinese
- * wording kept as the source table.
+ * wording kept as the source table. The two work-details names dsh added later
+ * (`detailed`, `verbose`) carry this project's Chinese: upstream's own wording
+ * for them is not in the ported dictionary.
  *
  * The option lists are built per render from `t` instead of being module
  * constants, because their labels are language-dependent while their values are
@@ -64,8 +66,10 @@ function languageOptions(t: Translate): readonly { value: LanguagePreference; la
 
 function transcriptOptions(t: Translate): readonly { value: TranscriptDisplay; label: string }[] {
   return [
-    { value: "normal", label: t("settings.transcript.normal") },
     { value: "compact", label: t("settings.transcript.compact") },
+    { value: "standard", label: t("settings.transcript.standard") },
+    { value: "detailed", label: t("settings.transcript.detailed") },
+    { value: "verbose", label: t("settings.transcript.verbose") },
   ];
 }
 
@@ -89,14 +93,7 @@ function autoCompactionOptions(t: Translate): readonly { value: "on" | "off"; la
  * Split from the models section because everything here is a scalar the store
  * already holds, while that one owns files and a dialog.
  */
-export function GeneralSection({
-  className,
-  onOpenPlugins,
-}: {
-  className?: string;
-  /** Where 关于 sends someone who wants to act on a package update. */
-  onOpenPlugins?: () => void;
-}) {
+export function GeneralSection({ className }: { className?: string }) {
   const state = useStore(appStore);
   const t = useT();
   // Read once on mount rather than on every render: the permission only changes
@@ -265,7 +262,7 @@ export function GeneralSection({
           about how it behaves — a version notice is not a preference, and the
           rows above are the ones people come here to change.
         */}
-        <UpdateSection projectPath={projectPath} onOpenPlugins={onOpenPlugins} />
+        <UpdateSection projectPath={projectPath} />
     </div>
   );
 }
