@@ -80,8 +80,20 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-          # 没产物就早点炸，别让下一步的 `artifacts/*` 原样传给 gh 报「找不到文件」。
-          if-no-files-found: error
+
+      # download-artifact 没有 upload-artifact 那个 `if-no-files-found`（传了会被静默忽略，
+      # 只在日志里留一条 `Unexpected input(s)` 警告）——所以在这里显式查一次：没产物就早点炸，
+      # 别让下一步的 `artifacts/*` 原样传给 gh 报一句看不懂的「找不到文件」。
+      - name: 确认拿到了产物
+        run: |
+          shopt -s nullglob
+          files=(artifacts/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "✗ 一个产物都没下载到，拒绝挂 Release"
+            exit 1
+          fi
+          echo "✓ 拿到 ${#files[@]} 个产物："
+          printf '  %s\n' "${files[@]}"
 
       # 用 gh 而不是第三方 action：npm 那条 Release 流程创建的东西这里一并复用。
       - name: 创建（或复用）Release 并上传安装包

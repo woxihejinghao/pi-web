@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 修复
+
+- **桌面打包里那句「没产物就早点炸」说的是一个不存在的参数**：`actions/download-artifact` 没有 `upload-artifact` 那个 `if-no-files-found`，传了会被静默丢弃，只在日志里留一条 `Unexpected input(s) 'if-no-files-found'`——于是防护从头到尾是空转的，真遇到空产物时仍会走到 `gh release upload "$tag" artifacts/*`，把没能展开的 glob 原样交给 gh，报一句跟根因无关的错。现在换成一个显式步骤：数一遍 `artifacts/*`，为 0 就带一句人话退出。0.6.3 那条记录写的是这个意图，参数名是错的，此行才是它真的落地。
+
 ## [0.7.0] - 2026-10-08
 
 ### 新增
