@@ -287,6 +287,12 @@ export const zhCN = {
   "tab.changes": "文件变更",
   "tab.browser": "浏览器",
   "tab.terminal": "终端",
+  // The default shell's name is part of the label rather than a separate line:
+  // "which shell does the plain entry mean" is the only thing the entry needs
+  // to say beyond its own name, and a tooltip is where it already explains the
+  // keystroke.
+  "rightbar.terminalDefault": "终端 · {shell}",
+  "rightbar.terminalWith": "用 {shell} 打开终端",
 
   // --- keyboard shortcuts ---------------------------------------------------
   // The keycaps are not part of the sentence: they are looked up from the same
@@ -906,6 +912,8 @@ export const en: Record<MessageKey, string> = {
   "tab.changes": "Changes",
   "tab.browser": "Browser",
   "tab.terminal": "Terminal",
+  "rightbar.terminalDefault": "Terminal · {shell}",
+  "rightbar.terminalWith": "Open a terminal with {shell}",
 
   // --- keyboard shortcuts ---------------------------------------------------
   "shortcut.hint": "{label} ({keys})",

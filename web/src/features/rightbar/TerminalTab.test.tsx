@@ -39,7 +39,7 @@ describe("TerminalTab", () => {
         sessionPath="sess-1"
         projectPath="/tmp/demo"
         tabKey="sess-1"
-        tab={makeTerminalTab()}
+        tab={makeTerminalTab("")}
       />,
     );
     expect(html).toContain("正在启动 shell…");

@@ -1764,7 +1764,7 @@ describe("terminal api", () => {
    */
   const opened: CreateTerminalInput[] = [];
   const host: TerminalHost = {
-    support: () => ({ available: true, shells: ["/bin/sh"] }),
+    support: () => ({ available: true, shells: ["/bin/sh"], default: "/bin/sh" }),
     list: () => [],
     scrollbackOf: () => null,
     create: (input) => {
@@ -1775,6 +1775,8 @@ describe("terminal api", () => {
         title: "",
         cols: input.cols,
         rows: input.rows,
+        // Echoes what was asked for, so a test can see the request arrive.
+        shell: input.shell ?? "/bin/sh",
         exitCode: null,
       };
     },
@@ -1786,6 +1788,7 @@ describe("terminal api", () => {
       title,
       cols: 80,
       rows: 24,
+      shell: "/bin/sh",
       exitCode: null,
     }),
     close: () => true,
@@ -1823,9 +1826,28 @@ describe("terminal api", () => {
     const res = await fetch(`${terminalUrl}/api/terminal?sessionPath=`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      support: { available: true, shells: ["/bin/sh"] },
+      // `default` is part of the answer, not of the list: the picker needs to
+      // say which shell its plain entry opens, and only the host knows.
+      support: { available: true, shells: ["/bin/sh"], default: "/bin/sh" },
       terminals: [],
     });
+  });
+
+  it("forwards the shell the client picked, and nothing when it picked none", async () => {
+    const project = await createProject("terminal-shell");
+    await openTerminal({
+      sessionPath: "draft:abc",
+      cwd: project.path,
+      cols: 80,
+      rows: 24,
+      shell: "/bin/zsh",
+    });
+    expect(opened.at(-1)?.shell).toBe("/bin/zsh");
+
+    // The plain Terminal entry sends no shell at all rather than an empty
+    // string, which is what "no preference" reads as downstream.
+    await openTerminal({ sessionPath: "draft:abc", cwd: project.path, cols: 80, rows: 24 });
+    expect(opened.at(-1)?.shell).toBeUndefined();
   });
 
   it("runs a draft session's shell in the workspace it was given", async () => {

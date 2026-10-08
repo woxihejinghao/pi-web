@@ -85,6 +85,15 @@ export interface TerminalSupport {
   reason?: string;
   /** Shells this host offers, in the order a picker should show them. */
   shells: string[];
+  /**
+   * The shell the plain "terminal" entry opens, which is the login shell.
+   *
+   * Reported rather than left to be inferred: "what does not picking mean" is
+   * exactly what a picker has to put next to its first entry, and only the host
+   * can answer it — the client sees a list of paths, not which one the user's
+   * own `$SHELL` points at. Empty when no shell is available at all.
+   */
+  default: string;
 }
 
 export interface TerminalInfo {
@@ -93,6 +102,15 @@ export interface TerminalInfo {
   title: string;
   cols: number;
   rows: number;
+  /**
+   * The program that was actually started, after `pickShell` resolved the
+   * request.
+   *
+   * A tab is named after this, so it has to be the real answer rather than the
+   * one that was asked for: a stale choice saved in a layout, or one for a
+   * shell this host no longer lists, opens the fallback instead.
+   */
+  shell: string;
   /** null while the shell is alive; the code it left with afterwards. */
   exitCode: number | null;
 }
@@ -101,6 +119,8 @@ interface TerminalRecord {
   readonly id: string;
   readonly sessionPath: string;
   readonly proc: PtyProcess;
+  /** What `pickShell` settled on; kept so every later read reports the same thing. */
+  readonly shell: string;
   title: string;
   cols: number;
   rows: number;
@@ -178,9 +198,15 @@ export class TerminalManager implements TerminalHost {
    */
   support(): TerminalSupport {
     if (this.load() === null) {
-      return { available: false, reason: this.failure ?? "terminal unavailable", shells: [] };
+      return {
+        available: false,
+        reason: this.failure ?? "terminal unavailable",
+        shells: [],
+        default: "",
+      };
     }
-    return { available: true, shells: installedShells() };
+    const shells = installedShells();
+    return { available: true, shells, default: pickShell(undefined, shells) };
   }
 
   list(sessionPath?: string): TerminalInfo[] {
@@ -236,6 +262,7 @@ export class TerminalManager implements TerminalHost {
       id,
       sessionPath: input.sessionPath,
       proc,
+      shell: file,
       title: "",
       cols,
       rows,
@@ -410,6 +437,7 @@ function infoOf(record: TerminalRecord): TerminalInfo {
     title: record.title,
     cols: record.cols,
     rows: record.rows,
+    shell: record.shell,
     exitCode: record.exitCode,
   };
 }
@@ -488,8 +516,13 @@ function defaultShell(): string {
  * stale choice saved in a layout cannot make the tab fail to open. Otherwise
  * the user's own login shell wins: it is the one whose aliases and prompt they
  * expect, and the one `/etc/shells` almost always contains.
+ *
+ * Exported because it is the whole rule, and the rule is worth naming in a
+ * test: the machine's own `/etc/shells` decides what `installedShells()`
+ * answers, so a test that went through `create` would only be able to assert
+ * "one of these two things happened".
  */
-function pickShell(requested: string | undefined, shells: string[]): string {
+export function pickShell(requested: string | undefined, shells: string[]): string {
   if (requested !== undefined && shells.includes(requested)) return requested;
   const login = defaultShell();
   if (shells.includes(login)) return login;

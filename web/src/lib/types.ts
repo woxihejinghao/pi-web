@@ -321,6 +321,14 @@ export interface TerminalSupport {
   reason?: string;
   /** Shells the host offers, in the order a picker should show them. */
   shells: string[];
+  /**
+   * The shell a plain "terminal" opens — the login shell.
+   *
+   * Mirrored from the host instead of guessed here: the list below names paths,
+   * and nothing in it says which one the user's own `$SHELL` points at. Empty
+   * when no shell is available.
+   */
+  default: string;
 }
 
 export interface TerminalInfo {
@@ -329,6 +337,8 @@ export interface TerminalInfo {
   title: string;
   cols: number;
   rows: number;
+  /** The program actually started, after the host resolved the request. */
+  shell: string;
   /** null while the shell is alive; the code it left with afterwards. */
   exitCode: number | null;
 }

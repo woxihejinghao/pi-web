@@ -8,6 +8,7 @@ import { useStore } from "../../lib/store.ts";
 import { rightbarActions, type RightbarTab } from "./rightbar-state.ts";
 import {
   attachShell,
+  shellName,
   subscribeTerminalOutput,
   terminalActions,
   terminalStore,
@@ -177,6 +178,10 @@ export function TerminalTab({
           knownId: tab.target,
           cols: term.cols,
           rows: term.rows,
+          // Also read once: changing it later is what the restart path is for,
+          // and a picker that could re-point a *running* shell would be lying
+          // about what that process is.
+          shell: tab.shell ?? "",
         });
         if (cancelled) return;
 
@@ -184,6 +189,13 @@ export function TerminalTab({
         setPhase({ kind: "ready", id: attached.info.id });
         if (attached.info.id !== tab.target) {
           rightbarActions.setTabTarget(tabKey, tab.id, attached.info.id);
+        }
+        // Name the tab after the program that actually started. That is the
+        // only moment this can be known: "no preference" resolves to the login
+        // shell on the host, and a stale path resolves to a fallback. Done only
+        // while the title is still empty so a rename is never overwritten.
+        if (tab.title.length === 0 && attached.info.shell.length > 0) {
+          rightbarActions.setTabTitle(tabKey, tab.id, shellName(attached.info.shell));
         }
 
         // Replay first, subscribe second. The scrollback is everything up to

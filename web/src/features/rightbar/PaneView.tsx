@@ -20,7 +20,7 @@ import {
 } from "./rightbar-state.ts";
 import { TabBody } from "./TabBody.tsx";
 import { shortcutTitle } from "./shortcuts.ts";
-import { terminalActions, terminalStore } from "./terminal-state.ts";
+import { shellChoices, shellName, terminalActions, terminalStore } from "./terminal-state.ts";
 // Named `paneCss` rather than `pane`: this component's own prop is called
 // `pane`, and a shadowed CSS import silently resolves to the prop — the
 // `pane.note` placeholder below then reads as a property of `RightbarPane`.
@@ -431,11 +431,25 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
   // case — the tab itself knows how to report a host that cannot open a shell.
   const terminalOff = support !== null && !support.available;
 
-  const pick = (kind: "files" | "changes" | "browser" | "terminal"): void => {
+  // The other shells, when the host offers more than one. "Terminal" stays the
+  // first entry and means the login shell; listing that same shell again below
+  // would be two names for one action. A host with a single shell — every
+  // Windows box, most containers — therefore shows exactly what it showed
+  // before this list existed.
+  const defaultShell = support?.default ?? "";
+  const otherShells = shellChoices(support);
+  // What the plain entry will actually open. Only known once the host answered,
+  // so it stays the bare name until then rather than guessing at a path.
+  const terminalLabel =
+    defaultShell.length > 0
+      ? t("rightbar.terminalDefault", { shell: shellName(defaultShell) })
+      : t("tab.terminal");
+
+  const pick = (kind: "files" | "changes" | "browser" | "terminal", shell = ""): void => {
     setOpen(false);
     if (kind === "files") rightbarActions.openFilesTab(sessionPath, paneId);
     else if (kind === "changes") rightbarActions.openChangesTab(sessionPath, paneId);
-    else if (kind === "terminal") rightbarActions.openTerminalTab(sessionPath, paneId);
+    else if (kind === "terminal") rightbarActions.openTerminalTab(sessionPath, paneId, shell);
     else rightbarActions.openBrowserTab(sessionPath, "", paneId);
   };
 
@@ -494,7 +508,7 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
             title={
               terminalOff
                 ? support?.reason
-                : shortcutTitle(t, t("tab.terminal"), "rightbar.terminal")
+                : shortcutTitle(t, terminalLabel, "rightbar.terminal")
             }
             onClick={() => {
               pick("terminal");
@@ -503,6 +517,29 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
             <Glyph name="terminal" size={13} />
             {t("tab.terminal")}
           </button>
+          {/* One entry per other shell. No submenu: a second level would need
+              hover to be usable, which puts the choice out of reach on a
+              touchscreen, and there are rarely more than a handful. */}
+          {otherShells.map((shell) => (
+            <button
+              key={shell}
+              type="button"
+              className={clsx(styles.menuItem, styles.menuItemNested)}
+              role="menuitem"
+              disabled={terminalOff}
+              title={
+                terminalOff
+                  ? support?.reason
+                  : t("rightbar.terminalWith", { shell: shellName(shell) })
+              }
+              onClick={() => {
+                pick("terminal", shell);
+              }}
+            >
+              <Glyph name="terminal" size={13} />
+              {shellName(shell)}
+            </button>
+          ))}
           <button
             type="button"
             className={styles.menuItem}

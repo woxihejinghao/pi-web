@@ -4,13 +4,19 @@ import {
   attachShell,
   emitTerminalOutput,
   resetTerminalState,
+  shellChoices,
+  shellName,
   subscribeTerminalOutput,
   terminalActions,
   terminalStore,
   terminalsFor,
 } from "./terminal-state.ts";
 
-const AVAILABLE: TerminalSupport = { available: true, shells: ["/bin/zsh"] };
+const AVAILABLE: TerminalSupport = {
+  available: true,
+  shells: ["/bin/zsh", "/bin/bash"],
+  default: "/bin/zsh",
+};
 
 function info(overrides: Partial<TerminalInfo> = {}): TerminalInfo {
   return {
@@ -19,6 +25,7 @@ function info(overrides: Partial<TerminalInfo> = {}): TerminalInfo {
     title: "",
     cols: 80,
     rows: 24,
+    shell: "/bin/zsh",
     exitCode: null,
     ...overrides,
   };
@@ -224,8 +231,60 @@ function stubRoutes(routes: Record<string, unknown>): string[] {
   return seen;
 }
 
+describe("shellName", () => {
+  it("names a shell by its program, not by its path", () => {
+    expect(shellName("/bin/zsh")).toBe("zsh");
+    expect(shellName("/opt/homebrew/bin/fish")).toBe("fish");
+  });
+
+  it("drops the extension Windows never says out loud", () => {
+    expect(shellName("C:\\Program Files\\PowerShell\\7\\pwsh.exe")).toBe("pwsh");
+    expect(shellName("cmd.exe")).toBe("cmd");
+  });
+
+  it("keeps a name that has no separator to strip", () => {
+    // `ComSpec` is documented as a full path but often holds just `cmd`, and
+    // there is nothing to cut in that case.
+    expect(shellName("cmd")).toBe("cmd");
+    expect(shellName("")).toBe("");
+  });
+});
+
+describe("shellChoices", () => {
+  it("lists the other shells, never the one the entry above already opens", () => {
+    expect(shellChoices(AVAILABLE)).toEqual(["/bin/bash"]);
+  });
+
+  it("keeps the host's order", () => {
+    const support: TerminalSupport = {
+      available: true,
+      shells: ["/bin/zsh", "/bin/bash", "/bin/fish"],
+      default: "/bin/bash",
+    };
+    expect(shellChoices(support)).toEqual(["/bin/zsh", "/bin/fish"]);
+  });
+
+  it("offers nothing for a one-shell host, which is every Windows box", () => {
+    expect(
+      shellChoices({ available: true, shells: ["cmd.exe"], default: "cmd.exe" }),
+    ).toEqual([]);
+  });
+
+  it("offers nothing before the host has answered, or when it cannot", () => {
+    expect(shellChoices(null)).toEqual([]);
+    expect(shellChoices({ available: false, shells: [], default: "" })).toEqual([]);
+  });
+});
+
 describe("attachShell", () => {
-  const attach = { sessionPath: "sess-1", projectPath: "/tmp/demo", cols: 80, rows: 24 };
+  const attach = {
+    sessionPath: "sess-1",
+    projectPath: "/tmp/demo",
+    cols: 80,
+    rows: 24,
+    // "No preference": the same thing the plain Terminal entry passes.
+    shell: "",
+  };
 
   it("reattaches to the shell the tab remembers, and replays its screen", async () => {
     const seen = stubRoutes({
@@ -293,13 +352,46 @@ describe("attachShell", () => {
     });
   });
 
+  it("asks for the chosen shell, and only sends one when there is a choice", async () => {
+    const body: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "POST") body.push(JSON.parse(String(init.body)));
+        const payload =
+          init?.method === "POST"
+            ? info({ id: "t-new" })
+            : { support: AVAILABLE, terminals: [] };
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          text: () => Promise.resolve(JSON.stringify(payload)),
+        });
+      }),
+    );
+
+    await attachShell({ ...attach, knownId: "", shell: "/bin/bash" });
+    // The path travels verbatim: the host — not this layer — decides whether it
+    // is a shell it can run, and it answers with what it actually started.
+    expect(body).toEqual([
+      {
+        sessionPath: "sess-1",
+        cwd: "/tmp/demo",
+        cols: 80,
+        rows: 24,
+        shell: "/bin/bash",
+      },
+    ]);
+  });
+
   it("refuses with the host's own reason when no shells can be opened", async () => {
     // The graceful-degradation path: `node-pty` is an optional dependency, so
     // "this host cannot do shells" is an answer, and the reason is what the tab
     // puts on screen. Nothing is attempted, and nothing is registered.
     stubRoutes({
       "GET /api/terminal?sessionPath=sess-1": {
-        support: { available: false, reason: "node-pty 未安装", shells: [] },
+        support: { available: false, reason: "node-pty 未安装", shells: [], default: "" },
         terminals: [],
       },
     });

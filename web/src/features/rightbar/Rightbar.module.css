@@ -218,6 +218,21 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/*
+ * A shell entry sitting under "Terminal".
+ *
+ * Indented so it reads as one answer to the entry above rather than a second,
+ * unrelated kind of tab, and set a size down so the parent stays the prominent
+ * one. The left padding is the parent's own icon column — 8px padding + the
+ * 13px glyph + an 8px gap — which is what makes the nesting legible without a
+ * rule or a group label to hold it together.
+ */
+.menuItemNested {
+  padding-left: 29px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* A host without a prebuilt node-pty still lists the terminal, greyed rather
    than hidden — the reason is in the item's `title`. */
 .menuItem:disabled {

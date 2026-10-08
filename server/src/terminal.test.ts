@@ -9,6 +9,7 @@ import {
   MAX_TERMINALS,
   SCROLLBACK_LIMIT,
   TerminalManager,
+  pickShell,
   type PtyDisposable,
   type PtyModule,
   type PtyProcess,
@@ -88,6 +89,8 @@ interface Harness {
   manager: TerminalManager;
   events: BusEvent[];
   spawned: FakePty[];
+  /** The programs that were asked for, in order — `spawn`'s first argument. */
+  spawnedFiles: string[];
   optionsOf: () => Record<string, unknown>;
   /** Every event of one shape, with the type narrowed for the assertions. */
   only: <T extends BusEvent["type"]>(type: T) => Array<Extract<BusEvent, { type: T }>>;
@@ -102,9 +105,11 @@ function harness(loadModule?: () => PtyModule | null): Harness {
   const events: BusEvent[] = [];
   bus.subscribe((event) => events.push(event));
   const spawned: FakePty[] = [];
+  const spawnedFiles: string[] = [];
   let options: Record<string, unknown> = {};
   const module: PtyModule = {
-    spawn: (_file, _args, opts) => {
+    spawn: (file, _args, opts) => {
+      spawnedFiles.push(file);
       options = opts as unknown as Record<string, unknown>;
       const pty = new FakePty(opts.cols, opts.rows);
       spawned.push(pty);
@@ -115,6 +120,7 @@ function harness(loadModule?: () => PtyModule | null): Harness {
     manager: new TerminalManager({ bus, loadModule: loadModule ?? (() => module) }),
     events,
     spawned,
+    spawnedFiles,
     optionsOf: () => options,
     only: <T extends BusEvent["type"]>(type: T) =>
       events.filter((event): event is Extract<BusEvent, { type: T }> => event.type === type),
@@ -147,6 +153,11 @@ describe("TerminalManager", () => {
       // A host always offers at least one — the fallback is the user's own
       // login shell, which is what the tab should open either way.
       expect(support.shells.length).toBeGreaterThan(0);
+      // The one a plain "terminal" opens, reported rather than inferred: the
+      // client sees a list of paths, not which one `$SHELL` points at. It is
+      // always a listed shell, because that is the only kind `pickShell` picks.
+      expect(support.default.length).toBeGreaterThan(0);
+      expect(support.shells).toContain(support.default);
     });
 
     it("reports why, and offers nothing, when the module will not load", () => {
@@ -156,6 +167,8 @@ describe("TerminalManager", () => {
       expect(support.available).toBe(false);
       expect(support.reason).toContain("node-pty");
       expect(support.shells).toEqual([]);
+      // Nothing to open, so nothing to name as the default.
+      expect(support.default).toBe("");
     });
 
     it("treats a loader that answers null the same as one that throws", () => {
@@ -176,6 +189,56 @@ describe("TerminalManager", () => {
     });
   });
 
+  /**
+   * The rule a picker's answer goes through, on its own.
+   *
+   * Kept out of `create` because the list it decides against comes from this
+   * machine's `/etc/shells`: going through a real shell would let a test assert
+   * only "one of the two branches happened". `$SHELL` is stubbed for the same
+   * reason — the test owns both halves of the comparison.
+   */
+  describe("pickShell", () => {
+    const shells = ["/bin/sh", "/bin/bash", "/bin/zsh"];
+
+    it("honours a request the host lists", () => {
+      expect(pickShell("/bin/zsh", shells)).toBe("/bin/zsh");
+    });
+
+    it("ignores a request the host does not list", () => {
+      // A layout saved on another machine, or one whose package was removed,
+      // must not leave a tab that cannot open. Which of the two fallbacks wins
+      // depends on this machine's `$SHELL`, so the assertion is the invariant
+      // rather than a path: a listed shell, and not the one that was asked for.
+      const picked = pickShell("/opt/homebrew/bin/fish", shells);
+      expect(picked).not.toBe("/opt/homebrew/bin/fish");
+      expect(shells).toContain(picked);
+    });
+
+    it.skipIf(process.platform === "win32")(
+      "prefers the login shell when nothing was asked for",
+      () => {
+        vi.stubEnv("SHELL", "/bin/zsh");
+        try {
+          expect(pickShell(undefined, shells)).toBe("/bin/zsh");
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      },
+    );
+
+    it.skipIf(process.platform === "win32")(
+      "takes the first listed shell when the login shell is not one",
+      () => {
+        vi.stubEnv("SHELL", "/opt/homebrew/bin/fish");
+        try {
+          expect(pickShell(undefined, shells)).toBe("/bin/sh");
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      },
+    );
+  });
+
   describe("create", () => {
     it("spawns a shell with the requested size, in the session's directory", () => {
       const h = harness();
@@ -194,6 +257,34 @@ describe("TerminalManager", () => {
       // The server's own TERM describes whatever started it, not the xterm.js
       // on the other end, so it is replaced rather than inherited.
       expect(env.TERM).toBe("xterm-256color");
+    });
+
+    it("opens the login shell when the request does not name one", () => {
+      const h = harness();
+      const support = h.manager.support();
+      const info = open(h);
+      expect(info.shell).toBe(support.default);
+      expect(h.spawnedFiles).toEqual([support.default]);
+    });
+
+    it("spawns the shell it was asked for, and keeps reporting that one", () => {
+      const h = harness();
+      const support = h.manager.support();
+      // Any listed shell that is *not* the default proves the request travelled;
+      // on a host with a single shell the pipeline is still what is under test.
+      const wanted = support.shells.find((item) => item !== support.default) ?? support.default;
+      const info = h.manager.create({
+        sessionPath: "/s.jsonl",
+        cwd: "/work",
+        cols: 80,
+        rows: 24,
+        shell: wanted,
+      });
+      expect(info.shell).toBe(wanted);
+      expect(h.spawnedFiles).toEqual([wanted]);
+      // Reads report what is running, so a tab is named after the real program
+      // rather than after a request that may not have been honoured.
+      expect(h.manager.list()[0]?.shell).toBe(wanted);
     });
 
     it("answers 503 — not 400 — when this host cannot run a shell", () => {
