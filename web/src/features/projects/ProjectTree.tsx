@@ -319,7 +319,11 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   return (
     <>
       <div
-        className={clsx(styles.projectRow, current && styles.projectRowCurrent)}
+        className={clsx(
+          styles.projectRow,
+          current && styles.projectRowCurrent,
+          menuAt !== null && styles.menuOpen,
+        )}
         data-workspace-row=""
         style={{ paddingLeft: 8 + indent }}
         title={project.path}

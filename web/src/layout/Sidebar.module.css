@@ -8,10 +8,9 @@
  * session, 14px titles, 10px timestamps). Both are MIT; see
  * THIRD_PARTY_NOTICES.md.
  *
- * Three things deliberately do not follow it, each noted where it happens: the
- * brand is a letter mark rather than dsh's wordmark artwork, the search field
- * is its own row (dsh expands one inside the section header), and the rows keep
- * an absolutely positioned action cluster instead of dsh's flex swap.
+ * Two things deliberately do not follow it, each noted where it happens: the
+ * brand is a letter mark rather than dsh's wordmark artwork, and the search
+ * field is its own row (dsh expands one inside the section header).
  */
 
 .sidebar {
@@ -542,8 +541,8 @@
  * `.sessionRow`, which is already positioned — so the target fills the row no
  * matter how narrow the title is.
  *
- * `.rowActions` comes later in the DOM and is absolutely positioned too, so it
- * paints above this and still receives its own clicks.
+ * `.rowActions` comes later in the DOM and is positioned too, so it paints
+ * above this and still receives its own clicks.
  */
 .sessionTitle::after {
   content: "";
@@ -595,65 +594,68 @@
 /*
  * Row actions stay hidden until hover, so the list reads as plain text.
  *
- * dsh swaps them into the flex row and hides the timestamp; this keeps the
- * absolutely positioned cluster instead, because the stretched title target
- * above needs the trailing strip to be something it can sit *under* — a
- * statically placed cluster would be painted over by `::after` and stop taking
- * clicks. What is matched from dsh is the metrics: 16px glyphs on a 10px gap.
+ * They are a `flex: none` member of the row, exactly as dsh's current
+ * `Rows.module.css` has them, and not an absolutely positioned cluster: the
+ * swap *compresses* the title into the cell left of them instead of painting
+ * over its tail. The absolute version could not do that — the title kept the
+ * full row width it has at rest, so a long title ran on underneath the glyphs
+ * and the two read as overlapping.
+ *
+ * The stretched title target (`.sessionTitle::after`) is positioned, so this
+ * box needs a `position` of its own to paint above it and keep its own clicks:
+ * same DOM-order trick as before, one property instead of a measured geometry.
  */
 .rowActions {
   display: none;
   align-items: center;
   gap: 10px;
-  position: absolute;
-  right: 4px;
-  padding-left: 20px;
-  border-radius: 0 var(--dsw-radius-md) var(--dsw-radius-md) 0;
-  /*
-   * The gradient fades in from transparent, and that faded part is painted on
-   * top of the row. Hit testing uses the padding box, so without this the whole
-   * strip would silently swallow clicks meant for the row underneath — about
-   * the right third of a short session, and the timestamp with it. Only the
-   * buttons take the pointer; the transparent rest falls through to the
-   * stretched title target.
-   */
-  pointer-events: none;
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--dsw-alias-interactive-bg-hover) 20px
-  );
+  flex: none;
+  position: relative;
+}
+
+/* dsh gives the workspace row's cluster a 20px box; the session row lets it
+ * ride the 16px glyphs. */
+.projectRow .rowActions {
+  height: 20px;
 }
 
 .rowActions .iconButton {
-  pointer-events: auto;
   /* The row's own buttons are dsh's 16px glyphs, not the header's 28px one. */
   width: 16px;
   height: 16px;
   border-radius: var(--dsw-radius-xs);
+  /* dsh's row buttons are tertiary ink that steps up to primary on hover — no
+     hover surface. The header's 28px control keeps its fill; these sit inside
+     a row that already carries one while the pointer is on it. */
+  color: var(--dsw-alias-label-tertiary);
 }
 
+.rowActions .iconButton:hover {
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* dsh shows the cluster to the pointer and to an open row menu: a row whose
+ * dropdown is up keeps its own affordances, because the pointer has left the
+ * row for the menu but the row is still the subject. The session rows have no
+ * menu of their own here, so only the workspace row carries the second state. */
 .projectRow:hover .rowActions,
-.sessionRow:hover .rowActions {
-  display: flex;
+.sessionRow:hover .rowActions,
+.projectRow.menuOpen .rowActions {
+  display: inline-flex;
 }
 
-/*
- * Hover trades the timestamp for the action cluster, exactly as dsh does.
- * Leaving it up and painting the cluster over it does not work: the cluster is
- * only as wide as its buttons plus the fade, so a two-digit day count pokes out
- * between two glyphs instead of disappearing under the fill.
- */
+/* Same rule for the fill: dsh pins the row's hover surface while its dropdown
+ * is open. */
+.projectRow.menuOpen {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Hover trades the timestamp for the action cluster, exactly as dsh does: the
+ * cluster is wider than a two-digit day count, so the cell can only hold one
+ * of them. */
 .sessionRow:hover .sessionTime {
   display: none;
-}
-
-.sessionRowActive .rowActions {
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--dsw-alias-interactive-bg-hover) 20px
-  );
 }
 
 /*
