@@ -21,6 +21,7 @@ const ACTIVITY_GLYPHS: Record<ProcessActivity, GlyphName> = {
   search: "search",
   commands: "terminal",
   code: "code",
+  plan: "checklist",
   tools: "sparkle",
 };
 

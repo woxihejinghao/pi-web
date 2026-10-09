@@ -15,6 +15,9 @@ export type Variant = "bash" | "read" | "write" | "edit" | "search" | "code" | "
 /** pi tool name → variant. Anything absent falls back to `others`. */
 export const TOOL_VARIANTS: Record<string, Variant> = {
   bash: "bash",
+  // Same variant: `powershell` takes the same `command`/`description` shape, so
+  // the row reads as a command rather than falling through to "tool call".
+  powershell: "bash",
   read: "read",
   write: "write",
   edit: "edit",
@@ -215,22 +218,35 @@ export type ProcessActivity =
   | "search"
   | "commands"
   | "code"
+  | "plan"
   | "tools";
 
-/** Row variant → dsh's process-activity category, its `activity()` table. */
-const ACTIVITY_BY_VARIANT: Record<Variant, ProcessActivity> = {
-  bash: "commands",
+/**
+ * pi tool name → the activity a process group names it by.
+ *
+ * Deliberately NOT `classify`'s variant table. A row and a group answer two
+ * different questions — what this one call was, what the stretch is doing —
+ * and the two tables need not agree; dsh keeps a separate `activity()` for the
+ * same reason. Only real tool names are listed (pi's built-ins plus the `todo`
+ * extension this package ships); anything else reads as `tools`.
+ */
+const ACTIVITY_BY_TOOL: Record<string, ProcessActivity> = {
   read: "read",
   write: "write",
   edit: "edit",
-  search: "search",
-  code: "code",
-  others: "tools",
+  grep: "search",
+  find: "search",
+  glob: "search",
+  ls: "search",
+  bash: "commands",
+  powershell: "commands",
+  run_code: "code",
+  todo: "plan",
 };
 
 /** The activity category a tool name belongs to. */
 export function processActivityOf(toolName: string): ProcessActivity {
-  return ACTIVITY_BY_VARIANT[classify(toolName)];
+  return ACTIVITY_BY_TOOL[toolName] ?? "tools";
 }
 
 /**
@@ -246,6 +262,7 @@ const LIVE_TITLE_KEYS: Record<ProcessActivity, MessageKey> = {
   search: "message.stepProcess.search",
   commands: "message.stepProcess.commands",
   code: "message.stepProcess.code",
+  plan: "message.stepProcess.plan",
   tools: "message.stepProcess.tools",
 };
 
@@ -257,8 +274,30 @@ const DONE_TITLE_KEYS: Record<ProcessActivity, MessageKey> = {
   search: "message.stepProcess.done.search",
   commands: "message.stepProcess.done.commands",
   code: "message.stepProcess.done.code",
+  plan: "message.stepProcess.done.plan",
   tools: "message.stepProcess.done.tools",
 };
+
+/**
+ * A stretch whose live tool call has not started running yet: its arguments are
+ * still arriving. dsh distinguishes this from "running" for the same reason it
+ * matters here — while the call is only being written, "正在运行命令" is a lie.
+ */
+const PREPARE_TITLE_KEYS: Record<Exclude<ProcessActivity, "thinking">, MessageKey> = {
+  read: "message.stepProcess.prepare.read",
+  write: "message.stepProcess.prepare.write",
+  edit: "message.stepProcess.prepare.edit",
+  search: "message.stepProcess.prepare.search",
+  commands: "message.stepProcess.prepare.commands",
+  code: "message.stepProcess.prepare.code",
+  plan: "message.stepProcess.prepare.plan",
+  tools: "message.stepProcess.prepare.tools",
+};
+
+/** A stretch that is only reasoning is preparing no tool; dsh lends it `tools`. */
+function prepareTitleKey(activity: ProcessActivity): MessageKey {
+  return activity === "thinking" ? PREPARE_TITLE_KEYS.tools : PREPARE_TITLE_KEYS[activity];
+}
 
 /**
  * One ordered run of a turn's steps: either process (thinking + tool calls) or
@@ -317,6 +356,8 @@ export interface ProcessSegmentTitle {
   title: string;
   activity: ProcessActivity;
   running: boolean;
+  /** The live step is a tool call still writing its arguments; see `PREPARE_TITLE_KEYS`. */
+  preparing?: boolean;
 }
 
 /**
@@ -332,16 +373,22 @@ export function processSegmentTitle<
 >(steps: T[], t: Translate, open = false): ProcessSegmentTitle {
   const counts = new Map<ProcessActivity, number>();
   let running: ProcessActivity | undefined;
+  let preparing = false;
   for (const step of steps) {
     const active = step.live === true || step.running === true;
     if (step.block.type === "toolCall") {
       const activity = processActivityOf((step.block as { name?: string }).name ?? "");
       counts.set(activity, (counts.get(activity) ?? 0) + 1);
-      if (active) running = activity;
+      if (active) {
+        running = activity;
+        // Streaming but not yet executing: the arguments are still being written.
+        preparing = step.live === true && step.running !== true;
+      }
     } else if (active && step.block.type === "thinking") {
       // A reasoning tail with no tool call running is still work in progress; the
       // latest live step wins, so this overwrites an earlier tool's category.
       running = "thinking";
+      preparing = false;
     }
   }
   // The live label names the activity the stretch is on: the streaming (or
@@ -349,6 +396,9 @@ export function processSegmentTitle<
   // stretch with only settled work behind it is still on that work.
   const activity = running ?? [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "thinking";
   if (running !== undefined || open) {
+    if (preparing) {
+      return { title: t(prepareTitleKey(activity)), activity, running: true, preparing: true };
+    }
     return { title: t(LIVE_TITLE_KEYS[activity]), activity, running: true };
   }
   return { title: processTitle(counts, t), activity, running: false };

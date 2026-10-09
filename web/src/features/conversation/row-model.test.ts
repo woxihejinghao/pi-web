@@ -29,6 +29,8 @@ import {
 describe("classify", () => {
   it("maps pi tool names onto dsh's variants", () => {
     expect(classify("bash")).toBe("bash");
+    // Same row shape (`command` / `description`), so the same variant.
+    expect(classify("powershell")).toBe("bash");
     expect(classify("read")).toBe("read");
     expect(classify("write")).toBe("write");
     expect(classify("edit")).toBe("edit");
@@ -283,6 +285,13 @@ describe("processActivityOf", () => {
     expect(processActivityOf("write")).toBe("write");
     expect(processActivityOf("mystery")).toBe("tools");
   });
+
+  it("gives pi's own tools the category dsh gives its equivalents", () => {
+    // Both used to fall through to `tools` — "正在调用工具" for a shell command
+    // and for a plan update.
+    expect(processActivityOf("powershell")).toBe("commands");
+    expect(processActivityOf("todo")).toBe("plan");
+  });
 });
 
 describe("processTitle", () => {
@@ -316,10 +325,21 @@ describe("processSegmentTitle", () => {
     expect(processSegmentTitle([thinking()], zh).title).toBe("已完成分析");
   });
 
-  it("uses the live activity label while a run is still streaming", () => {
+  it("reads a streaming tool call as preparing, not running", () => {
+    // An uncommitted block is one whose arguments are still being written, so
+    // the tool has not started: dsh's `preparing`, and the one state where
+    // "正在运行命令" would claim work that is not happening yet.
     const heading = processSegmentTitle([{ ...call("bash"), live: true }], zh);
-    expect(heading.title).toBe("正在运行命令");
+    expect(heading.title).toBe("准备运行命令");
+    expect(heading.activity).toBe("commands");
     expect(heading.running).toBe(true);
+    expect(heading.preparing).toBe(true);
+  });
+
+  it("names a plan update by the plan category, in all three tenses", () => {
+    expect(processSegmentTitle([{ ...call("todo"), live: true }], zh).title).toBe("准备更新计划");
+    expect(processSegmentTitle([{ ...call("todo"), running: true }], zh).title).toBe("正在更新计划");
+    expect(processSegmentTitle([call("todo")], zh).title).toBe("更新了计划");
   });
 
   it("uses the live activity label while only reasoning is streaming", () => {
@@ -335,6 +355,8 @@ describe("processSegmentTitle", () => {
     const heading = processSegmentTitle([{ ...call("read"), running: true }], zh);
     expect(heading.title).toBe("正在读取文件");
     expect(heading.running).toBe(true);
+    // Already executing, so this is not the preparing state.
+    expect(heading.preparing).toBeUndefined();
   });
 
   it("stays live for an open stretch with nothing streaming", () => {
