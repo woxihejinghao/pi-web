@@ -174,6 +174,10 @@ The documents linked below are currently written in Chinese.
 
 Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) (in Chinese).
 
+## Friends
+
+- [Linux.Do](https://linux.do) — A new ideal community.
+
 ## License
 
 MIT, see [LICENSE](./LICENSE).

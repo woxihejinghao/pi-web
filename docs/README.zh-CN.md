@@ -171,6 +171,10 @@ pnpm dev:desktop # 用 Electron 壳跑当前仓库（先 pnpm build）
 
 欢迎贡献，见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
+## 友链
+
+- [Linux.Do](https://linux.do)——新的理想型社区。
+
 ## 许可证
 
 MIT，见 [LICENSE](../LICENSE)。
