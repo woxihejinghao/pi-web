@@ -246,13 +246,17 @@
  *
  * Rows are separated by 2px (`* + *`) exactly as dsh's list is, rather than by
  * a flex gap: a gap would also space anything else that ever lands here.
+ *
+ * A plain block scroller, not a flex column — dsh's `.list` is a block scroller
+ * too, and the difference is load-bearing. In a flex column every row shrinks
+ * by default (`flex-shrink: 1`) as soon as the list overflows, so the fixed
+ * 32px session rows silently flatten instead of the list scrolling; the rows
+ * then read shorter than dsh's even though every declared height matches.
  */
 .scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   margin-right: calc(-1 * var(--dsh-sidebar-inline-padding) + 2px);
   padding: 0 calc(var(--dsh-sidebar-inline-padding) - var(--dsh-scrollbar-width) - 2px) 16px 0;
   scrollbar-gutter: stable;
@@ -264,13 +268,15 @@
 
 /*
  * dsh's group rhythm: 2px between rows, 4px between workspace groups. A
- * workspace header opens a group, so it takes the extra step — the same 4px
- * total `.groupSection + .groupSection` produces upstream, reached here by
- * adding to the 2px above rather than by wrapping each group in an element.
- * `:not(:first-child)` keeps the first group's header off the top edge.
+ * workspace header opens a group, so it is the element that carries the group
+ * step — the same 4px `.groupSection + .groupSection` produces upstream. The
+ * value has to be the full 4px: it replaces the 2px from `* + *` above rather
+ * than adding to it, because two `margin-top` declarations on one element do
+ * not sum. `:not(:first-child)` keeps the first group's header off the top
+ * edge.
  */
 .scroll > [data-workspace-row]:not(:first-child) {
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 /* --- footer ------------------------------------------------------------- */
@@ -494,6 +500,10 @@
  * against the right edge whatever the title does. Leading padding is inline
  * (`8px + the workspace's depth indent`), the same value its workspace header
  * carries — upstream gives both one `--dsh-workspace-indent`.
+ *
+ * The label color is dsh's `label-primary`, not the secondary step: an idle
+ * session is still a row of the column, and upstream only dims archived ones
+ * (its `.archived` rule), which this shell does not render.
  */
 .sessionRow {
   display: flex;
@@ -506,16 +516,17 @@
   position: relative;
   cursor: pointer;
   user-select: none;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .sessionRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* dsh's `.selected`: the same surface as hover and nothing else — the row is
+ * not bolded, and its timestamp does not step up a color. */
 .sessionRowActive {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }
 
 /* dsh's cell: 4px after the status slot, 6px before the timestamp. */
@@ -550,22 +561,19 @@
   inset: 0;
 }
 
-/* dsh bolds the open conversation instead of only tinting the row. */
-.sessionRowActive .sessionTitle {
-  font-weight: 600;
-}
-
 /*
- * dsh's leading slot on a session row, holding the run-state mark. It only
- * exists while there is a mark to show — an idle session keeps the clean
- * left edge it had before — and it is not interactive, so the stretched title
- * target underneath still owns the row. Same 16×20 cell as the workspace row's.
+ * dsh's leading slot on a session row. It is always in the row — a session
+ * without a run-state mark still reserves the same 16×20 cell, which is what
+ * keeps every title in the column on one x — and only the mark inside it is
+ * conditional. It is not interactive, so the stretched title target
+ * underneath still owns the row. Same cell as the workspace row's glyph.
  */
 .sessionStatus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 16px;
+  flex: none;
+  width: 16px;
   height: 20px;
   pointer-events: none;
 }
@@ -585,10 +593,6 @@
   font-size: 10px;
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
-}
-
-.sessionRowActive .sessionTime {
-  color: var(--dsw-alias-label-secondary);
 }
 
 /*
@@ -665,6 +669,9 @@
  * row, and the text lightening one step is the whole affordance there too.
  */
 .revealMore {
+  /* The list is a block scroller now, so nothing stretches this button for us;
+     dsh states the full width on `.sessionOverflowButton` itself. */
+  width: 100%;
   height: 28px;
   padding: 0 12px;
   text-align: left;

@@ -57,21 +57,26 @@ export type AppearancePreference = "light" | "dark" | "system";
 export type LanguagePreference = "system" | "zh-CN" | "en";
 
 /**
- * How completed turns present their process content (thinking + tool calls).
- * Ported from dsh's `ui-chat` transcript-view setting, which offers four modes:
+ * How turns present their process content (thinking + tool calls). Ported from
+ * dsh's `ui-chat` transcript-view setting, which offers four modes; the two
+ * axes that separate them are dsh's `foldCompletedTurns` (on everywhere but
+ * `verbose`) and its `stepGrouping` (whether a *running* turn folds too):
  *
- * - `compact` folds a finished turn behind its completion header and hides a
- *   settled reasoning row's one-line summary (dsh's `settledReasoningPreview`).
- * - `standard` folds too, but keeps that summary.
- * - `detailed` is dsh's own default; here it presents the same as `standard`
- *   until this UI grows dsh's per-step grouping, which is the only thing that
- *   tells the two apart upstream.
- * - `verbose` is the only mode that does not fold a finished turn.
+ * - `compact` folds a finished turn and a running one, and hides a settled
+ *   reasoning row's one-line summary (dsh's `settledReasoningPreview`).
+ * - `standard` — dsh's desktop default — folds both and keeps that summary.
+ * - `detailed` folds a finished turn but leaves a running one in place.
+ * - `verbose` folds nothing.
  */
 export type TranscriptDisplay = "compact" | "standard" | "detailed" | "verbose";
 
-/** Saved modes from dsh's older generations; both read as `detailed`. */
-const LEGACY_TRANSCRIPT_VALUES: readonly string[] = ["normal", "expanded"];
+/** Saved modes from dsh's older generations; the two-mode `normal` was this
+ * project's 「标准」, so it maps onto dsh's `standard` (the desktop default),
+ * while `expanded` — dsh's old "show everything" — lands on `detailed`. */
+const LEGACY_TRANSCRIPT_VALUES: Readonly<Record<string, TranscriptDisplay>> = {
+  normal: "standard",
+  expanded: "detailed",
+};
 
 /**
  * What Enter does while the agent is running. `queue` waits for the run to
@@ -150,10 +155,10 @@ export function defaultSettings(): WebSettings {
     // before this setting existed; English is what other locales resolve to.
     language: "system",
     contentFontSize: FONT_SIZE_DEFAULT,
-    // dsh's own default. Only the *default* moves: a store that already names a
-    // mode keeps it, and the two-mode generation's saved `normal` is read as
-    // `detailed` below.
-    transcriptDisplay: "detailed",
+    // dsh's desktop default. Only the *default* moves: a store that already
+    // names a mode keeps it, and the two-mode generation's saved `normal` is
+    // read as `standard` below.
+    transcriptDisplay: "standard",
     // Queueing is the safe default: steering interrupts an in-flight run, so it
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
@@ -231,11 +236,9 @@ function normalizeSettings(raw: unknown): WebSettings {
     settings.language = raw.language as LanguagePreference;
   }
   if (typeof raw.transcriptDisplay === "string") {
-    // A mode saved by the two-mode generation is read as `detailed`, the same
-    // way dsh reads its own `normal` / `expanded` legacy values.
-    const value = LEGACY_TRANSCRIPT_VALUES.includes(raw.transcriptDisplay)
-      ? "detailed"
-      : raw.transcriptDisplay;
+    // A mode saved by the two-mode generation maps onto its current name, the
+    // same way dsh rewrites its own legacy values on read.
+    const value = LEGACY_TRANSCRIPT_VALUES[raw.transcriptDisplay] ?? raw.transcriptDisplay;
     if ((TRANSCRIPT_VALUES as readonly string[]).includes(value)) {
       settings.transcriptDisplay = value as TranscriptDisplay;
     }

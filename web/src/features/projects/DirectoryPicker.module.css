@@ -10,6 +10,7 @@
 }
 
 .dialog {
+  position: relative;
   width: min(560px, 100%);
   max-height: min(640px, 84vh);
   display: flex;
@@ -67,6 +68,38 @@
 .location:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+/* The drop face. A hairline ring sits inside the dialog's own edge so the card
+ * does not change size on hover, and the veil under it is what dims the list
+ * the drop is about to replace. Neither takes pointer events: the drop has to
+ * land on the dialog itself, or `onDrop` never fires. */
+.dialogDropping {
+  outline: 1px dashed var(--dsw-alias-border-l4);
+  outline-offset: -6px;
+}
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--dsw-alias-bg-mask-1);
+  pointer-events: none;
+}
+
+.dropHint {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  box-shadow: var(--dsw-elevation-soft);
 }
 
 .addressRow {

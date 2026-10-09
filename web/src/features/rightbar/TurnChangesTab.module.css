@@ -1,0 +1,197 @@
+/*
+ * The review tab: a file selector, the tool that opens the whole file, and the
+ * comparison below. Geometry follows dsh's `ReviewTab.module.css` /
+ * `FileDiff.module.css` header — 38px bar, 28px controls, `radius-sm` — drawn
+ * with this project's alias tokens. The diff rows themselves come from
+ * `ChangesTab.module.css`, through `DiffHunk.tsx`.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  color: var(--dsw-alias-label-primary);
+}
+
+.header {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0 6px 0 8px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+/* The fallback title, drawn when there is no file to name the tab after. */
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selector {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.selectorButton {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.selectorButton:hover,
+.selectorButton[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.selectorButton svg {
+  display: block;
+  flex: none;
+}
+
+.selectorPath {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The file list hangs off the selector rather than out of the pane: the panel
+ * below scrolls, and a menu inside it would scroll away with the diff. */
+.menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 100%;
+  max-width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+}
+
+.menuItem {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: left;
+}
+
+.menuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.menuPath {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counts {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.added {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.deleted {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.tool {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.tool svg {
+  width: 15px;
+  height: 15px;
+}
+
+.tool:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Same face as the changes panel's patch list: the rows below are that list's
+ * rows, so the two panels must not disagree about line height or family. */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0 16px;
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.note {
+  margin: 0;
+  padding: 4px 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family);
+  font-size: 13px;
+  line-height: 20px;
+}

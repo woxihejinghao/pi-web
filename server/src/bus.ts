@@ -9,7 +9,18 @@ export type BusEvent =
   | { type: "session_event"; sessionPath: string; event: JsonAgentSessionEvent }
   | { type: "session_closed"; sessionPath: string; reason: string }
   | { type: "session_external_changed"; sessionPath: string; modifiedAt: string }
-  | { type: "workspace_changed"; projectPath: string }
+  | {
+      type: "workspace_changed";
+      projectPath: string;
+      /**
+       * Workspace-relative (`/`-separated) paths that moved, or `null` when the
+       * watcher saw a change it cannot name — a directory-level FSEvents report,
+       * or more paths in one debounce window than it is willing to list.
+       * Consumers compare these against their own workspace-relative targets;
+       * `null` means "treat it as yours".
+       */
+      paths: string[] | null;
+    }
   | { type: "projects_changed" }
   | { type: "sessions_changed"; projectPath: string }
   | { type: "terminal_output"; terminalId: string; sessionPath: string; data: string }

@@ -90,6 +90,34 @@
   white-space: nowrap;
 }
 
+/* dsh animates a running group's title with `TextShimmer`: a light band sweeps
+   across the words while the stretch is still arriving. It is the only motion a
+   folded stub has, so it is what says "still working" without opening the
+   group. Rendered as a gradient behind clipped text, dsh's own technique for the
+   running status, so it costs no layout. */
+.root[data-running] .label {
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    currentColor 40%,
+    var(--dsw-static-neutral-00) 50%,
+    currentColor 60%,
+    currentColor 100%
+  );
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: dsh-step-label-shimmer 1.8s linear infinite;
+}
+
+@keyframes dsh-step-label-shimmer {
+  to {
+    background-position: 0 0;
+  }
+}
+
 /* The rows inside a group keep the transcript's own 16px flow gap, so opening a
    stretch reads as unfolding those rows rather than switching to a denser list. */
 .body {
@@ -104,5 +132,12 @@
   .activityIcon,
   .chevron {
     transition: none;
+  }
+
+  /* Without the sweep the gradient would leave the text unfilled. */
+  .root[data-running] .label {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
   }
 }

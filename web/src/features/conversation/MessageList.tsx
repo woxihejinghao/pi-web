@@ -23,6 +23,7 @@ import { ToolCallRow } from "./ToolCallRow.tsx";
 import { TurnProcessGroup } from "./TurnProcessGroup.tsx";
 import { ChangedFilesCard } from "./ChangedFilesCard.tsx";
 import { turnFiles, type TurnFile } from "./turn-files.ts";
+import { turnChangesList, type TurnChanges } from "../rightbar/turn-changes-store.ts";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { TurnFailure } from "./TurnFailure.tsx";
 import { TurnStatus } from "./TurnStatus.tsx";
@@ -137,6 +138,13 @@ interface TurnStep {
    */
   live?: boolean;
   /**
+   * The step's tool call is still executing. A committed block carries no
+   * `live` flag, so this is what keeps a running turn's group header live even
+   * when nothing is streaming at that instant — the tool itself is the work in
+   * progress.
+   */
+  running?: boolean;
+  /**
    * The last block of the message being streamed — the only one whose own
    * rendering depends on the stream still being open (the reasoning row tracks
    * its last line while running and its first line once settled).
@@ -203,10 +211,17 @@ function TurnBody({
   // the one whose status is open, which is exactly what `streaming` reports.
   const grouped = stepGrouping === "collapsed" || (stepGrouping === "history" && !streaming);
 
+  const segments = splitIntoProcessSegments(steps);
+
   const renderProcess = (segmentSteps: TurnStep[], index: number) => {
     const rows = segmentSteps.map((step) => renderStep(step));
     if (!grouped) return rows;
-    const heading = processSegmentTitle(segmentSteps, t);
+    // dsh closes a stretch only at a reply or the end of the turn, so the last
+    // stretch of a running turn stays live even after its tool has finished:
+    // its header keeps naming the work in the present tense ("正在读取文件")
+    // rather than reporting it as finished while the turn is still in it.
+    const open = streaming && index === segments.length - 1;
+    const heading = processSegmentTitle(segmentSteps, t, open);
     return (
       <StepProcessGroup
         key={`group-${String(index)}`}
@@ -218,8 +233,6 @@ function TurnBody({
       </StepProcessGroup>
     );
   };
-
-  const segments = splitIntoProcessSegments(steps);
 
   if (!compact) {
     return (
@@ -475,7 +488,8 @@ export function MessageList({
   home,
   transcriptView = "detailed",
   onFork,
-  onOpenFile,
+  onOpenChanges,
+  onTurnChanges,
   onRetry,
 }: {
   view: ConversationView;
@@ -484,10 +498,17 @@ export function MessageList({
   /** Fork the session at a user message. Absent means the action is not shown. */
   onFork?: (entryId: string) => void;
   /**
-   * Preview a project-relative path in the right sidebar. Absent means a turn's
-   * changed-files card lists its rows without making them clickable.
+   * Review a turn's changes in the right sidebar, opening on one file. Absent
+   * means a turn's changed-files card lists its rows without making them
+   * clickable.
    */
-  onOpenFile?: (path: string) => void;
+  onOpenChanges?: (turn: number, index: number) => void;
+  /**
+   * Publish every turn's changed files for the sidebar's review tab to read.
+   * Absent means the review tab has nothing to draw — its data lives nowhere
+   * else, because this project keeps no workspace snapshot to ask a server for.
+   */
+  onTurnChanges?: (changes: readonly TurnChanges[]) => void;
   /**
    * Send a failed turn's prompt again, with the pictures it carried. Absent
    * means the failure row reports without offering the action.
@@ -528,6 +549,25 @@ export function MessageList({
   const [bandHeight, setBandHeight] = useState<number | null>(null);
   const frameRef = useRef<number | null>(null);
 
+  /**
+   * Every tool result in the stream, keyed by the call it answers.
+   *
+   * The whole result, not just its content: the todo row reads `details` (its
+   * snapshot), the generic row reads `content`, and a turn's changed-files card
+   * reads `details.patch` for the line counts it prints and the comparison it
+   * previews. Declared above `turnFilesByTurn` because that is its first reader.
+   */
+  const results = useMemo(() => {
+    const map: Record<string, ToolResultMessage> = {};
+    for (const message of view.messages) {
+      if (message.role === "toolResult") {
+        const toolResult = message as ToolResultMessage;
+        map[toolResult.toolCallId] = toolResult;
+      }
+    }
+    return map;
+  }, [view.messages]);
+
   const railItems = useMemo(
     // A steer or follow-up the composer has shown but pi has not picked up yet
     // does not open a turn, so the turn being produced stays the last one — and
@@ -539,17 +579,32 @@ export function MessageList({
    * Each turn's written files, keyed by turn number.
    *
    * Derived from the same message list the turns were cut from, so a turn's card
-   * cannot describe a different set of messages than the rows above it. Turns
+   * cannot describe a different set of messages than the rows above it — and from
+   * the same results map the tool rows read, so the counts a card prints come from
+   * pi's own patches rather than from a second guess at what the calls did. Turns
    * that wrote nothing are left out rather than mapped to an empty list.
    */
   const turnFilesByTurn = useMemo(() => {
     const map = new Map<number, TurnFile[]>();
     for (const group of railItems) {
-      const files = turnFiles(group.messages, t, { cwd, home });
+      const files = turnFiles(group.messages, { cwd, home }, results);
       if (files.length > 0) map.set(group.turn, files);
     }
     return map;
-  }, [railItems, cwd, home, t]);
+  }, [railItems, cwd, home, results]);
+  /**
+   * Hand the sidebar what it cannot compute.
+   *
+   * A review tab is addressed by session and turn, and the turns live here — the
+   * conversation pane is the only component holding the message list. Publishing
+   * from the projection that was just built (rather than rescanning for the
+   * sidebar) is what keeps the card and the tab showing the same numbers.
+   */
+  useEffect(() => {
+    if (onTurnChanges === undefined) return;
+    onTurnChanges(turnChangesList(turnFilesByTurn));
+  }, [turnFilesByTurn, onTurnChanges]);
+
   const turnMeta = useMemo(
     () => turnMetadata(railItems, view.forkPoints),
     [railItems, view.forkPoints],
@@ -760,19 +815,6 @@ export function MessageList({
     setActiveTurn(turn);
   }, [applyPinned]);
 
-  const results = useMemo(() => {
-    // The whole tool result, not just its content: the todo row reads `details`
-    // (its snapshot) and the generic row reads `content`.
-    const map: Record<string, ToolResultMessage> = {};
-    for (const message of view.messages) {
-      if (message.role === "toolResult") {
-        const toolResult = message as ToolResultMessage;
-        map[toolResult.toolCallId] = toolResult;
-      }
-    }
-    return map;
-  }, [view.messages]);
-
   const partial = view.partial;
   const hasPartial = partial !== null && partial.length > 0;
   const lastTurn = railItems.at(-1)?.turn ?? null;
@@ -824,7 +866,14 @@ export function MessageList({
             if (message.role === "user") return;
             const content = (message as AssistantMessage).content ?? [];
             content.forEach((block, blockIndex) => {
-              steps.push({ block, messageIndex, blockIndex });
+              // A committed tool call carries no `live` flag, so a turn whose
+              // current work is a tool — nothing streaming right now — would
+              // otherwise read as settled. The execution's own running state is
+              // what keeps the group's header live.
+              const running =
+                block.type === "toolCall" &&
+                view.toolExecutions[(block as ToolCallBlock).id]?.running === true;
+              steps.push({ block, messageIndex, blockIndex, ...(running ? { running: true } : {}) });
             });
           });
 
@@ -938,7 +987,8 @@ export function MessageList({
               {group.turn !== liveTurn && turnFilesByTurn.has(group.turn) ? (
                 <ChangedFilesCard
                   files={turnFilesByTurn.get(group.turn) ?? []}
-                  {...(onOpenFile === undefined ? {} : { onOpenFile })}
+                  turn={group.turn}
+                  {...(onOpenChanges === undefined ? {} : { onOpenChanges })}
                 />
               ) : null}
               {group.messages.some((message) => message.role === "assistant") ? (

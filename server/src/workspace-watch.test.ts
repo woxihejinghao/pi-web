@@ -65,7 +65,33 @@ describe("WorkspaceWatcher", () => {
       { timeout: 5000 },
     );
     const changed = events.find((event) => event.type === "workspace_changed");
-    expect(changed && "projectPath" in changed ? changed.projectPath : "").toBe(projectPath);
+    if (changed?.type !== "workspace_changed") throw new Error("no workspace_changed event");
+    expect(changed.projectPath).toBe(projectPath);
+    // The path is the part a Preview tab compares against its own target: the
+    // event has to name the file, not just the project it moved in.
+    expect(changed.paths).toContain("src/deep/file.ts");
+  });
+
+  it("names every path one debounce window caught", async () => {
+    const projectPath = join(projectRoot, "burst");
+    await mkdir(projectPath, { recursive: true });
+    await addProject(projectPath);
+
+    watcher = new WorkspaceWatcher({ bus });
+    await watcher.start();
+    const events = await collectEvents();
+
+    await writeFile(join(projectPath, "one.ts"), "1", "utf8");
+    await writeFile(join(projectPath, "two.ts"), "2", "utf8");
+
+    await vi.waitFor(
+      () => {
+        const named = events.filter((event) => event.type === "workspace_changed");
+        expect(named.length).toBeGreaterThan(0);
+        expect(named.at(-1)?.paths).toEqual(expect.arrayContaining(["one.ts", "two.ts"]));
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("ignores dependency churn", async () => {

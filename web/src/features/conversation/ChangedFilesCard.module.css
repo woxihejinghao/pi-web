@@ -1,10 +1,17 @@
 /*
  * The changed-files card at a turn's tail: a filled header, code-font rows that
- * open the file, and a bottom fold. Geometry and type sizes are dsh's
+ * carry line counts, and a bottom fold. Geometry and type sizes are dsh's
  * `ChangedFiles.module.css`; the colors are this project's alias tokens, which
  * already flip with the appearance setting (upstream keyed its two fills off a
  * static neutral and needed a dark override to say the same thing).
  */
+
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
 
 .card {
   display: flex;
@@ -12,20 +19,27 @@
   min-width: 0;
   margin-top: 4px;
   overflow: hidden;
-  border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
+}
+
+/* A one-file card is a single row of information; the lighter border says so. */
+.root[data-single="true"] .card {
+  border-color: var(--dsw-alias-border-l1);
 }
 
 .header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  min-height: 60px;
   margin: 0;
-  padding: 12px 16px;
+  padding: 8px 10px;
   border: 0;
   background: var(--dsw-alias-bg-layer-2);
   color: inherit;
@@ -52,46 +66,73 @@ button.header:focus-visible {
   display: grid;
   flex: none;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
-  background: var(--dsw-alias-link);
-  color: var(--dsw-static-neutral-00);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .titles {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
 .title {
   overflow: hidden;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 22px;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .stat {
   display: inline-flex;
-  gap: 6px;
-  overflow: hidden;
-  font-family: var(--ds-font-family-code);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 10px;
+  line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.statCounts,
+.counts {
+  display: inline-flex;
+  gap: 6px;
+  font-family: var(--ds-font-family-code);
+}
+
+/* dsh swaps the counts for the preview hint while the header is under the
+ * pointer: the same row says what a click will do. */
+.previewHint {
+  display: none;
+}
+
+button.header:hover .statCounts,
+button.header:focus-visible .statCounts {
+  display: none;
+}
+
+button.header:hover .previewHint,
+button.header:focus-visible .previewHint {
+  display: inline;
+}
+
+.added {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.deleted {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .list {
   margin: 0;
-  padding: 4px 0;
-  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  padding: 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   list-style: none;
 }
 
@@ -99,17 +140,18 @@ button.header:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  min-height: 24px;
   margin: 0;
-  padding: 6px 16px;
+  padding: 7px 18px 7px 14px;
   border: 0;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 18px;
   text-align: left;
 }
@@ -131,11 +173,13 @@ button.row:focus-visible {
 .path {
   min-width: 0;
   overflow: hidden;
+  font-family: var(--dsw-font-family);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tools {
+.counts {
   flex: none;
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
@@ -148,9 +192,8 @@ button.row:focus-visible {
   box-sizing: border-box;
   width: 100%;
   margin: 0;
-  padding: 8px 16px;
+  padding: 10px 18px 10px 14px;
   border: 0;
-  border-top: 0.5px solid var(--dsw-alias-border-l1);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -175,6 +218,89 @@ button.row:focus-visible {
 
 .toggle[aria-expanded="true"] svg {
   transform: rotate(-90deg);
+}
+
+/*
+ * The hover comparison: the card's own width, opening over the turns above it —
+ * or under the card when the transcript has not left room above (see
+ * `PREVIEW_ROOM_PX`). It lives beside the card rather than inside it because the
+ * card clips its own corners, and a floating panel that the card cropped would
+ * be a panel the reader cannot read.
+ */
+.preview {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+}
+
+.root[data-place="above"] .preview {
+  bottom: calc(100% - 4px);
+}
+
+.root[data-place="below"] .preview {
+  top: calc(100% + 4px);
+}
+
+.previewPath {
+  flex: none;
+  overflow: hidden;
+  padding: 8px 12px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewBody {
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px 0;
+  font-family: var(--ds-font-family-code);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.previewNote {
+  padding: 6px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11.5px;
+}
+
+.line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 12px;
+  white-space: pre;
+}
+
+.lineAdd {
+  background: var(--dsw-alias-state-success-tertiary);
+}
+
+.lineDel {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.marker {
+  flex: none;
+  width: 8px;
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.lineText {
+  min-width: 0;
 }
 
 @media (pointer: coarse) {

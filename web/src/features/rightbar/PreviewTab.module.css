@@ -2,6 +2,39 @@
   padding: 0 0 16px;
 }
 
+/* "The file changed under you", shown above the body rather than inside it:
+ * the content below is still the old one, and the bar is what says so. dsh
+ * draws the same row with the same tokens (secondary label on layer-2, a
+ * hairline under it). */
+.changed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.changedAction {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.changedAction:hover {
+  background: var(--dsw-alias-bg-layer-3);
+}
+
 /* Markdown and plain text get the pane's inset; images and code do not (see
  * their own rules), because a picture and a scrollport both read better when
  * they reach the pane's edges. */

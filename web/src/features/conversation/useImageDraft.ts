@@ -7,6 +7,8 @@ import {
   type RefObject,
 } from "react";
 import type { ImageBlock } from "../../lib/types.ts";
+import { pathForFile } from "../../lib/desktop.ts";
+import { droppedFolder } from "../projects/drop-path.ts";
 import {
   addImages,
   imageFilesFrom,
@@ -41,6 +43,24 @@ export interface ImageDraft {
 }
 
 /**
+ * What a drop of a folder needs from whoever owns the draft text.
+ *
+ * A folder is not an attachment: it becomes a reference *in the sentence* (see
+ * `reference-token.ts`), which is text no hook under here can write. So the
+ * intake hands the path up and lets the card decide.
+ */
+export interface FolderDropHandlers {
+  /**
+   * A dropped folder the shell could name, as an absolute path. Return false to
+   * refuse it — the caller then reports it the same way it reports an unnamed
+   * one, so a card that cannot take folders at all has one branch, not two.
+   */
+  onDroppedFolder?(path: string): boolean;
+  /** A dropped folder no API could name: a plain browser has no paths to give. */
+  onUnnamedFolder?(): void;
+}
+
+/**
  * The attachments half of a message input.
  *
  * There are two of them in the app — the conversation's Composer and the new
@@ -49,13 +69,19 @@ export interface ImageDraft {
  * component so "identical" does not depend on anyone keeping two copies in
  * step.
  *
+ * One of those ways in is not an attachment at all: a dropped *folder* is a
+ * reference in the sentence, so this hook only recognises it and hands the path
+ * to the card (`FolderDropHandlers`). It has to recognise it here anyway — a
+ * folder left to the browser opens the directory and leaves the page.
+ *
  * Reading is asynchronous (one `FileReader` per image) while remove, send and
  * clear are synchronous, so the list is mirrored in a ref and `apply` is the
  * only writer: a closure over `images` would hand the wrong list to whichever
  * of those ran while a read was in flight.
  */
-export function useImageDraft(): ImageDraft {
+export function useImageDraft(handlers: FolderDropHandlers = {}): ImageDraft {
   const t = useT();
+  const { onDroppedFolder, onUnnamedFolder } = handlers;
   const [images, setImages] = useState<ImageBlock[]>([]);
   const imagesRef = useRef<ImageBlock[]>([]);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -140,13 +166,29 @@ export function useImageDraft(): ImageDraft {
   const onDrop = useCallback(
     (event: DragEvent<HTMLElement>): void => {
       setDragging(false);
-      const files = imageFilesFrom(event.dataTransfer);
+      const data = event.dataTransfer;
+      const folder = droppedFolder(data);
+      if (folder) {
+        // A folder is handled here or not at all: letting the browser have it
+        // would open the directory and leave the page behind the draft.
+        event.preventDefault();
+        const file = data.files[folder.index];
+        const path = file ? pathForFile(file) : null;
+        if (path === null || onDroppedFolder?.(path) !== true) onUnnamedFolder?.();
+        return;
+      }
+      // Everything else the drop carried goes to the attachments, not just the
+      // images: a PDF or a folder this browser could not name is refused there
+      // with a reason instead of being handed to the browser, which would
+      // navigate away and take the draft with it.
+      const dropped = Array.from(data.files);
+      const files = dropped.length > 0 ? dropped : imageFilesFrom(data);
       if (files.length === 0) return;
       // Without this the browser opens the dropped file and leaves the page.
       event.preventDefault();
       void attach(files);
     },
-    [attach],
+    [attach, onDroppedFolder, onUnnamedFolder],
   );
 
   const openPicker = useCallback((): void => {

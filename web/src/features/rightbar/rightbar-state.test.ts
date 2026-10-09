@@ -304,6 +304,44 @@ describe("tabs", () => {
   });
 });
 
+describe("review tabs", () => {
+  it("addresses a review by its turn and the file it opens on", () => {
+    rightbarActions.openTurnChangesTab(KEY, 3, 1);
+    const tab = tabsOf(pane())[0];
+    expect(tab?.kind).toBe("changes-review");
+    expect(tab?.target).toBe("3#1");
+    // The strip asks the table for the name, with the turn filled in: a stored
+    // title would come back in the language it was written in.
+    expect(tab === undefined ? "" : tabTitle(tab, zh)).toBe("第 3 轮改动");
+    expect(surface().open).toBe(true);
+  });
+
+  it("opens one tab per turn, and moves it to the asked file", () => {
+    rightbarActions.openTurnChangesTab(KEY, 2, 0);
+    const first = ids()[0]!;
+    rightbarActions.openTurnChangesTab(KEY, 2, 3);
+    expect(ids()).toEqual([first]);
+    expect(tabsOf(pane())[0]?.target).toBe("2#3");
+
+    rightbarActions.openTurnChangesTab(KEY, 4, 0);
+    expect(ids()).toHaveLength(2);
+  });
+
+  it("drops a saved review whose address no longer parses", () => {
+    const store = installStorage();
+    rightbarActions.openTurnChangesTab(KEY, 1, 0);
+    const saved = JSON.parse(store.get(V2 + KEY) ?? "{}") as {
+      tabs?: Record<string, { kind?: string; target?: string }>;
+    };
+    for (const tab of Object.values(saved.tabs ?? {})) tab.target = "nonsense";
+    store.set(V2 + KEY, JSON.stringify(saved));
+
+    resetRightbarState();
+    rightbarActions.ensureSurface(KEY);
+    expect(Object.keys(surface().tabs)).toHaveLength(0);
+  });
+});
+
 describe("browser history", () => {
   it("records a navigation and steps through it", () => {
     rightbarActions.openBrowserTab(KEY, "http://localhost:5173/");
@@ -698,13 +736,14 @@ describe("width", () => {
 
 describe("canRenameTab", () => {
   it("is true only for the kinds whose name lives on the tab itself", () => {
-    // These two are the ones `tabTitle` reads a stored title from; the other
-    // three take their wording from the message table, so a rename on them
-    // would be stored and never drawn.
+    // These two are the ones `tabTitle` reads a stored title from; the rest take
+    // their wording from the message table, so a rename on them would be stored
+    // and never drawn.
     expect(canRenameTab("preview")).toBe(true);
     expect(canRenameTab("terminal")).toBe(true);
     expect(canRenameTab("files")).toBe(false);
     expect(canRenameTab("changes")).toBe(false);
+    expect(canRenameTab("changes-review")).toBe(false);
     expect(canRenameTab("browser")).toBe(false);
   });
 });

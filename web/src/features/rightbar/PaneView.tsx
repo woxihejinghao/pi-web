@@ -35,7 +35,7 @@ export function TabIcon({ kind }: { kind: RightbarTabKind }) {
   if (kind === "files") return <Glyph name="checklist" size={13} />;
   if (kind === "browser") return <Glyph name="browse" size={13} />;
   if (kind === "terminal") return <Glyph name="terminal" size={13} />;
-  if (kind === "changes") return <DiffIcon width={13} height={13} />;
+  if (kind === "changes" || kind === "changes-review") return <DiffIcon width={13} height={13} />;
   return <FileIcon width={13} height={13} />;
 }
 

@@ -64,12 +64,12 @@ describe("MessageList changed files", () => {
         view={view([asked("改一下"), answered([text("改好了"), wrote(`${CWD}/src/app.ts`)])])}
         cwd={CWD}
         home="/Users/dev"
-        onOpenFile={noop}
+        onOpenChanges={noop}
       />,
     );
 
-    expect(html).toContain("已编辑 1 个文件");
-    expect(html).toContain("在右侧栏预览 src/app.ts");
+    expect(html).toContain("已编辑 app.ts");
+    expect(html).toContain("在右侧栏查看 src/app.ts 的改动");
   });
 
   it("keeps each turn's files with its own turn", () => {
@@ -83,14 +83,16 @@ describe("MessageList changed files", () => {
         ])}
         cwd={CWD}
         home="/Users/dev"
-        onOpenFile={noop}
+        onOpenChanges={noop}
       />,
     );
 
-    expect(html.match(/已编辑 1 个文件/g)).toHaveLength(2);
-    expect(html).toContain("在右侧栏预览 a.ts");
-    expect(html).toContain("在右侧栏预览 b.ts");
+    expect(html.match(/已编辑 a.ts/g)).toHaveLength(1);
+    expect(html.match(/已编辑 b.ts/g)).toHaveLength(1);
+    expect(html).toContain("在右侧栏查看 a.ts 的改动");
+    expect(html).toContain("在右侧栏查看 b.ts 的改动");
     // Two cards, one per turn — not one card carrying both files.
+    expect(html.match(/data-turn-files/g)).toHaveLength(2);
     expect(html).not.toContain("已编辑 2 个文件");
   });
 
@@ -100,7 +102,7 @@ describe("MessageList changed files", () => {
         view={view([asked("解释一下"), answered([text("这是解释")])])}
         cwd={CWD}
         home="/Users/dev"
-        onOpenFile={noop}
+        onOpenChanges={noop}
       />,
     );
 
@@ -116,8 +118,8 @@ describe("MessageList changed files", () => {
       />,
     );
 
-    expect(html).toContain("已编辑 1 个文件");
-    expect(html).not.toContain("在右侧栏预览 a.ts");
+    expect(html).toContain("已编辑 a.ts");
+    expect(html).not.toContain("在右侧栏查看 a.ts 的改动");
   });
 
   it("holds the card back until the turn that wrote the files has ended", () => {
@@ -127,7 +129,7 @@ describe("MessageList changed files", () => {
         view={view(messages, { isStreaming: true })}
         cwd={CWD}
         home="/Users/dev"
-        onOpenFile={noop}
+        onOpenChanges={noop}
       />
     );
 
@@ -136,10 +138,10 @@ describe("MessageList changed files", () => {
     expect(renderToStaticMarkup(streaming)).not.toContain("data-turn-files");
 
     const settled = renderToStaticMarkup(
-      <MessageList view={view(messages)} cwd={CWD} home="/Users/dev" onOpenFile={noop} />,
+      <MessageList view={view(messages)} cwd={CWD} home="/Users/dev" onOpenChanges={noop} />,
     );
-    expect(settled).toContain("已编辑 1 个文件");
-    expect(settled).toContain("在右侧栏预览 src/app.ts");
+    expect(settled).toContain("已编辑 app.ts");
+    expect(settled).toContain("在右侧栏查看 src/app.ts 的改动");
   });
 
   it("keeps finished turns' cards while a later turn streams", () => {
@@ -156,14 +158,14 @@ describe("MessageList changed files", () => {
         )}
         cwd={CWD}
         home="/Users/dev"
-        onOpenFile={noop}
+        onOpenChanges={noop}
       />,
     );
 
     expect(html.match(/data-turn-files/g)).toHaveLength(1);
-    expect(html).toContain("已编辑 1 个文件");
-    expect(html).toContain("在右侧栏预览 a.ts");
-    expect(html).not.toContain("在右侧栏预览 b.ts");
+    expect(html).toContain("已编辑 a.ts");
+    expect(html).toContain("在右侧栏查看 a.ts 的改动");
+    expect(html).not.toContain("在右侧栏查看 b.ts 的改动");
   });
 
   it("holds the running turn's card while a prompt is queued behind it", () => {
@@ -177,7 +179,7 @@ describe("MessageList changed files", () => {
           view={view(messages, { isStreaming: true, ...patch })}
           cwd={CWD}
           home="/Users/dev"
-          onOpenFile={noop}
+          onOpenChanges={noop}
         />,
       );
 
@@ -188,8 +190,8 @@ describe("MessageList changed files", () => {
     // Once pi takes the prompt up, that turn is the live one and turn 1's card
     // lands, files and all. (Same transcript, one turn later.)
     const delivered = drawn({ undeliveredPrompts: 0 });
-    expect(delivered).toContain("已编辑 1 个文件");
-    expect(delivered).toContain("在右侧栏预览 a.ts");
+    expect(delivered).toContain("已编辑 a.ts");
+    expect(delivered).toContain("在右侧栏查看 a.ts 的改动");
   });
 
   it("shows a queued prompt inside the running turn, not as a turn of its own", () => {
@@ -203,7 +205,7 @@ describe("MessageList changed files", () => {
         )}
         cwd={CWD}
         home="/Users/dev"
-        onOpenFile={noop}
+        onOpenChanges={noop}
       />,
     );
 
@@ -375,16 +377,41 @@ describe("MessageList streaming message", () => {
       />,
     );
 
-    // `stepGrouping: 'collapsed'` folds every stretch, live or not, so the
-    // committed reasoning disappears behind its group header while the streamed
-    // row — an answer, never a group — stays visible.
-    expect(html).toContain("已完成分析");
+    // `stepGrouping: 'collapsed'` folds every stretch, live or not: the group's
+    // live header is the only sign of what is happening, so both the committed
+    // reasoning and the streamed tail disappear behind it.
+    expect(html).toContain("正在分析请求");
     expect(html).not.toContain("已经想完的");
-    expect(html).toContain("正在想的");
+    expect(html).not.toContain("正在想的");
+  });
+
+  it("keeps a running turn's finished stretch live until the turn ends", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view(
+          [asked("跑一下"), answered([{ type: "toolCall", id: "c1", name: "bash", arguments: { command: "ls" } }])],
+          {
+            isStreaming: true,
+            toolExecutions: {
+              c1: { toolName: "bash", output: "a\n", result: null, isError: false, running: false },
+            },
+          },
+        )}
+        cwd={CWD}
+        home="/Users/dev"
+        transcriptView="standard"
+      />,
+    );
+
+    // The tool has finished, but the turn has not: dsh closes a stretch only at
+    // a reply or the turn's end, so the header keeps the present-tense activity
+    // instead of reporting "执行了命令" for work still in progress.
+    expect(html).toContain("正在运行命令");
+    expect(html).not.toContain("执行了命令");
   });
 
   it("drops a settled reasoning row's summary under the compact policy", () => {
-    const transcript = (transcriptView: "compact" | "detailed") =>
+    const transcript = (transcriptView: "compact" | "verbose") =>
       renderToStaticMarkup(
         <MessageList
           view={view([asked("想想"), answered([thought("已经想完的")])], {
@@ -397,12 +424,12 @@ describe("MessageList streaming message", () => {
         />,
       );
 
-    // dsh's `settledReasoningPreview`: the compact mode leaves the text one
-    // click away, while every other mode keeps it and the streaming row keeps
-    // its line regardless — that line is the only sign of what the model is
-    // doing, so no policy may take it away.
-    expect(transcript("compact").match(/data-preview/g)).toHaveLength(1);
-    expect(transcript("detailed").match(/data-preview/g)).toHaveLength(2);
+    // A settled row's summary is dsh's `settledReasoningPreview`. It is only
+    // observable where rows are not folded, so this pairs `verbose` (nothing
+    // folds: both the settled and the streaming row carry their line) with
+    // `compact` (a live turn folds, hiding the rows — and the policy — entirely).
+    expect(transcript("verbose").match(/data-preview/g)).toHaveLength(2);
+    expect(transcript("compact")).not.toContain("data-preview");
   });
 
   it("still renders a streamed message with no turn to attach to", () => {

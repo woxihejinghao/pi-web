@@ -113,3 +113,23 @@ export const ForwardIcon = (props: SVGProps<SVGSVGElement>) => (
     <path d="M6 3.5 10.5 8 6 12.5" />
   </svg>
 );
+
+/**
+ * The auto-refresh control's two states.
+ *
+ * dsh's preview draws the *next* mode on the button rather than the current one
+ * — a pause glyph while following, a play glyph once stopped — so the icon is a
+ * statement about what a click does, and the pressed state is left to
+ * `aria-pressed` and the tooltip.
+ */
+export const PauseIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base(props)}>
+    <path d="M6.4 4v8M9.6 4v8" />
+  </svg>
+);
+
+export const PlayIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...base(props)}>
+    <path d="M6 4.4 11 8l-5 3.6z" strokeLinejoin="round" />
+  </svg>
+);

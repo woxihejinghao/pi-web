@@ -4,6 +4,7 @@ import { BrowserTab } from "./BrowserTab.tsx";
 import { ChangesTab } from "./ChangesTab.tsx";
 import { FilesTab } from "./FilesTab.tsx";
 import { PreviewTab } from "./PreviewTab.tsx";
+import { TurnChangesTab } from "./TurnChangesTab.tsx";
 import type { RightbarTab } from "./rightbar-state.ts";
 import pane from "./Pane.module.css";
 
@@ -55,10 +56,17 @@ export function TabBody({
   if (tab.kind === "preview") {
     // Keyed by tab id so two tabs previewing the same file keep their own
     // scroll position and load state.
-    return <PreviewTab key={tab.id} projectId={projectId} tab={tab} />;
+    return <PreviewTab key={tab.id} projectId={projectId} projectPath={projectPath} tab={tab} />;
   }
   if (tab.kind === "changes") {
     return <ChangesTab key={tab.id} projectId={projectId} onOpenFile={onOpenFile} />;
+  }
+  if (tab.kind === "changes-review") {
+    // Reads the transcript's published projection rather than the working tree:
+    // a review is about one turn, and only the conversation knows what it wrote.
+    return (
+      <TurnChangesTab key={tab.id} sessionPath={sessionPath} tab={tab} onOpenFile={onOpenFile} />
+    );
   }
   if (tab.kind === "terminal") {
     return (

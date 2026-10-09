@@ -386,7 +386,11 @@ export type BusEvent =
   | { type: "terminal_output"; terminalId: string; sessionPath: string; data: string }
   | { type: "terminal_state"; terminalId: string; sessionPath: string; exitCode: number }
   | { type: "terminal_closed"; terminalId: string; sessionPath: string }
-  | { type: "workspace_changed"; projectPath: string }
+  | {
+      type: "workspace_changed";
+      projectPath: string;
+      paths: string[] | null;
+    }
   | { type: "projects_changed" }
   | { type: "sessions_changed"; projectPath: string };
 
@@ -401,10 +405,10 @@ export type AppearancePreference = "light" | "dark" | "system";
 export type LanguagePreference = "system" | "zh-CN" | "en";
 
 /**
- * How completed turns present their process content (thinking + tool calls):
- * `compact` / `standard` / `detailed` fold a finished turn behind its
- * completion header (the first also hides a settled reasoning row's summary),
- * while `verbose` leaves every process row in place.
+ * How turns present their process content (thinking + tool calls). `compact`
+ * and `standard` fold a running turn behind a live header and a finished turn
+ * behind its completion header (compact also hides a settled reasoning row's
+ * summary); `detailed` folds only the finished turn; `verbose` folds nothing.
  */
 export type TranscriptDisplay = "compact" | "standard" | "detailed" | "verbose";
 

@@ -173,13 +173,21 @@ function SessionRow({
       style={{ paddingLeft: 8 + indent }}
       title={sessionPath}
     >
-      {status === undefined ? null : (
-        <span className={styles.sessionStatus}>
-          <StateDot state={status.state} />
-          {/* dsh labels the mark for screen readers instead of the pointer. */}
-          <span className={styles.visuallyHidden}>{t(status.label)}</span>
-        </span>
-      )}
+      {/*
+       * dsh's leading slot is always in the row: a session with no run-state
+       * mark still reserves the same 16px cell, so every title in the column
+       * starts at the same x whatever the mark is doing. Only the mark inside
+       * is conditional.
+       */}
+      <span className={styles.sessionStatus}>
+        {status === undefined ? null : (
+          <>
+            <StateDot state={status.state} />
+            {/* dsh labels the mark for screen readers instead of the pointer. */}
+            <span className={styles.visuallyHidden}>{t(status.label)}</span>
+          </>
+        )}
+      </span>
       <button
         type="button"
         className={styles.sessionTitle}

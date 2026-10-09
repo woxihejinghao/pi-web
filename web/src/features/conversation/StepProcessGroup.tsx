@@ -34,7 +34,7 @@ export function StepProcessGroup({
   title: string;
   /** Category deciding the glyph; see `processActivityOf`. */
   activity: ProcessActivity;
-  /** Whether the stretch is still arriving — drives the shimmer-free live state. */
+  /** Whether the stretch is still arriving — drives the live header's shimmer. */
   running: boolean;
   children: ReactNode;
 }) {

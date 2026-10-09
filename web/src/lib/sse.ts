@@ -161,7 +161,7 @@ export function connectEvents(): () => void {
 
   source.addEventListener("workspace_changed", (raw) => {
     const data = parse<Extract<BusEvent, { type: "workspace_changed" }>>(raw);
-    if (data) workspaceChanged.emit({ projectPath: data.projectPath });
+    if (data) workspaceChanged.emit({ projectPath: data.projectPath, paths: data.paths ?? null });
   });
 
   return () => {

@@ -64,7 +64,15 @@
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }
 
+/* The textarea and the layer painting it, stacked on one another. The stack is
+ * what gives the absolutely-positioned mirror its box: the textarea keeps
+ * sizing the card, so the mirror never has to measure anything itself. */
+.inputStack {
+  position: relative;
+}
+
 .input {
+  position: relative;
   width: 100%;
   min-height: 36px;
   max-height: 220px;
@@ -73,17 +81,59 @@
   outline: none;
   background: transparent;
   font: inherit;
-  color: var(--dsw-alias-label-primary);
-  /* dsh's caret is the business blue, not the browser default. The uneven
-   * padding is dsh's too: 8px on the right because its scroll container adds a
-   * 4px margin on top of it, 14px on the left to line the text up with the
-   * toolbar icons below. */
+  /* The words are painted by the mirror below; this layer keeps only the caret
+   * and the selection fill. `caret-color` is not affected by a transparent
+   * `color`, which is the whole trick. */
+  color: transparent;
+  /* dsh's caret is the business blue, not the browser default. Its own right pad
+   * is 8px because its scroll container adds a 4px margin on top of it; this
+   * textarea has no such margin, so the right pad carries the full 14px the left
+   * one uses — a wrapped line otherwise runs flush into the card edge. */
   caret-color: var(--dsw-alias-state-business-primary);
-  padding: 4px 8px 0 14px;
+  padding: 4px 14px 0 14px;
+  /* One wrapping rule for both layers. A textarea breaks a long word by
+   * default but a div does not, and a path is exactly the long word that would
+   * wrap in one layer and not the other. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  box-sizing: border-box;
+  /* The mirror cannot scroll with a scrollbar it does not have: Chrome lays
+   * the two layers out at different widths the moment one of them reserves a
+   * gutter. The textarea is short (220px) and still scrolls by wheel, drag and
+   * keystroke, so the bar is what goes. */
+  scrollbar-width: none;
+}
+
+.input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* The value underneath is painted in the business blue on a light chip, so a
+ * fully opaque selection fill would hide the very words being selected. */
+.input::selection {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 24%, transparent);
 }
 
 .input::placeholder {
   color: var(--dsw-alias-label-caption);
+}
+
+/* Same metrics as `.input`, minus the scrolling: this layer never grows past
+ * the textarea it sits behind, it just follows its scrollTop. */
+.inputMirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  padding: 4px 14px 0 14px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 
 .toolbar {
@@ -91,32 +141,6 @@
   align-items: center;
   gap: 12px;
   padding: 2px 8px 6px;
-}
-
-.modes {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-2);
-}
-
-.mode,
-.modeActive {
-  font-size: 11.5px;
-  padding: 3px 9px;
-  border-radius: 6px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.mode:hover {
-  color: var(--dsw-alias-label-primary);
-}
-
-.modeActive {
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  box-shadow: var(--dsw-elevation-panel);
 }
 
 .spacer {

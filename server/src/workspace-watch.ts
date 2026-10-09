@@ -6,6 +6,17 @@ import { listProjects } from "./projects.ts";
 const DEBOUNCE_MS = 400;
 
 /**
+ * How many distinct paths one debounced event is allowed to name.
+ *
+ * Past this the list stops being evidence and becomes payload: a build that
+ * rewrites the tree inside one debounce window would put thousands of strings
+ * on the wire for consumers that only need to know something moved. Exceeding
+ * it reports `paths: null` — "worth a look, not attributable" — which every
+ * consumer already has to handle for FSEvents' null filenames.
+ */
+const MAX_TRACKED_PATHS = 200;
+
+/**
  * Path segments whose churn a git panel never shows.
  *
  * `node_modules` is the important one: an install rewrites thousands of files,
@@ -30,9 +41,18 @@ export interface WorkspaceWatcherDeps {
  * whether a change is worth a `git status` read; this side only says that
  * something moved.
  */
+interface PendingChange {
+  /** Workspace-relative paths (always `/`-separated) seen since the last flush. */
+  readonly paths: Set<string>;
+  /** Something moved that this watcher could not name, or too much moved to list. */
+  unknown: boolean;
+}
+
 export class WorkspaceWatcher {
   private readonly watchers = new Map<string, FSWatcher>();
   private readonly debounce = new Map<string, NodeJS.Timeout>();
+  /** What the next debounced event for each project will report. */
+  private readonly pending = new Map<string, PendingChange>();
   private readonly bus: EventBus;
   private unsubscribe: (() => void) | null = null;
   private stopped = false;
@@ -55,6 +75,7 @@ export class WorkspaceWatcher {
     this.unsubscribe = null;
     for (const timer of this.debounce.values()) clearTimeout(timer);
     this.debounce.clear();
+    this.pending.clear();
     for (const watcher of this.watchers.values()) watcher.close();
     this.watchers.clear();
   }
@@ -72,6 +93,7 @@ export class WorkspaceWatcher {
         const timer = this.debounce.get(projectPath);
         if (timer) clearTimeout(timer);
         this.debounce.delete(projectPath);
+        this.pending.delete(projectPath);
       }
     }
 
@@ -99,16 +121,38 @@ export class WorkspaceWatcher {
 
   private onChange(projectPath: string, filename: string | Buffer | null): void {
     if (this.stopped) return;
+    let name: string | null = null;
     if (filename !== null) {
-      const name = typeof filename === "string" ? filename : filename.toString();
+      name = typeof filename === "string" ? filename : filename.toString();
       if (isIgnoredPath(name)) return;
     }
+
+    const pending = this.pending.get(projectPath) ?? { paths: new Set<string>(), unknown: false };
+    if (name === null) {
+      pending.unknown = true;
+    } else {
+      // Node reports recursive-watch filenames relative to the watched root but
+      // with the platform's separator; the event speaks in workspace-relative
+      // `/` paths because that is what a tab target is written in.
+      const relative = name.split(/[\\/]/).join("/");
+      if (relative.length > 0) pending.paths.add(relative);
+      if (pending.paths.size > MAX_TRACKED_PATHS) {
+        pending.paths.clear();
+        pending.unknown = true;
+      }
+    }
+    this.pending.set(projectPath, pending);
 
     const existing = this.debounce.get(projectPath);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
       this.debounce.delete(projectPath);
-      this.bus.publish({ type: "workspace_changed", projectPath });
+      this.pending.delete(projectPath);
+      this.bus.publish({
+        type: "workspace_changed",
+        projectPath,
+        paths: pending.unknown ? null : [...pending.paths],
+      });
     }, DEBOUNCE_MS);
     timer.unref?.();
     this.debounce.set(projectPath, timer);

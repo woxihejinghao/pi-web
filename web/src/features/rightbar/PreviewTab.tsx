@@ -8,15 +8,18 @@ import { CodeBlock } from "../conversation/CodeBlock.tsx";
 import { languageFor, previewKindFor } from "./file-kind.ts";
 import { buildFrameDocument } from "./html-frame.ts";
 import { PathLabel } from "./rightbar-path.tsx";
+import { PauseIcon, PlayIcon } from "./rightbar-icons.tsx";
+import { previewChangedBy } from "./preview-refresh.ts";
 import type { RightbarTab } from "./rightbar-state.ts";
 import pane from "./Pane.module.css";
 import styles from "./PreviewTab.module.css";
-import { useT } from "../../lib/app-state.ts";
+import { useT, workspaceChanged } from "../../lib/app-state.ts";
 
 type PreviewState =
   | { status: "loading" }
   | { status: "failed"; error: string }
-  | { status: "ready"; file: WorkspaceFileContent };
+  /** `error` is a failed refresh: the version below it is still the last good one. */
+  | { status: "ready"; file: WorkspaceFileContent; error?: string };
 
 /**
  * One file, rendered by what it is.
@@ -31,27 +34,94 @@ type PreviewState =
  * browser's own renderers in a frame, which is why the body has two shapes: the
  * scrolling one everything else lives in, and a flex column that a frame can
  * fill.
+ *
+ * The tab follows edits made outside this app. The server's workspace watcher
+ * names what moved, and when one of those paths covers this file the tab either
+ * re-reads it (auto refresh, on by default) or says the content is stale and
+ * offers the re-read — never both, and never silently.
  */
-export function PreviewTab({ projectId, tab }: { projectId: string; tab: RightbarTab }) {
+export function PreviewTab({
+  projectId,
+  projectPath,
+  tab,
+}: {
+  projectId: string;
+  /** The project root the watcher reports paths against. */
+  projectPath: string;
+  tab: RightbarTab;
+}) {
   const t = useT();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<PreviewState>({ status: "loading" });
+  // Both of these are view state, not layout state: they belong to the tab while
+  // it is mounted and are not written to the layout the sidebar persists. dsh
+  // keeps the same pair in a per-tab store with the same defaults.
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: "loading" });
+    // A re-read keeps the version on screen: the point of following an edit is
+    // to swap the content, not to blank the tab for a round trip. Only the
+    // first read — nothing to keep — shows the loading state.
+    setState((previous) => (previous.status === "ready" ? previous : { status: "loading" }));
     api
       .readWorkspaceFile(projectId, tab.target)
       .then((file) => {
         if (!cancelled) setState({ status: "ready", file });
       })
       .catch((err: unknown) => {
-        if (!cancelled) setState({ status: "failed", error: (err as Error).message });
+        if (cancelled) return;
+        const message = (err as Error).message;
+        // A failure *after* content arrived is a failed refresh, not an empty
+        // tab: the old version stays and the error sits above it. Only a first
+        // read that never landed has nothing to fall back to.
+        setState((previous) =>
+          previous.status === "ready"
+            ? { status: "ready", file: previous.file, error: message }
+            : { status: "failed", error: message },
+        );
       });
     return () => {
       cancelled = true;
     };
   }, [projectId, tab.target, attempt]);
+
+  /**
+   * Follow the file the way the changes panel follows the tree.
+   *
+   * A change that lands while this tab is still reading stays marked rather than
+   * discarded: the read in flight will answer with a version that is already
+   * behind, and the effect below re-reads once that reply lands.
+   */
+  useEffect(() => {
+    const unsubscribe = workspaceChanged.subscribe((payload) => {
+      if (payload.projectPath !== projectPath) return;
+      if (!previewChangedBy(payload.paths, tab.target)) return;
+      setStale(true);
+    });
+    return unsubscribe;
+  }, [projectPath, tab.target]);
+
+  /**
+   * Auto refresh: re-read as soon as nothing else is in flight.
+   *
+   * The `loading` guard is the whole discipline here. Re-reading mid-request
+   * would replace the reply that is coming and could leave the body showing a
+   * mix of two versions, so a change that arrives during a read waits for it —
+   * the status change re-runs this effect right after.
+   */
+  useEffect(() => {
+    if (!stale || !autoRefresh || state.status === "loading") return;
+    setStale(false);
+    setAttempt((value) => value + 1);
+  }, [stale, autoRefresh, state.status]);
+
+  /** Re-read now: the header's control and the stale banner both land here. */
+  const reload = (): void => {
+    setStale(false);
+    setAttempt((value) => value + 1);
+  };
 
   const framed = state.status === "ready" && isFramed(state.file);
 
@@ -64,13 +134,41 @@ export function PreviewTab({ projectId, tab }: { projectId: string; tab: Rightba
         <button
           type="button"
           className={pane.action}
+          aria-pressed={autoRefresh}
+          aria-label={t("preview.autoRefresh")}
+          title={autoRefresh ? t("preview.disableAutoRefresh") : t("preview.enableAutoRefresh")}
+          data-preview-auto-refresh
+          onClick={() => setAutoRefresh((value) => !value)}
+        >
+          {autoRefresh ? <PauseIcon width={14} height={14} /> : <PlayIcon width={14} height={14} />}
+        </button>
+        <button
+          type="button"
+          className={pane.action}
           title={t("pane.reload")}
           aria-label={t("preview.reloadLabel")}
-          onClick={() => setAttempt((value) => value + 1)}
+          onClick={reload}
         >
           <RefreshIcon width={14} height={14} />
         </button>
       </div>
+      {/* One row, two reasons: a failed refresh outranks "this is stale", the
+          way dsh orders the same pair. Both offer the same re-read. */}
+      {state.status === "ready" && state.error !== undefined ? (
+        <p className={styles.changed} data-preview-failed-refresh>
+          <span>{state.error}</span>
+          <button type="button" className={styles.changedAction} onClick={reload}>
+            {t("preview.reload")}
+          </button>
+        </p>
+      ) : stale && state.status !== "loading" ? (
+        <p className={styles.changed} data-preview-changed>
+          <span>{t("preview.changed")}</span>
+          <button type="button" className={styles.changedAction} onClick={reload}>
+            {t("preview.reload")}
+          </button>
+        </p>
+      ) : null}
       <div className={framed ? styles.framed : clsx(pane.scroll, styles.body)}>
         {state.status === "loading" ? (
           <div className={styles.centered}>

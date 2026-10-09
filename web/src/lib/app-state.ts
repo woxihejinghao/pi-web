@@ -32,7 +32,7 @@ const DEFAULT_SETTINGS: WebSettings = {
   appearance: "system",
   language: "system",
   contentFontSize: 15,
-  transcriptDisplay: "detailed",
+  transcriptDisplay: "standard",
   busySendBehavior: "queue",
   browserNotifications: false,
   // Titles stay deterministic until someone opts in and names a model.
@@ -286,9 +286,14 @@ export const streamRestored: Emitter<void> = createEmitter();
  * Reports that files under a project's working tree changed outside this app.
  *
  * The changes panel listens so it can follow an editor save, a formatter, or a
- * terminal `git` command without a manual refresh. Nothing else consumes it.
+ * terminal `git` command without a manual refresh; a Preview tab listens so an
+ * open file follows the same edits. `paths` names what moved, workspace-
+ * relative, or is `null` when the watcher could not attribute the change.
  */
-export const workspaceChanged: Emitter<{ projectPath: string }> = createEmitter();
+export const workspaceChanged: Emitter<{
+  projectPath: string;
+  paths: string[] | null;
+}> = createEmitter();
 
 /** Test seam: restore the initial state. */
 export function resetAppState(): void {

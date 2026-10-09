@@ -226,18 +226,18 @@ describe("splitForCompact", () => {
     expect(answers.map((step) => step.at)).toEqual(["img"]);
   });
 
-  it("never folds a step that is still streaming", () => {
-    // The reader is watching the streamed block arrive, so it stays an answer
-    // even though its type is normally process — a folded group would hide it
-    // behind a row nobody has a reason to open.
+  it("folds a step that is still streaming like any other process block", () => {
+    // dsh's `stepGrouping` 'collapsed' folds a running turn too: the group's
+    // live header, not the row, is what says what is happening. Only a live
+    // *answer* block stays out.
     const steps: { block: { type?: string }; at: string; live?: boolean }[] = [
       { block: { type: "thinking" }, at: "settled" },
       { block: { type: "thinking" }, at: "live", live: true },
       { block: { type: "toolCall" }, at: "call" },
     ];
     const { process, answers } = splitForCompact(steps);
-    expect(process.map((step) => step.at)).toEqual(["settled", "call"]);
-    expect(answers.map((step) => step.at)).toEqual(["live"]);
+    expect(process.map((step) => step.at)).toEqual(["settled", "live", "call"]);
+    expect(answers.map((step) => step.at)).toEqual([]);
   });
 
   it("handles a turn that is all process or all answer", () => {
@@ -262,12 +262,15 @@ describe("splitIntoProcessSegments", () => {
     expect(segments[2]?.steps.map((step) => step.at)).toEqual(["b", "2"]);
   });
 
-  it("keeps a streamed step in an answer run", () => {
+  it("keeps a streamed process step in its process run", () => {
+    // A running turn is folded the same way, and the group's live header says
+    // what is going on, so a streaming reasoning block stays with its process.
     const segments = splitIntoProcessSegments([
       { block: { type: "thinking" }, at: "settled" },
       { block: { type: "thinking" }, at: "live", live: true },
     ]);
-    expect(segments.map((segment) => segment.kind)).toEqual(["process", "answer"]);
+    expect(segments.map((segment) => segment.kind)).toEqual(["process"]);
+    expect(segments[0]?.steps.map((step) => step.at)).toEqual(["settled", "live"]);
   });
 });
 
@@ -313,9 +316,34 @@ describe("processSegmentTitle", () => {
     expect(processSegmentTitle([thinking()], zh).title).toBe("已完成分析");
   });
 
-  it("uses the live label while a run is still streaming", () => {
+  it("uses the live activity label while a run is still streaming", () => {
     const heading = processSegmentTitle([{ ...call("bash"), live: true }], zh);
     expect(heading.title).toBe("正在运行命令");
+    expect(heading.running).toBe(true);
+  });
+
+  it("uses the live activity label while only reasoning is streaming", () => {
+    const heading = processSegmentTitle([{ ...thinking(), live: true }], zh);
+    expect(heading.title).toBe("正在分析请求");
+    expect(heading.running).toBe(true);
+  });
+
+  it("stays live for a committed tool call that is still executing", () => {
+    // No block is streaming here: the work in progress is a tool that has
+    // already been committed to the transcript, so `live` is absent and only
+    // the execution's own running state can say the stretch is unfinished.
+    const heading = processSegmentTitle([{ ...call("read"), running: true }], zh);
+    expect(heading.title).toBe("正在读取文件");
+    expect(heading.running).toBe(true);
+  });
+
+  it("stays live for an open stretch with nothing streaming", () => {
+    // dsh closes a stretch only at a reply or the turn's end, so the last
+    // stretch of a running turn is open even while the model is between steps:
+    // it keeps the present-tense label for the work behind it instead of
+    // reporting a finished summary.
+    const heading = processSegmentTitle([call("read"), call("read")], zh, true);
+    expect(heading.title).toBe("正在读取文件");
     expect(heading.running).toBe(true);
   });
 });

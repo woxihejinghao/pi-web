@@ -183,11 +183,10 @@ function isProcessBlock(block: { type?: string }): boolean {
  * alternative (one group per interleaving run) would produce several
  * near-identical rows for a single turn.
  *
- * A `live` step (see `TurnStep`) is the exception: it always stays an answer.
- * Since the group's header reports a completion, `MessageList` no longer hands
- * this function a partition containing one at all — the guard stays because it
- * is the contract this function actually promises, and it is cheaper to keep it
- * true here than to make every future caller remember it.
+ * A `live` process step (see `TurnStep`) is not an exception: a running turn is
+ * folded the same way (dsh's `stepGrouping` 'collapsed'), so a streaming
+ * reasoning block or tool call still lands in `process`. Only a live *answer*
+ * block stays out — a group would hide the text the reader is watching arrive.
  */
 export function splitForCompact<T extends { block: { type?: string }; live?: boolean }>(steps: T[]): {
   process: T[];
@@ -196,10 +195,9 @@ export function splitForCompact<T extends { block: { type?: string }; live?: boo
   const process: T[] = [];
   const answers: T[] = [];
   for (const step of steps) {
-    // A step that is still streaming is never folded, whatever it holds: it is
-    // what the reader is watching arrive, and a group would hide it behind a
-    // row they have no reason to open. Committed steps take the normal split.
-    (step.live === true || !isProcessBlock(step.block) ? answers : process).push(step);
+    // Process blocks are folded whether or not they have settled; answers never
+    // are, streaming or not.
+    (isProcessBlock(step.block) ? process : answers).push(step);
   }
   return { process, answers };
 }
@@ -235,6 +233,11 @@ export function processActivityOf(toolName: string): ProcessActivity {
   return ACTIVITY_BY_VARIANT[classify(toolName)];
 }
 
+/**
+ * A live (unclosed) segment's header: dsh's present-tense activity labels
+ * ("正在读取文件"), not a fixed "working" string. The group says *what* the
+ * agent is doing; the turn's own status line says it is still working.
+ */
 const LIVE_TITLE_KEYS: Record<ProcessActivity, MessageKey> = {
   thinking: "message.stepProcess.thinking",
   read: "message.stepProcess.read",
@@ -260,8 +263,9 @@ const DONE_TITLE_KEYS: Record<ProcessActivity, MessageKey> = {
 /**
  * One ordered run of a turn's steps: either process (thinking + tool calls) or
  * answers. Ported from dsh's process grouping, which cuts a Turn at every reply
- * or user input; a streaming step always lands in an answer run, because a group
- * would hide the one thing the reader is watching arrive.
+ * or user input. A still-streaming process step lands in a process run like any
+ * other: dsh's `stepGrouping` 'collapsed' folds a running turn too, and the
+ * group's live header — not the row itself — is what says what is happening.
  */
 export type ProcessSegment<T> =
   | { kind: "process"; steps: T[] }
@@ -273,7 +277,7 @@ export function splitIntoProcessSegments<
 >(steps: T[]): ProcessSegment<T>[] {
   const segments: ProcessSegment<T>[] = [];
   for (const step of steps) {
-    const kind = step.live === true || !isProcessBlock(step.block) ? "answer" : "process";
+    const kind = isProcessBlock(step.block) ? "process" : "answer";
     const last = segments[segments.length - 1];
     if (last !== undefined && last.kind === kind) last.steps.push(step);
     else segments.push({ kind, steps: [step] });
@@ -315,21 +319,37 @@ export interface ProcessSegmentTitle {
   running: boolean;
 }
 
-/** Title, category and run state for one process segment. */
+/**
+ * Title, category and run state for one process segment.
+ *
+ * `open` is dsh's "the turn has not closed this stretch yet" (a stretch closes
+ * only at a reply or the turn's end). An open stretch is live even when nothing
+ * is streaming and no tool is mid-execution — the model may be between steps —
+ * so it takes the present-tense activity label rather than a finished summary.
+ */
 export function processSegmentTitle<
-  T extends { block: { type?: string }; live?: boolean },
->(steps: T[], t: Translate): ProcessSegmentTitle {
+  T extends { block: { type?: string }; live?: boolean; running?: boolean },
+>(steps: T[], t: Translate, open = false): ProcessSegmentTitle {
   const counts = new Map<ProcessActivity, number>();
   let running: ProcessActivity | undefined;
   for (const step of steps) {
-    if (step.block.type !== "toolCall") continue;
-    const activity = processActivityOf((step.block as { name?: string }).name ?? "");
-    counts.set(activity, (counts.get(activity) ?? 0) + 1);
-    if (step.live === true) running = activity;
+    const active = step.live === true || step.running === true;
+    if (step.block.type === "toolCall") {
+      const activity = processActivityOf((step.block as { name?: string }).name ?? "");
+      counts.set(activity, (counts.get(activity) ?? 0) + 1);
+      if (active) running = activity;
+    } else if (active && step.block.type === "thinking") {
+      // A reasoning tail with no tool call running is still work in progress; the
+      // latest live step wins, so this overwrites an earlier tool's category.
+      running = "thinking";
+    }
   }
-  if (running !== undefined) {
-    return { title: t(LIVE_TITLE_KEYS[running]), activity: running, running: true };
+  // The live label names the activity the stretch is on: the streaming (or
+  // still-executing) step's category, else the most frequent one — an open
+  // stretch with only settled work behind it is still on that work.
+  const activity = running ?? [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "thinking";
+  if (running !== undefined || open) {
+    return { title: t(LIVE_TITLE_KEYS[activity]), activity, running: true };
   }
-  const activity = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "thinking";
   return { title: processTitle(counts, t), activity, running: false };
 }

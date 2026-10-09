@@ -5,6 +5,7 @@ import { api } from "../../lib/api.ts";
 import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import { rightbarActions, rightbarStore } from "../rightbar/rightbar-state.ts";
+import { publishTurnChanges, type TurnChanges } from "../rightbar/turn-changes-store.ts";
 import { PanelRightIcon } from "../rightbar/rightbar-icons.tsx";
 import { shortcutTitle } from "../rightbar/shortcuts.ts";
 import type { ImageBlock } from "../../lib/types.ts";
@@ -41,6 +42,20 @@ export function ConversationPane() {
   // They read from the session file until a pi process is needed, which is only
   // when the user actually opens one of them — see `useComposerState`.
   const composer = useComposerState({ sessionPath, projectId: null });
+
+  /**
+   * Hand each turn's changed files to the review tabs.
+   *
+   * The sidebar has no way to reach the transcript, so the pane that holds it
+   * publishes. The session is bound here rather than on every call site, and the
+   * callback is stable so `MessageList`'s effect does not refire on each render.
+   */
+  const publishChanges = useCallback(
+    (changes: readonly TurnChanges[]) => {
+      if (sessionPath !== null) publishTurnChanges(sessionPath, changes);
+    },
+    [sessionPath],
+  );
 
   const project = state.projects.find((candidate) => candidate.id === state.selectedProjectId);
   const sessions = state.selectedProjectId ? (state.sessions[state.selectedProjectId] ?? []) : [];
@@ -225,10 +240,14 @@ export function ConversationPane() {
         {...(sessionPath === null
           ? {}
           : {
-              // A turn's changed files open in the sidebar, which is the same
-              // target the changes panel uses; the panel opens itself if it was
-              // collapsed, so the click always lands somewhere visible.
-              onOpenFile: (path: string) => rightbarActions.openPreviewTab(sessionPath, path),
+              // A turn's changed files open that turn's review in the sidebar —
+              // dsh's review tab, where the comparison, the other files of the
+              // turn and the way into the whole file all live. The panel opens
+              // itself if it was collapsed, so the click always lands somewhere
+              // visible.
+              onOpenChanges: (turn: number, index: number) =>
+                rightbarActions.openTurnChangesTab(sessionPath, turn, index),
+              onTurnChanges: publishChanges,
               // pi has no "try that turn again" RPC — its own retry loop is the
               // only one it offers, and it runs inside a turn. Re-sending the
               // prompt is the lever that exists, and it costs a second copy of
@@ -266,6 +285,7 @@ export function ConversationPane() {
           }
           onSend={sendMessage}
           onAbort={() => void conversation.abort()}
+          workspacePath={project?.path}
         />
       )}
       {/* Under the composer, where dsh puts its two stat pills: they describe

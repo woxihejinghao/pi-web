@@ -46,7 +46,13 @@ import {
  * away rather than only when it is not the tree's root.
  */
 
-export type RightbarTabKind = "files" | "preview" | "changes" | "browser" | "terminal";
+export type RightbarTabKind =
+  | "files"
+  | "preview"
+  | "changes"
+  | "changes-review"
+  | "browser"
+  | "terminal";
 
 export interface RightbarTab {
   id: string;
@@ -54,8 +60,9 @@ export interface RightbarTab {
   title: string;
   /**
    * What the tab is about: a project-relative path for `preview`, an HTTP(S)
-   * URL for `browser`, the host's own id for `terminal`, and nothing for
-   * `files` or `changes` (neither needs an address).
+   * URL for `browser`, the host's own id for `terminal`, `<turn>#<index>` for
+   * `changes-review`, and nothing for `files` or `changes` (neither needs an
+   * address).
    */
   target: string;
   /** `browser` only: the tab's history, newest last. */
@@ -212,17 +219,22 @@ function readTab(entry: unknown): RightbarTab | null {
     kind !== "files" &&
     kind !== "preview" &&
     kind !== "changes" &&
+    kind !== "changes-review" &&
     kind !== "browser" &&
     kind !== "terminal"
   ) {
     return null;
   }
   if (typeof tab.id !== "string" || typeof tab.title !== "string") return null;
+  const target = typeof tab.target === "string" ? tab.target : "";
+  // A review tab's address is its identity: one that no longer parses names a
+  // turn this build cannot show, and dsh drops such a resource the same way.
+  if (kind === "changes-review" && parseTurnChangesTarget(target) === undefined) return null;
   return {
     id: tab.id,
     kind,
     title: tab.title,
-    target: typeof tab.target === "string" ? tab.target : "",
+    target,
     ...(kind === "browser" && Array.isArray(tab.history)
       ? { history: tab.history.filter((item): item is string => typeof item === "string") }
       : {}),
@@ -508,6 +520,8 @@ const TAB_TITLE_KEYS = {
   changes: "tab.changes",
   browser: "tab.browser",
   terminal: "tab.terminal",
+  // Only the fallback: a review tab that parses is titled after its turn.
+  "changes-review": "tab.changesReview",
 } as const;
 
 /**
@@ -522,6 +536,12 @@ const TAB_TITLE_KEYS = {
 export function tabTitle(tab: RightbarTab, t: Translate): string {
   if (tab.kind === "preview") return tab.title;
   if (tab.kind === "terminal" && tab.title.length > 0) return tab.title;
+  // Named after the turn it reviews rather than after a stored title, so the
+  // strip keeps up with a language switch; see the comment above.
+  if (tab.kind === "changes-review") {
+    const turn = parseTurnChangesTarget(tab.target)?.turn;
+    return turn === undefined ? t("tab.changesReview") : t("turnChanges.title", { turn });
+  }
   return t(TAB_TITLE_KEYS[tab.kind]);
 }
 
@@ -530,10 +550,10 @@ export function tabTitle(tab: RightbarTab, t: Translate): string {
  *
  * Exactly the two kinds `tabTitle` reads a title from: a preview names itself
  * after its file, a terminal after its shell — or after whatever the user last
- * called it. The other three are named by the UI's own wording, so a rename
- * offered on them would be stored and never seen. Kept next to `tabTitle`
- * because the two have to agree: widening one without the other is how a menu
- * item ends up doing nothing.
+ * called it. The rest are named by the UI's own wording, so a rename offered on
+ * them would be stored and never seen. Kept next to `tabTitle` because the two
+ * have to agree: widening one without the other is how a menu item ends up
+ * doing nothing.
  */
 export function canRenameTab(kind: RightbarTabKind): boolean {
   return kind === "preview" || kind === "terminal";
@@ -550,6 +570,39 @@ export function makePreviewTab(path: string): RightbarTab {
 
 export function makeChangesTab(): RightbarTab {
   return { id: nextTabId("changes"), kind: "changes", title: "", target: "" };
+}
+
+/**
+ * The address of one turn's review: the turn, and the file it opened on.
+ *
+ * The turn is the tab's identity — dsh keys a review to the session and the
+ * event that announced the summary, which this project has no counterpart for,
+ * so the turn number the card labels itself with is the same key — and the index
+ * rides along as the tab's current selection, exactly as dsh carries it in the
+ * address's parameters.
+ */
+export function turnChangesTarget(turn: number, index: number): string {
+  return `${String(turn)}#${String(index)}`;
+}
+
+/** Read a review address back; undefined for anything this app did not mint. */
+export function parseTurnChangesTarget(
+  target: string,
+): { turn: number; index: number } | undefined {
+  const parts = target.split("#");
+  if (parts.length !== 2) return undefined;
+  const [turn, index] = parts as [string, string];
+  if (!/^[1-9]\d*$/.test(turn) || !/^\d+$/.test(index)) return undefined;
+  return { turn: Number(turn), index: Number(index) };
+}
+
+export function makeTurnChangesTab(turn: number, index: number): RightbarTab {
+  return {
+    id: nextTabId("changes-review"),
+    kind: "changes-review",
+    title: "",
+    target: turnChangesTarget(turn, index),
+  };
 }
 
 export function makeBrowserTab(url: string): RightbarTab {
@@ -1069,6 +1122,34 @@ export const rightbarActions = {
    */
   openChangesTab(key: string, paneId?: string): void {
     revealOrOpen(key, (tab) => tab.kind === "changes", makeChangesTab, paneId);
+  },
+
+  /**
+   * Focus the review tab for one turn, opening it on the asked file.
+   *
+   * One tab per turn: a second turn is a second review, but re-entering the same
+   * turn — from the card's header, or from a row below the one that opened it —
+   * moves the tab already showing it to that file instead of stacking a copy.
+   * dsh navigates an open review tab the same way, applying the incoming file
+   * index to the tab it already has.
+   */
+  openTurnChangesTab(key: string, turn: number, index: number, paneId?: string): void {
+    const surface = surfaceOf(rightbarStore.get(), key);
+    const existing = Object.values(surface.tabs).find(
+      (tab) => tab.kind === "changes-review" && parseTurnChangesTarget(tab.target)?.turn === turn,
+    );
+    if (existing === undefined) {
+      rightbarActions.openTab(key, makeTurnChangesTab(turn, index), paneId);
+      return;
+    }
+    const target = turnChangesTarget(turn, index);
+    const tabs =
+      existing.target === target
+        ? surface.tabs
+        : { ...surface.tabs, [existing.id]: { ...existing, target } };
+    const next = surfaceShowing({ ...surface, tabs }, existing.id);
+    if (next === null) return;
+    commit(key, { ...next, open: true });
   },
 
   /**

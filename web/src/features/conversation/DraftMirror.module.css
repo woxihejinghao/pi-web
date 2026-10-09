@@ -1,0 +1,43 @@
+/* One folder reference inside the mirrored draft: the business blue dsh paints
+ * its chips in, with no pill of its own — dsh's `.reference` is transparent at
+ * rest too, and only lights up on hover. Hover is not available here: the layer
+ * takes no pointer events (the textarea above owns them), so a resting chip is
+ * all this editor ever draws.
+ *
+ * No padding, no margin, no width of its own: every character the chip covers
+ * is a character the textarea is laying out in the same place, and the moment
+ * this span added width the caret would drift away from the words.
+ */
+.reference {
+  position: relative;
+  color: var(--dsw-alias-state-business-primary);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Painted over the em space a drop wrote into the text (see `REFERENCE_SLOT`),
+ * which is why it starts at the chip's own left edge: that is where ordinary
+ * text starts too, so the glyph lines up with the paragraph instead of hanging
+ * in the card's padding. Centred on the text's content box — `top/bottom` with
+ * auto margins, rather than an `em` guess.
+ *
+ * A hand-typed reference has no slot; a glyph over it would sit on a letter,
+ * so the mirrored layer only marks ones that do (`data-slot`). */
+.referenceIcon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  margin: auto 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  opacity: 0.9;
+}
+
+.reference[data-slot] .referenceIcon {
+  display: inline-flex;
+}

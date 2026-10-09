@@ -12,7 +12,7 @@
   max-width: 720px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 .titleRow {
@@ -64,40 +64,73 @@
   flex: 0 0 auto;
 }
 
+/* The hero's stack: headline, workspace row, card. dsh's `HeroShell` closes it
+ * with 12px at every step (figma 75:8208 puts 12 between the title block, the
+ * workspace row and the InputBar card), and the workspace row itself keeps
+ * dsh's 8px left inset so the chip's folder lands over the card's own padding. */
 .selectors {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding-left: 4px;
+  min-width: 0;
+  padding-left: 8px;
 }
 
 .selector {
   position: relative;
+  min-width: 0;
 }
 
+/* dsh's hero workspace chip (`HeroShell.module.css` `.workspace`), metric for
+ * metric: 4px between folder, label and chevron; 28px minimum height with 8px
+ * side padding on the small radius; 13/20 at weight 500 in primary ink; the
+ * label ellipsized so folder and chevron stay snug against whatever text is
+ * left. Transparent at rest, filled on hover and while the menu is open. */
 .selectorButton {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  max-width: min(100%, 360px);
+  min-height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
   font-size: 13px;
-  color: #000;
-  padding: 4px 6px;
-  border-radius: 8px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
-.selectorButton:hover {
+.selectorButton:not(:disabled):hover,
+.selectorButton[aria-expanded="true"] {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.selectorGlyph {
-  display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
+/* The chip's own folder rides the label's ink, not the muted glyph ink the
+ * menu rows use — dsh draws `.folder` at `label-primary` beside a 13px label. */
+.selectorFolder {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+}
+
+.selectorLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .selectorCaret {
-  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* Menu rows keep the muted folder: inside the popup the icon is a bullet
+ * beside a label, not the chip's own mark. */
+.selectorGlyph {
+  flex: none;
   color: var(--dsw-alias-label-tertiary);
-  transform: rotate(90deg);
 }
 
 /* Matches dsh's shared Menu primitive, so every popup in the app reads the
@@ -177,7 +210,16 @@
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }
 
+/* Same two-layer arrangement as the conversation composer: the hero's card is
+ * the same input one step earlier, so a folder reference has to look and behave
+ * identically here. The metrics differ (52px minimum, an 8px right pad) because
+ * the cards themselves do, which is why each stylesheet keeps its own pair. */
+.inputStack {
+  position: relative;
+}
+
 .input {
+  position: relative;
   width: 100%;
   /* dsh uses 52px here against 36px in the conversation composer. */
   min-height: 52px;
@@ -187,13 +229,41 @@
   outline: none;
   background: transparent;
   font: inherit;
-  color: var(--dsw-alias-label-primary);
+  color: transparent;
   caret-color: var(--dsw-alias-state-business-primary);
   padding: 4px 8px 0 14px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+.input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.input::selection {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 24%, transparent);
 }
 
 .input::placeholder {
   color: var(--dsw-alias-label-caption);
+}
+
+.inputMirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  padding: 4px 8px 0 14px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 
 .toolbar {

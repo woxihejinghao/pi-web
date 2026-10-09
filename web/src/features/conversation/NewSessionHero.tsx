@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import clsx from "clsx";
-import { ChevronIcon, FolderIcon, SendIcon } from "../../components/icons.tsx";
+import {
+  ChevronDownIcon,
+  FolderCloseIcon,
+  FolderOpenIcon,
+  SendIcon,
+} from "../../components/icons.tsx";
 import { actions, appStore, useT } from "../../lib/app-state.ts";
 import { useStore } from "../../lib/store.ts";
 import { AttachmentInput, AttachmentStrip, AttachButton } from "./AttachmentStrip.tsx";
+import { DraftMirror } from "./DraftMirror.tsx";
+import { useReferenceDraft } from "./useReferenceDraft.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SlashMenu } from "./SlashMenu.tsx";
 import { useComposerState } from "./useComposerState.ts";
@@ -45,13 +52,18 @@ function WorkspaceSelect() {
         aria-haspopup="listbox"
         onClick={() => setOpen((value) => !value)}
       >
-        <span className={styles.selectorGlyph}>
-          <FolderIcon />
+        {/* dsh swaps the glyph with the chip's state: an open folder once a
+         * workspace is behind the label, a closed one while the chip is only
+         * the "choose a workspace" call to action. */}
+        {current ? (
+          <FolderOpenIcon className={styles.selectorFolder} />
+        ) : (
+          <FolderCloseIcon className={styles.selectorFolder} />
+        )}
+        <span className={styles.selectorLabel}>
+          {current ? current.title : t("hero.chooseWorkspace")}
         </span>
-        {current ? current.title : t("hero.chooseWorkspace")}
-        <span className={styles.selectorCaret}>
-          <ChevronIcon />
-        </span>
+        <ChevronDownIcon className={styles.selectorCaret} width={12} height={12} />
       </button>
 
       {open ? (
@@ -76,9 +88,7 @@ function WorkspaceSelect() {
                   setOpen(false);
                 }}
               >
-                <span className={styles.selectorGlyph}>
-                  <FolderIcon />
-                </span>
+                <FolderCloseIcon className={styles.selectorGlyph} />
                 <span>{project.title}</span>
               </button>
             ))
@@ -111,10 +121,18 @@ export function NewSessionHero() {
   const t = useT();
   const state = useStore(appStore);
   const [text, setText] = useState("");
-  const draft = useImageDraft();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** The layer painting the draft under the transparent textarea. */
+  const mirrorRef = useRef<HTMLDivElement>(null);
 
   const project = state.projects.find((candidate) => candidate.id === state.selectedProjectId);
+  const reference = useReferenceDraft({
+    text,
+    setText,
+    textareaRef,
+    workspacePath: project?.path,
+  });
+  const draft = useImageDraft(reference);
   // pi's own default until the user picks another one; `selectModel` on this
   // path only remembers the choice, which `startDraftSession` then hands to the
   // session it creates.
@@ -149,17 +167,33 @@ export function NewSessionHero() {
     if ((message.length === 0 && attachments.length === 0) || !project) return;
     setText("");
     draft.clear();
+    // The labels go with the draft: this message is already made, and nothing
+    // can put it back into this card.
+    const outgoing = reference.expand(message);
+    reference.clear();
     // Creates the draft immediately and queues the message for the session
     // that replaces it once pi is ready. Only a model the user actually chose
     // is passed on: null means "start on pi's default", which is not the same
     // request as naming the model pi would have picked anyway.
-    actions.startDraftSession(project.id, message, attachments, state.newSessionModel);
+    actions.startDraftSession(project.id, outgoing, attachments, state.newSessionModel);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     // While the command menu is open it owns the arrow keys, Enter/Tab and
     // Escape, so Enter completes a command instead of starting a session.
     if (completion.onKeyDown(event)) return;
+
+    // A reference is one thing to the caret, not a run of characters: one
+    // keystroke takes the whole chip (see `referenceAtCaret`).
+    if (
+      !event.nativeEvent.isComposing &&
+      (event.key === "Backspace" || event.key === "Delete") &&
+      reference.removeAtCaret(event.key)
+    ) {
+      event.preventDefault();
+      completion.sync();
+      return;
+    }
 
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -202,24 +236,31 @@ export function NewSessionHero() {
             onRemove={draft.remove}
           />
 
-          <textarea
-            ref={textareaRef}
-            className={styles.input}
-            value={text}
-            rows={2}
-            spellCheck={false}
-            disabled={!project}
-            placeholder={project ? t("hero.placeholder") : t("sidebar.newSessionNoProject")}
-            aria-label={t("hero.firstMessageLabel")}
-            onChange={(event) => {
-              setText(event.target.value);
-              completion.sync();
-            }}
-            onKeyUp={() => completion.sync()}
-            onClick={() => completion.sync()}
-            onKeyDown={onKeyDown}
-            onPaste={draft.onPaste}
-          />
+          <div className={styles.inputStack}>
+            <DraftMirror text={text} className={styles.inputMirror} mirrorRef={mirrorRef} />
+            <textarea
+              ref={textareaRef}
+              className={styles.input}
+              value={text}
+              rows={2}
+              spellCheck={false}
+              disabled={!project}
+              placeholder={project ? t("hero.placeholder") : t("sidebar.newSessionNoProject")}
+              aria-label={t("hero.firstMessageLabel")}
+              onChange={(event) => {
+                setText(event.target.value);
+                completion.sync();
+              }}
+              onKeyUp={() => completion.sync()}
+              onClick={() => completion.sync()}
+              onKeyDown={onKeyDown}
+              onPaste={draft.onPaste}
+              onScroll={(event) => {
+                const mirror = mirrorRef.current;
+                if (mirror) mirror.scrollTop = event.currentTarget.scrollTop;
+              }}
+            />
+          </div>
           <div className={styles.toolbar}>
             <AttachButton disabled={!project} onClick={draft.openPicker} />
             <AttachmentInput

@@ -1,16 +1,14 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import type { GitFileEntry } from "../../lib/types.ts";
-import { parseUnifiedDiff, type DiffHunk } from "./diff-parse.ts";
+import { parseUnifiedDiff } from "./diff-parse.ts";
+import { DiffHunkView } from "./DiffHunk.tsx";
 import { PlusIcon } from "../../components/icons.tsx";
 import { MinusIcon, TreeChevronIcon, UndoIcon } from "./rightbar-icons.tsx";
 import { PathLabel } from "./rightbar-path.tsx";
 import styles from "./ChangesTab.module.css";
 import { useT } from "../../lib/app-state.ts";
 import type { Translate } from "../../lib/i18n/index.ts";
-
-/** Hunk lines a file opens with before its own diffs start collapsed. */
-const HUNK_OPEN_LINES = 80;
 
 const STATUS_LABEL: Record<GitFileEntry["status"], string> = {
   modified: "M",
@@ -172,62 +170,8 @@ function FilePatch({
   return (
     <div className={styles.patch}>
       {parsed.hunks.map((hunk) => (
-        <Hunk key={hunk.header} hunk={hunk} />
+        <DiffHunkView key={hunk.header} hunk={hunk} />
       ))}
-    </div>
-  );
-}
-
-/**
- * One hunk, collapsible on its own.
- *
- * A single file can carry several distant hunks, and the interesting one is
- * often the smallest; folding per hunk (rather than per file) is what makes a
- * big diff readable. A hunk long enough to fill the panel starts folded, with
- * its line count on the header so nothing is hidden silently.
- */
-function Hunk({ hunk }: { hunk: DiffHunk }) {
-  const t = useT();
-  const bodyLines = hunk.lines.filter((line) => line.kind !== "meta");
-  const [open, setOpen] = useState(bodyLines.length <= HUNK_OPEN_LINES);
-
-  return (
-    <div className={styles.hunk}>
-      <button
-        type="button"
-        className={styles.hunkHeader}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className={clsx(styles.chevron, open && styles.chevronOpen)}>
-          <TreeChevronIcon width={11} height={11} />
-        </span>
-        <span className={styles.hunkRange}>{hunk.header}</span>
-        <span className={styles.hunkCount}>
-          {t("fileDiff.lineCount", { count: bodyLines.length })}{open ? "" : ` · ${t("fileDiff.expandHint")}`}
-        </span>
-      </button>
-      {open
-        ? hunk.lines.map((line, index) =>
-            line.kind === "meta" ? null : (
-              <div
-                className={clsx(
-                  styles.line,
-                  line.kind === "add" && styles.lineAdd,
-                  line.kind === "del" && styles.lineDel,
-                )}
-                key={`${String(index)}:${line.text}`}
-              >
-                <span className={styles.num}>{line.oldLine ?? ""}</span>
-                <span className={styles.num}>{line.newLine ?? ""}</span>
-                <span className={styles.marker}>
-                  {line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}
-                </span>
-                <span className={styles.text}>{line.text}</span>
-              </div>
-            ),
-          )
-        : null}
     </div>
   );
 }

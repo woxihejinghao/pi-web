@@ -1,14 +1,57 @@
 /*
- * Ported from dsh's ChatView.module.css (.EvIC1a_turnStatus).
+ * Ported from dsh's `ChatView.module.css` (`.running`, `.runningDivider`,
+ * `.runningContent`), plus the shimmer that already lived on `.turnStatus`.
  *
- * The effect is a gradient moving behind clipped text: the fill is transparent,
+ * The shimmer is a gradient moving behind clipped text: the fill is transparent,
  * the background is the two-tone blue, and `background-clip: text` punches the
  * glyphs out of it. Sliding the background-position sweeps the light band across
  * the word without touching layout.
  */
 
-.turnStatus {
-  height: calc(26px + var(--dsh-content-font-delta, 0px));
+.running {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* The boundary between the work so far and the clock still counting — dsh's
+   `runningDivider`. dsh reveals it only when the row above carries output; this
+   status is mounted only while a turn runs, so the hairline always belongs. */
+.divider {
+  width: 100%;
+  height: 0.5px;
+  margin: 8px 0 10px;
+  background: color-mix(in srgb, var(--dsw-alias-border-l1) 75%, var(--dsw-alias-border-l2));
+  pointer-events: none;
+}
+
+.content {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+/* pi's mark in the running row's icon box — the seat dsh gives its whale tail.
+   It tracks the brand blue so it reads as the agent, not as part of the label. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-static-deepseek-500);
+}
+
+.mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.status {
   font: var(--dsw-font-s-strong-14);
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(22px + var(--dsh-content-font-delta, 0px));
@@ -27,11 +70,17 @@
   background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
-  flex: none;
-  align-self: flex-start;
-  align-items: center;
   animation: dsh-turn-status-shimmer 1.8s linear infinite;
-  display: inline-flex;
+}
+
+.clock {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-caption);
+  -webkit-text-fill-color: var(--dsw-alias-label-caption);
+  font-weight: 400;
 }
 
 @keyframes dsh-turn-status-shimmer {
@@ -40,20 +89,9 @@
   }
 }
 
-.turnStatusClock {
-  font: var(--dsw-font-xs-13);
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-caption);
-  -webkit-text-fill-color: var(--dsw-alias-label-caption);
-  margin-left: 8px;
-  font-weight: 400;
-}
-
 /* Without the sweep the text would be invisible, so hand back a flat fill. */
 @media (prefers-reduced-motion: reduce) {
-  .turnStatus {
+  .status {
     background-position: 0 0;
     background-size: 100% 100%;
     animation: none;

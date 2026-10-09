@@ -1223,7 +1223,7 @@ describe("settings", () => {
       appearance: "system",
       language: "system",
       contentFontSize: 15,
-      transcriptDisplay: "detailed",
+      transcriptDisplay: "standard",
       busySendBehavior: "queue",
       browserNotifications: false,
       titleModel: null,
@@ -1248,7 +1248,7 @@ describe("settings", () => {
     // four-mode setting existed — it must migrate rather than fall back.
     const res = await api("/api/settings");
     expect(res.status).toBe(200);
-    expect(res.body.transcriptDisplay).toBe("detailed");
+    expect(res.body.transcriptDisplay).toBe("standard");
   });
 
   it("round-trips a partial patch and persists it", async () => {
@@ -1262,7 +1262,7 @@ describe("settings", () => {
       appearance: "dark",
       language: "system",
       contentFontSize: 15,
-      transcriptDisplay: "detailed",
+      transcriptDisplay: "standard",
       busySendBehavior: "queue",
       browserNotifications: false,
       titleModel: null,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { SendIcon, StopIcon } from "../../components/icons.tsx";
 import type {
   BusySendBehavior,
@@ -8,7 +8,9 @@ import type {
   SlashCommand,
 } from "../../lib/types.ts";
 import { AttachmentInput, AttachmentStrip, AttachButton } from "./AttachmentStrip.tsx";
+import { DraftMirror } from "./DraftMirror.tsx";
 import { useImageDraft } from "./useImageDraft.ts";
+import { useReferenceDraft } from "./useReferenceDraft.ts";
 import { ContextMeter } from "./ContextMeter.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SlashMenu } from "./SlashMenu.tsx";
@@ -44,6 +46,8 @@ export interface ComposerProps {
   /** `images` are the pictures going with the message; empty for a text-only turn. */
   onSend(text: string, mode: "prompt" | "steer" | "followUp", images: ImageBlock[]): Promise<boolean>;
   onAbort(): void;
+  /** The workspace this message is sent in; a dropped folder is named relative to it. */
+  workspacePath?: string | undefined;
 }
 
 /** pi delivers a queued message as `followUp`; a steering one as `steer`. */
@@ -56,10 +60,11 @@ function deliveryOf(behavior: BusySendBehavior): "steer" | "followUp" {
  * becomes a steering message (delivered after the current tool calls) or a
  * follow-up (delivered once the run settles).
  *
- * Which of the two a plain Enter picks is the "busy send behavior" preference;
- * the toggle in the toolbar overrides it for the current session only, and
- * Cmd/Ctrl+Enter always takes the other one. Those two shortcuts exist because
- * the setting decides the *common* case, not every case.
+ * Which of the two a plain Enter picks is the "busy send behavior" preference,
+ * owned by Settings alone — the composer carries no per-session toggle, so there
+ * is one place to look and nothing to reset. Cmd/Ctrl+Enter always takes the
+ * other one, which is what keeps the uncommon case reachable mid-run without a
+ * second control in the toolbar.
  *
  * Typing `/` opens a completion menu. Skill commands and prompt templates are
  * expanded by pi itself, so a completed command is sent as plain text.
@@ -69,6 +74,11 @@ function deliveryOf(behavior: BusySendBehavior): "steer" | "followUp" {
  * attachments are held as pi's own `ImageBlock` (bare base64), so sending them
  * is not a conversion: the same objects go out over the API and come back from
  * the session file after a reload.
+ *
+ * A dropped *folder* is not an attachment: it is written into the sentence as
+ * its path (`reference-token.ts`), and `DraftMirror` paints that path as a chip
+ * under the transparent textarea, since a textarea cannot style part of its own
+ * value.
  *
  * To the right of the input sit the session's model picker and context ring.
  * Both describe the session the text is about to be sent into, so they belong
@@ -82,27 +92,26 @@ export function Composer({
   session,
   onSend,
   onAbort,
+  workspacePath,
 }: ComposerProps) {
   const t = useT();
   const [text, setText] = useState("");
-  /** The pictures going with the text; see `useImageDraft` for why they are a hook. */
-  const draft = useImageDraft();
-  const [busyMode, setBusyMode] = useState<BusySendBehavior>(busySendBehavior);
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** The layer painting the draft under the transparent textarea. */
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const reference = useReferenceDraft({ text, setText, textareaRef, workspacePath });
+  /** The pictures going with the text; see `useImageDraft` for why they are a hook. */
+  const draft = useImageDraft(reference);
 
   const completion = useSlashCompletion({ setText, textareaRef, commands });
 
-  // Adopt a preference changed in settings, but do not clobber the toolbar
-  // toggle the user just flipped in this session.
-  const lastPreference = useRef(busySendBehavior);
-  useEffect(() => {
-    if (lastPreference.current === busySendBehavior) return;
-    lastPreference.current = busySendBehavior;
-    setBusyMode(busySendBehavior);
-  }, [busySendBehavior]);
-
-  useEffect(() => {
+  // Layout, not passive. `height: auto` is what lets the box shrink to one line
+  // before the new height is measured, and measured after paint that one-line
+  // collapse is visible — while a turn streams it also resizes the scrollport
+  // twice, so the transcript bounces under the reader on every keystroke. Inside
+  // the layout pass the browser only ever sees the final height.
+  useLayoutEffect(() => {
     const element = textareaRef.current;
     if (!element) return;
     element.style.height = "auto";
@@ -116,13 +125,24 @@ export function Composer({
     // question rather than the text alone being empty.
     if ((message.length === 0 && attachments.length === 0) || sending || disabled) return;
     setSending(true);
+    // The draft is cleared but not the labels behind it: a failed send puts
+    // this very text back, and it has to keep meaning what it meant.
     setText("");
     draft.clear();
-    const choice = override ?? busyMode;
-    const ok = await onSend(message, isStreaming ? deliveryOf(choice) : "prompt", attachments);
+    const choice = override ?? busySendBehavior;
+    const ok = await onSend(
+      reference.expand(message),
+      isStreaming ? deliveryOf(choice) : "prompt",
+      attachments,
+    );
     if (!ok) {
-      setText(message);
+      // The draft as it was, not the trimmed sentence: the trim only decides
+      // whether there was anything to send, and putting its result back would
+      // drop the glyph slot off a reference that starts the draft.
+      setText(text);
       draft.restore(attachments);
+    } else {
+      reference.clear();
     }
     setSending(false);
     textareaRef.current?.focus();
@@ -132,6 +152,18 @@ export function Composer({
     // While the command menu is open it owns the arrow keys, Enter/Tab and
     // Escape, so Enter completes a command instead of sending the message.
     if (completion.onKeyDown(event)) return;
+
+    // A reference is one thing to the caret, not a run of characters: one
+    // keystroke takes the whole chip (see `referenceAtCaret`).
+    if (
+      !event.nativeEvent.isComposing &&
+      (event.key === "Backspace" || event.key === "Delete") &&
+      reference.removeAtCaret(event.key)
+    ) {
+      event.preventDefault();
+      completion.sync();
+      return;
+    }
 
     // Never submit while an IME composition is active (Chinese input).
     //
@@ -149,7 +181,7 @@ export function Composer({
       event.preventDefault();
       const other = event.metaKey || event.ctrlKey;
       // An idle agent has only one behavior, so the modifier is a no-op there.
-      void submit(other ? (busyMode === "queue" ? "steer" : "queue") : undefined);
+      void submit(other ? (busySendBehavior === "queue" ? "steer" : "queue") : undefined);
     }
   };
 
@@ -175,49 +207,35 @@ export function Composer({
           onRemove={draft.remove}
         />
 
-        <textarea
-          ref={textareaRef}
-          className={styles.input}
-          value={text}
-          rows={1}
-          spellCheck={false}
-          disabled={disabled}
-          placeholder={
-            disabled ? t("composer.chooseOrCreate") : t("composer.placeholder")
-          }
-          aria-label={t("composer.inputLabel")}
-          onChange={(event) => {
-            setText(event.target.value);
-            completion.sync();
-          }}
-          onKeyUp={() => completion.sync()}
-          onClick={() => completion.sync()}
-          onKeyDown={onKeyDown}
-          onPaste={draft.onPaste}
-        />
+        <div className={styles.inputStack}>
+          <DraftMirror text={text} className={styles.inputMirror} mirrorRef={mirrorRef} />
+          <textarea
+            ref={textareaRef}
+            className={styles.input}
+            value={text}
+            rows={1}
+            spellCheck={false}
+            disabled={disabled}
+            placeholder={
+              disabled ? t("composer.chooseOrCreate") : t("composer.placeholder")
+            }
+            aria-label={t("composer.inputLabel")}
+            onChange={(event) => {
+              setText(event.target.value);
+              completion.sync();
+            }}
+            onKeyUp={() => completion.sync()}
+            onClick={() => completion.sync()}
+            onKeyDown={onKeyDown}
+            onPaste={draft.onPaste}
+            onScroll={(event) => {
+              const mirror = mirrorRef.current;
+              if (mirror) mirror.scrollTop = event.currentTarget.scrollTop;
+            }}
+          />
+        </div>
 
         <div className={styles.toolbar}>
-          {isStreaming ? (
-            <div className={styles.modes} role="radiogroup" aria-label={t("composer.sendMode")}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={busyMode === "steer"}
-                className={busyMode === "steer" ? styles.modeActive : styles.mode}
-                onClick={() => setBusyMode("steer")}
-                title={t("composer.steerTitle")}
-              >{t("composer.steer")}</button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={busyMode === "queue"}
-                className={busyMode === "queue" ? styles.modeActive : styles.mode}
-                onClick={() => setBusyMode("queue")}
-                title={t("composer.followUpTitle")}
-              >{t("composer.followUp")}</button>
-            </div>
-          ) : null}
-
           {/*
            * The attach button and its picker, in the toolbar where the other
            * input-level controls live. `accept` is the same list the reader
