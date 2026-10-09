@@ -32,10 +32,10 @@
 - **模型切换会启动会话进程**（如果它还没驻留）：切模型是 pi 的会话级状态，没有进程就没有对象可切。实测一次 1.7s。
 - **自动命名只认两种线上协议**（`openai-completions` 与 `anthropic-messages`）。其它协议（`google-generative-ai`、`amazon-bedrock`、`openai-responses` …）会在调用时直接拒绝——按另一种 API 拼一份请求只会换来一条看不懂的 provider 报错，而这个调用没有地方能把那条报错讲清楚。要自动命名，就先挑一个 OpenAI 兼容或 Anthropic 的端点。
 - 设置页有「通用设置」「模型」「插件」和「MCP」四节；Agent 预设还没有。
-- **MCP 一节需要 `pi-mcp-adapter` 扩展**：pi 本身没有 MCP，所以没装那个包时这一节显示安装提示，并提供一键安装（等同 `pi install npm:pi-mcp-adapter`）。安装会跑真实的 npm 下载，可能要一分钟；加载失败不入缓存，装完刷新即可。
-- **MCP 的「停用」是工作区级别的**，与 pi 自己的 `/mcp disable` 一致：没有用户级开关，没选工作区时那个按钮是禁用的。启用/停用写 `<工作区>/.pi/mcp.json`。
-- **MCP 的「删除」只对可写的配置文件生效**（全局共享、`.agents`、Pi 两层 override、项目 `.mcp.json`）。来自 cursor / claude-code / codex 等别的工具的定义只能停用，因为那个文件不归 pi 也不归这一页。
-- **MCP 的「检查」会真的启动配置里那个命令**（stdio）或请求那个地址（http/sse），超时 15 秒；HTTP 只做 `initialize`，不报工具数；socket（rmcp-mux）传输不支持检查。
+- **MCP 用的是 pi 自己内置的支持**：配置就是 pi 读的那两份 `mcp.json`（用户级 `<agentDir>/mcp.json`，工作区级 `<工作区>/.pi/mcp.json`），不需要任何扩展。格式是严格 JSON（pi 的读取器同样不接受注释），写坏或写错条目的文件不会静默消失——那一节会把跳过的条目列出来。
+- **MCP 的「停用」是工作区级别的**，与 pi 自己的 `/mcp` 一致：没有用户级开关，没选工作区时那个按钮是禁用的。启用/停用写 `<工作区>/.pi/mcp.json` 里那条只含 `enabled` 的覆盖项。
+- **MCP 的「删除」写的是定义它的那个文件**。如果同名条目在另一层还有定义（典型的是一个只用来停用的覆盖项），删掉上层之后那个定义会重新生效，删除对话框里会先说明这一点。
+- **MCP 的「检查」会真的启动配置里那个命令**（stdio）或请求那个地址（http），超时 15 秒；HTTP 只做 `initialize`，不报工具数。pi 内置支持只认 stdio 和 streamable HTTP，旧版 SSE 与 rmcp-mux socket 这类扩展传输不在其中。
 - 模型一节不列举未配置的内置 provider（pi 需要显式的模型列表，列出来也没有可填的东西），但可以**向提供方询问它有哪些模型**。这需要 provider 有一个 API 地址：内置 provider 的默认地址不归我们管，新建的 known provider 又还没保存，所以这两种情况下要先填上地址。dsh 的限制完全一样（`fetchNeedsBaseUrl: "请先填写 API 地址，再获取。"`）。
 - 模型写入只对真实 pi 做过**读**的验证；写入用临时栈验证过（包括中途发现并修掉的字段丢失），但用户全局 `~/.pi/agent/*.json` 的写入每次都会先备份再原子替换。
 - 模型状态点只反映两个配置文件，**环境变量提供的密钥看不到**（`@earendil-works/pi-ai` 不在依赖树里，拿不到它的 `findEnvKeys`）。措辞已经收敛成「配置文件里没有 API 密钥」，不会断言成「未配置」使环境变量用户去做多余操作。

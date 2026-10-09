@@ -404,9 +404,9 @@ export const api = {
     }),
 
   /**
-   * MCP servers, served through `pi-mcp-adapter`'s own config layer — pi has no
-   * MCP support of its own, and a running session only knows what it already
-   * connected to. The page asks what the next start would connect to.
+   * MCP servers, read from pi's own `mcp.json` files — a running session only
+   * knows what it already connected to, so the page asks what the next start
+   * would connect to.
    */
   getMcp: (projectPath: string | null) =>
     request<McpView>(
@@ -432,9 +432,6 @@ export const api = {
   }) =>
     request<McpView>("/api/mcp/state", { method: "PUT", body: JSON.stringify(input) }),
 
-  importMcpConfigs: (input: { projectPath: string | null; kinds: string[] }) =>
-    request<McpView>("/api/mcp/imports", { method: "POST", body: JSON.stringify(input) }),
-
   /**
    * Connect to one server and report the handshake. Slow by nature: a cold
    * `npx` download inside the command can take a while, so the caller keeps a
@@ -446,17 +443,6 @@ export const api = {
   /** Retire the resident pi processes so the next message re-reads the config. */
   restartMcp: () =>
     request<{ ok: true; closed: number }>("/api/mcp/restart", { method: "POST" }),
-
-  /**
-   * Install the extension this section needs, through pi's own package manager
-   * (the same thing `pi install npm:pi-mcp-adapter` does). Slow by nature: npm
-   * has to resolve and download, so callers keep a progress state.
-   */
-  installMcpAdapter: (projectPath: string | null) =>
-    request<McpView>("/api/mcp/install", {
-      method: "POST",
-      body: JSON.stringify({ projectPath }),
-    }),
 
   getMessages: (sessionPath: string) =>
     request<{

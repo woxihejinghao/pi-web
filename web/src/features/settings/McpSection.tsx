@@ -18,23 +18,22 @@ import {
 import styles from "./McpSection.module.css";
 
 /**
- * The MCP section, ported from dsh's MCP panel — same header (restart, import,
- * add), same card (name, scope/transport/state tags, command line, and the four
- * row actions), same wording for the actions.
+ * The MCP section, ported from dsh's MCP panel — same header (restart, add),
+ * same card (name, scope/transport/state tags, command line, and the four row
+ * actions), same wording for the actions.
  *
  * What differs is where the state comes from. dsh owns its MCP registry and has
- * a `profile` to scope it to; pi has neither — MCP comes from the
- * `pi-mcp-adapter` extension, its config is a set of JSON files, and "disable"
- * is a *workspace* override rather than a global switch (see `mcp.ts`). So the
- * profile picker becomes the workspace scope filter, and the page reports the
- * files it read instead of hiding them.
+ * a `profile` to scope it to; pi reads two `mcp.json` files and "disable" is a
+ * *workspace* entry rather than a global switch (see `mcp.ts`). So the profile
+ * picker becomes the workspace scope filter, and the page reports the files it
+ * read instead of hiding them.
  *
  * Two things dsh's panel has are deliberately absent:
  *
- * - **No per-server enable/disable outside a workspace.** pi's own `/mcp
- *   disable` writes `.pi/mcp.json` in the current project; there is no
- *   user-level off. The control is disabled, with the reason, when no workspace
- *   is selected rather than pretending to be global.
+ * - **No per-server enable/disable outside a workspace.** pi's own `/mcp`
+ *   writes `.pi/mcp.json` in the current project; there is no user-level off.
+ *   The control is disabled, with the reason, when no workspace is selected
+ *   rather than pretending to be global.
  * - **No tool list per server.** A running pi session knows it, but that is
  *   per-process state this page cannot read; 检查 reports the count for the
  *   definition it just connected to, which is the honest version of the same
@@ -43,23 +42,17 @@ import styles from "./McpSection.module.css";
 
 type ProbeState = McpProbeResult | "running";
 
-/** What the install button runs under the hood, for people who use the CLI. */
-const INSTALL_COMMAND = "pi install npm:pi-mcp-adapter";
-
 export function McpSection({ className }: { className?: string }) {
   const t = useT();
   const state = useStore(appStore);
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [editing, setEditing] = useState<{ server: McpServerView | null } | null>(null);
-  const [importing, setImporting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<McpServerView | null>(null);
   const [probes, setProbes] = useState<Record<string, ProbeState>>({});
   const [busy, setBusy] = useState<Record<string, true>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [installError, setInstallError] = useState<string | null>(null);
 
   const projectPath =
     state.projects.find((project) => project.id === state.selectedProjectId)?.path ?? null;
@@ -98,22 +91,6 @@ export function McpSection({ className }: { className?: string }) {
     void actions.restartMcp().finally(() => setRestarting(false));
   };
 
-  const install = (): void => {
-    setInstalling(true);
-    setInstallError(null);
-    void actions
-      .installMcpAdapter(projectPath)
-      .catch((err: Error) => setInstallError(err.message))
-      .finally(() => setInstalling(false));
-  };
-
-  const copyInstallCommand = (): void => {
-    void navigator.clipboard
-      .writeText(INSTALL_COMMAND)
-      .then(() => actions.setNotice(t("settings.mcp.copyNotice", { command: INSTALL_COMMAND })))
-      .catch(() => actions.setNotice(INSTALL_COMMAND));
-  };
-
   const check = (server: McpServerView): void => {
     setProbes((previous) => ({ ...previous, [server.name]: "running" }));
     void actions
@@ -147,26 +124,15 @@ export function McpSection({ className }: { className?: string }) {
           <button
             type="button"
             className={styles.textButton}
-            disabled={restarting || view === null || !view.available}
+            disabled={restarting || view === null}
             onClick={restart}
           >
             {restarting ? t("settings.mcp.restarting") : t("settings.mcp.restart")}
           </button>
           <button
             type="button"
-            className={styles.textButton}
-            disabled={view === null || view.importable.length === 0}
-            title={
-              view !== null && view.importable.length === 0
-                ? t("settings.mcp.noImports")
-                : undefined
-            }
-            onClick={() => setImporting(true)}
-          >{t("settings.mcp.import")}</button>
-          <button
-            type="button"
             className={styles.primaryButton}
-            disabled={view === null || !view.available}
+            disabled={view === null}
             onClick={() => setEditing({ server: null })}
           >{t("settings.mcp.add")}</button>
         </div>
@@ -176,43 +142,6 @@ export function McpSection({ className }: { className?: string }) {
 
       {view === null ? (
         <div className={styles.placeholder}>{t("settings.mcp.loading")}</div>
-      ) : !view.available ? (
-        // The extension is missing, which is a different state from "no servers
-        // configured" — so it gets an explanation and a way out of it, not an
-        // empty list. Installing is the same operation `pi install` performs.
-        <div className={styles.notice}>
-          <p className={styles.noticeTitle}>{t("settings.mcp.adapterTitle")}</p>
-          <p className={styles.noticeBody}>{t("settings.mcp.adapterBody")}</p>
-          {view.unavailableReason !== null ? (
-            <p className={styles.noticeDetail}>{view.unavailableReason}</p>
-          ) : null}
-          <div className={styles.noticeActions}>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              disabled={installing}
-              onClick={install}
-            >
-              {installing ? t("settings.mcp.installingAdapter") : t("settings.mcp.installAdapter")}
-            </button>
-            <button
-              type="button"
-              className={styles.textButton}
-              disabled={installing}
-              onClick={copyInstallCommand}
-            >{t("settings.mcp.copyCommand")}</button>
-            <button
-              type="button"
-              className={styles.textButton}
-              disabled={installing}
-              onClick={refresh}
-            >{t("settings.mcp.recheck")}</button>
-          </div>
-          <p className={styles.noticeCommand}>{INSTALL_COMMAND}</p>
-          {installError !== null ? (
-            <p className={styles.noticeError}>{installError}</p>
-          ) : null}
-        </div>
       ) : view.error !== null ? (
         <div className={styles.notice}>
           <p className={styles.noticeTitle}>{t("settings.mcp.unreadable")}</p>
@@ -282,6 +211,17 @@ export function McpSection({ className }: { className?: string }) {
           )}
 
           <McpPaths view={view} />
+
+          {view.errors.length > 0 ? (
+            <div className={styles.notice}>
+              <p className={styles.noticeTitle}>{t("settings.mcp.errorsTitle")}</p>
+              {view.errors.map((message) => (
+                <p key={message} className={styles.noticeDetail}>
+                  {message}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </>
       )}
 
@@ -294,14 +234,6 @@ export function McpSection({ className }: { className?: string }) {
             // An edited definition invalidates whatever the last check said.
             setProbes({});
           }}
-        />
-      ) : null}
-
-      {importing && view !== null ? (
-        <McpImportDialog
-          view={view}
-          projectPath={projectPath}
-          onClose={() => setImporting(false)}
         />
       ) : null}
 
@@ -385,28 +317,12 @@ function McpCard({
         >
           {server.enabled ? t("common.disable") : t("common.enable")}
         </button>
-        <button
-          type="button"
-          className={styles.cardButton}
-          disabled={server.hostImport}
-          title={
-            server.hostImport
-              ? t("settings.mcp.definedElsewhere", { kind: server.importKind ?? "" })
-              : undefined
-          }
-          onClick={onEdit}
-        >{t("tool.edit")}</button>
-        <button
-          type="button"
-          className={styles.cardDanger}
-          disabled={server.hostImport}
-          title={
-            server.hostImport
-              ? t("settings.mcp.definedElsewhereDisable", { kind: server.importKind ?? "" })
-              : undefined
-          }
-          onClick={onDelete}
-        >{t("common.delete")}</button>
+        <button type="button" className={styles.cardButton} onClick={onEdit}>
+          {t("tool.edit")}
+        </button>
+        <button type="button" className={styles.cardDanger} onClick={onDelete}>
+          {t("common.delete")}
+        </button>
       </div>
     </div>
   );
@@ -416,7 +332,7 @@ function McpCard({
  * The files this section reads and writes.
  *
  * dsh's panel does not show them because it owns its registry; here the config
- * lives in files that other tools read too, and a row that says t("common.disable") is really
+ * lives in two `mcp.json` files, and a row that says t("common.disable") is really
  * writing one of them. Naming them is the difference between a button and a
  * guess.
  */
@@ -427,17 +343,8 @@ function McpPaths({ view }: { view: McpView }) {
       <div className={styles.pathsTitle}>{t("settings.mcp.configFiles")}</div>
       <dl className={styles.pathsList}>
         <PathRow label={t("settings.mcp.pathGlobal")} value={view.paths.global} />
-        <PathRow label={t("settings.mcp.pathProject")} value={view.paths.project} />
-        <PathRow label={t("settings.mcp.pathToggle")} value={view.paths.projectPi} />
-        {view.imports.length > 0 ? (
-          <PathRow
-            label={t("settings.mcp.imported")}
-            value={view.imports
-              .map((entry) =>
-                t("settings.mcp.importedValue", { kind: entry.kind, count: entry.serverCount }),
-              )
-              .join(t("notice.kindsSeparator"))}
-          />
+        {view.paths.project.length > 0 ? (
+          <PathRow label={t("settings.mcp.pathProject")} value={view.paths.project} />
         ) : null}
       </dl>
     </div>
@@ -453,84 +360,6 @@ function PathRow({ label, value }: { label: string; value: string }) {
         {value}
       </dd>
     </div>
-  );
-}
-
-/**
- * Import another agent's MCP config.
- *
- * The list is what the adapter detected on this machine (`~/.cursor/mcp.json`,
- * `~/.claude.json`, `~/.codex/config.toml`, …); importing adds those kinds to
- * Pi's `imports` array, and the servers show up on the next read. Those files
- * stay owned by their tools — the page only ever reads them.
- */
-function McpImportDialog({
-  view,
-  projectPath,
-  onClose,
-}: {
-  view: McpView;
-  projectPath: string | null;
-  onClose: () => void;
-}) {
-  const t = useT();
-  const [selected, setSelected] = useState<Record<string, true>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const kinds = Object.keys(selected);
-
-  const run = (): void => {
-    setBusy(true);
-    setError(null);
-    void actions
-      .importMcpConfigs(projectPath, kinds)
-      .then(() => onClose())
-      .catch((err: Error) => {
-        setError(err.message);
-        setBusy(false);
-      });
-  };
-
-  return (
-    <Dialog onClose={busy ? undefined : onClose} label={t("settings.mcp.import")}>
-      <h2 className={styles.dialogTitle}>{t("settings.mcp.import")}</h2>
-      <p className={styles.dialogCopy}>{t("settings.mcp.importBody")}</p>
-      <div className={styles.importList}>
-        {view.importable.map((candidate) => (
-          <label key={candidate.kind} className={styles.importRow}>
-            <input
-              type="checkbox"
-              checked={selected[candidate.kind] === true}
-              onChange={(event) =>
-                setSelected((previous) => {
-                  const next = { ...previous };
-                  if (event.target.checked) next[candidate.kind] = true;
-                  else delete next[candidate.kind];
-                  return next;
-                })
-              }
-            />
-            <span className={styles.importKind}>{candidate.kind}</span>
-            <span className={styles.importPath} title={candidate.path}>
-              {candidate.path}
-            </span>
-          </label>
-        ))}
-      </div>
-      {error !== null ? <p className={styles.dialogError}>{error}</p> : null}
-      <div className={styles.dialogActions}>
-        <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>{t("common.cancel")}</button>
-        <button
-          type="button"
-          className={styles.primaryButton}
-          disabled={busy || kinds.length === 0}
-          onClick={run}
-        >
-          {busy ? t("settings.mcp.importing") : t("settings.mcp.importAction")}
-        </button>
-      </div>
-    </Dialog>
   );
 }
 

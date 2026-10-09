@@ -77,12 +77,6 @@ describe("probeMcpEntry over stdio", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/command 也没有 url/);
   });
-
-  it("declines the socket transport rather than guessing", async () => {
-    const result = await probeMcpEntry({ socket: "/tmp/rmcp-mux.sock" }, 1000);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/socket/);
-  });
 });
 
 describe("probeMcpEntry over HTTP", () => {

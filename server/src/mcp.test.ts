@@ -1,34 +1,26 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   McpConfigError,
   deleteMcpServer,
-  importMcpConfigs,
   readMcp,
-  resetMcpAdapterCache,
   saveMcpServer,
   setMcpServerEnabled,
 } from "./mcp.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const STUB = join(HERE, "testing", "stub-mcp-adapter.mjs");
-
 /**
- * The MCP page loads `pi-mcp-adapter/config` from the agent dir by path, so
- * these tests install a stub package there. That keeps them off the user's real
- * `~/.config/mcp` and `~/.pi/agent` files, and off whichever adapter version
- * happens to be installed.
+ * These tests write real `mcp.json` files into a throwaway agent dir, because
+ * that is exactly what the module reads: pi's own two config files, with no
+ * extension in between. `PI_CODING_AGENT_DIR` repoints the user layer, and the
+ * project layer lives under the temp workspace.
  */
 let agentDir: string;
 let projectDir: string;
 
-const packageDir = () => join(agentDir, "npm", "node_modules", "pi-mcp-adapter");
 const globalConfig = () => join(agentDir, "mcp.json");
-const projectConfig = () => join(projectDir, ".mcp.json");
-const projectPiConfig = () => join(projectDir, ".pi", "mcp.json");
+const projectConfig = () => join(projectDir, ".pi", "mcp.json");
 
 async function writeJson(path: string, data: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -43,14 +35,6 @@ beforeAll(async () => {
   agentDir = await mkdtemp(join(tmpdir(), "piws-mcp-agent-"));
   projectDir = await mkdtemp(join(tmpdir(), "piws-mcp-project-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
-
-  await mkdir(join(packageDir(), "dist"), { recursive: true });
-  await writeJson(join(packageDir(), "package.json"), {
-    name: "pi-mcp-adapter",
-    version: "0.0.0",
-    exports: { "./config": { import: "./dist/config.js" } },
-  });
-  await copyFile(STUB, join(packageDir(), "dist", "config.js"));
 });
 
 afterAll(async () => {
@@ -61,9 +45,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await rm(globalConfig(), { force: true });
-  await rm(projectConfig(), { force: true });
   await rm(join(projectDir, ".pi"), { recursive: true, force: true });
-  resetMcpAdapterCache();
 });
 
 const find = (view: Awaited<ReturnType<typeof readMcp>>, name: string) =>
@@ -79,25 +61,26 @@ describe("readMcp", () => {
           env: { FIGMA_API_KEY: "sk-secret-value" },
         },
         remote: {
-          url: "https://mcp.example.test/v1",
-          headers: { Authorization: "Bearer sk-header-secret" },
+          url: "https://mcp.example.test/mcp",
+          headers: { "X-Key": "sk-header-secret" },
         },
       },
     });
 
     const view = await readMcp(projectDir);
-    expect(view.available).toBe(true);
+    expect(view.error).toBeNull();
 
     const figma = find(view, "figma")!;
     expect(figma.transport).toBe("stdio");
     expect(figma.detail).toBe("npx -y figma-developer-mcp --stdio");
     // Names, never values.
     expect(figma.envKeys).toEqual(["FIGMA_API_KEY"]);
+    expect(figma.auth).toBe("none");
 
     const remote = find(view, "remote")!;
     expect(remote.transport).toBe("http");
-    expect(remote.headerKeys).toEqual(["Authorization"]);
-    // A URL with no explicit auth mode is auto-detected as OAuth by the adapter.
+    expect(remote.headerKeys).toEqual(["X-Key"]);
+    // Without an Authorization header, pi signs in over OAuth on 401.
     expect(remote.auth).toBe("oauth");
 
     const serialized = JSON.stringify(view);
@@ -111,14 +94,59 @@ describe("readMcp", () => {
 
     const view = await readMcp(projectDir);
     expect(find(view, "shared")?.sourceKind).toBe("user");
+    expect(find(view, "shared")?.sourcePath).toBe(globalConfig());
     expect(find(view, "local")?.sourceKind).toBe("project");
-    // The file the row would be written to is reported for every server.
     expect(find(view, "local")?.sourcePath).toBe(projectConfig());
   });
 
-  it("lists detected host configs that are not imported yet", async () => {
+  it("lets a workspace entry that only names override keys change state, not the definition", async () => {
+    await writeJson(globalConfig(), {
+      mcpServers: { figma: { command: "npx", env: { KEY: "stored" } } },
+    });
+    await writeJson(projectConfig(), { mcpServers: { figma: { enabled: false } } });
+
     const view = await readMcp(projectDir);
-    expect(view.importable.map((entry) => entry.kind)).toEqual(["cursor"]);
+    const figma = find(view, "figma")!;
+    expect(figma.enabled).toBe(false);
+    // The definition still comes from the user layer, credentials included.
+    expect(figma.command).toBe("npx");
+    expect(figma.envKeys).toEqual(["KEY"]);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("surfaces unreadable and invalid entries instead of hiding them", async () => {
+    await writeJson(globalConfig(), {
+      mcpServers: {
+        ok: { command: "npx" },
+        "bad name": { command: "npx" },
+        empty: {},
+      },
+    });
+    await mkdir(dirname(projectConfig()), { recursive: true });
+    await writeFile(projectConfig(), "{ this is not json", "utf8");
+    const view = await readMcp(projectDir);
+    expect(find(view, "ok")).toBeDefined();
+    expect(view.errors.some((message) => message.includes("bad name"))).toBe(true);
+    expect(view.errors.some((message) => message.includes("empty"))).toBe(true);
+    expect(view.errors.some((message) => message.includes("不是标准 JSON"))).toBe(true);
+  });
+
+  it("rejects two names that would share a tool namespace", async () => {
+    await writeJson(globalConfig(), {
+      mcpServers: { "my-server": { command: "a" }, my_server: { command: "b" } },
+    });
+
+    const view = await readMcp(projectDir);
+    expect(view.servers.map((server) => server.name)).toEqual(["my-server"]);
+    expect(view.errors.some((message) => message.includes("命名空间"))).toBe(true);
+  });
+
+  it("reports a workspace override with nothing to override", async () => {
+    await writeJson(projectConfig(), { mcpServers: { ghost: { enabled: false } } });
+
+    const view = await readMcp(projectDir);
+    expect(find(view, "ghost")).toBeUndefined();
+    expect(view.errors.some((message) => message.includes("ghost"))).toBe(true);
   });
 });
 
@@ -158,13 +186,24 @@ describe("saveMcpServer", () => {
       projectPath: projectDir,
       scope: "project",
       originalName: null,
-      draft: draft({ name: "web", transport: "http", url: "https://mcp.test/sse" }),
+      draft: draft({ name: "web", transport: "http", url: "https://mcp.test/mcp" }),
     });
 
-    expect(find(view, "web")).toMatchObject({ transport: "http", detail: "https://mcp.test/sse" });
+    expect(find(view, "web")).toMatchObject({ transport: "http", detail: "https://mcp.test/mcp" });
     expect(await readJson(projectConfig())).toMatchObject({
-      mcpServers: { web: { url: "https://mcp.test/sse" } },
+      mcpServers: { web: { url: "https://mcp.test/mcp" } },
     });
+  });
+
+  it("needs a workspace before it can write the project layer", async () => {
+    await expect(
+      saveMcpServer({
+        projectPath: null,
+        scope: "project",
+        originalName: null,
+        draft: draft(),
+      }),
+    ).rejects.toThrow(/工作区/);
   });
 
   it("keeps a stored secret when the field is left blank", async () => {
@@ -216,10 +255,31 @@ describe("saveMcpServer", () => {
     });
   });
 
+  it("keeps skipping values when editing a layer other than the one that carries the secret", async () => {
+    await writeJson(globalConfig(), {
+      mcpServers: { figma: { command: "npx", env: { FIGMA_API_KEY: "sk-stored" } } },
+    });
+
+    await saveMcpServer({
+      projectPath: projectDir,
+      scope: "project",
+      originalName: "figma",
+      draft: draft({
+        name: "figma",
+        command: "npx",
+        args: "",
+        env: [{ key: "FIGMA_API_KEY", value: "" }],
+      }),
+    });
+
+    // The workspace copy carries the key forward rather than dropping it.
+    expect((await readJson(projectConfig())).mcpServers.figma.env.FIGMA_API_KEY).toBe("sk-stored");
+  });
+
   it("clears the other transport's fields when switching kind", async () => {
     await writeJson(globalConfig(), {
       mcpServers: {
-        thing: { command: "old-cmd", args: ["--a"], lifecycle: "lazy" },
+        thing: { command: "old-cmd", args: ["--a"], exposure: "direct", timeout: 30 },
       },
     });
 
@@ -235,7 +295,8 @@ describe("saveMcpServer", () => {
     expect(stored.command).toBeUndefined();
     expect(stored.args).toBeUndefined();
     // Fields the form does not show survive an edit.
-    expect(stored.lifecycle).toBe("lazy");
+    expect(stored.exposure).toBe("direct");
+    expect(stored.timeout).toBe(30);
     expect(find(view, "thing")?.transport).toBe("http");
   });
 
@@ -256,7 +317,7 @@ describe("saveMcpServer", () => {
     expect(find(view, "old-name")).toBeUndefined();
   });
 
-  it("rejects a stdio entry without a command and an invalid URL", async () => {
+  it("rejects a stdio entry without a command, an invalid URL, and a bad name", async () => {
     await expect(
       saveMcpServer({
         projectPath: projectDir,
@@ -274,6 +335,16 @@ describe("saveMcpServer", () => {
         draft: draft({ name: "bad", transport: "http", url: "ftp://x.test" }),
       }),
     ).rejects.toThrow(/http/);
+
+    // pi's server names allow letters, digits, `_`, and `-` only.
+    await expect(
+      saveMcpServer({
+        projectPath: projectDir,
+        scope: "global",
+        originalName: null,
+        draft: draft({ name: "with.dot" }),
+      }),
+    ).rejects.toThrow(/名称/);
   });
 });
 
@@ -287,12 +358,17 @@ describe("deleteMcpServer", () => {
     expect((await readJson(globalConfig())).mcpServers).toEqual({});
   });
 
-  it("refuses to touch another agent's config file", async () => {
-    await writeJson(globalConfig(), { imports: ["cursor"] });
+  it("removes a workspace override and re-exposes the user-level definition", async () => {
+    await writeJson(globalConfig(), { mcpServers: { figma: { command: "npx" } } });
+    await writeJson(projectConfig(), { mcpServers: { figma: { enabled: false } } });
 
-    await expect(
-      deleteMcpServer({ projectPath: projectDir, name: "from-cursor" }),
-    ).rejects.toThrow(/cursor/);
+    const view = await deleteMcpServer({ projectPath: projectDir, name: "figma" });
+
+    // The row is back, enabled, and sourced from the user layer — which is what
+    // deleting an override really means.
+    expect(find(view, "figma")?.enabled).toBe(true);
+    expect(find(view, "figma")?.sourceKind).toBe("user");
+    expect((await readJson(projectConfig())).mcpServers).toEqual({});
   });
 
   it("reports an unknown server instead of writing anything", async () => {
@@ -303,7 +379,7 @@ describe("deleteMcpServer", () => {
 });
 
 describe("setMcpServerEnabled", () => {
-  it("writes the workspace override the adapter's own /mcp disable writes", async () => {
+  it("writes a workspace entry for a user-level server", async () => {
     await writeJson(globalConfig(), { mcpServers: { figma: { command: "npx" } } });
 
     const view = await setMcpServerEnabled({
@@ -313,39 +389,31 @@ describe("setMcpServerEnabled", () => {
     });
 
     expect(find(view, "figma")?.enabled).toBe(false);
-    expect(await readJson(projectPiConfig())).toMatchObject({
-      mcpServers: { figma: { disabled: true } },
+    expect(await readJson(projectConfig())).toMatchObject({
+      mcpServers: { figma: { enabled: false } },
     });
-
-    const reenabled = await setMcpServerEnabled({
-      projectPath: projectDir,
-      name: "figma",
-      enabled: true,
-    });
-    expect(find(reenabled, "figma")?.enabled).toBe(true);
+    // The user-level definition is untouched.
+    expect((await readJson(globalConfig())).mcpServers.figma).toEqual({ command: "npx" });
   });
 
-  it("needs a workspace, because the override is project-local", async () => {
+  it("edits a workspace definition in place and drops a redundant enabled flag", async () => {
+    await writeJson(globalConfig(), { mcpServers: { figma: { command: "npx" } } });
+    await writeJson(projectConfig(), {
+      mcpServers: { figma: { command: "npx", args: ["-y", "thing"] } },
+    });
+
+    await setMcpServerEnabled({ projectPath: projectDir, name: "figma", enabled: false });
+    expect((await readJson(projectConfig())).mcpServers.figma.enabled).toBe(false);
+
+    await setMcpServerEnabled({ projectPath: projectDir, name: "figma", enabled: true });
+    // `enabled: true` on a full definition is the default, so the key goes away.
+    expect((await readJson(projectConfig())).mcpServers.figma.enabled).toBeUndefined();
+  });
+
+  it("needs a workspace, because the state is project-local", async () => {
     await expect(
       setMcpServerEnabled({ projectPath: null, name: "figma", enabled: false }),
     ).rejects.toThrow(/工作区/);
-  });
-});
-
-describe("importMcpConfigs", () => {
-  it("records the imports and surfaces the imported servers", async () => {
-    const view = await importMcpConfigs(projectDir, ["cursor"]);
-
-    expect((await readJson(globalConfig())).imports).toEqual(["cursor"]);
-    const imported = find(view, "from-cursor")!;
-    expect(imported.hostImport).toBe(true);
-    expect(imported.importKind).toBe("cursor");
-    // Now that it is imported, it is no longer offered as a candidate.
-    expect(view.importable).toEqual([]);
-  });
-
-  it("rejects an empty selection", async () => {
-    await expect(importMcpConfigs(projectDir, [])).rejects.toBeInstanceOf(McpConfigError);
   });
 });
 

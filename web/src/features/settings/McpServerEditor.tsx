@@ -15,24 +15,22 @@ import styles from "./McpServerEditor.module.css";
  *   environment or header row shows its key with an empty value box; leaving the
  *   box empty keeps whatever is stored, and clearing a row removes the key. That
  *   is why rows are pre-filled with keys but never with values.
- * - **The save target is a choice.** A global server goes into the shared
- *   user-global config; a workspace one goes into the project's `.mcp.json`.
- *   Both paths are shown under the picker, because "global" here means "every
- *   MCP host that reads that file", not just pi.
+ * - **The save target is a choice.** A user-level server goes into pi's
+ *   `mcp.json` in the agent dir; a workspace one goes into the project's
+ *   `.pi/mcp.json`. Both paths are shown under the picker.
  */
 
-/** The three transports, with the hint that explains each. */
+/** The two transports pi speaks, with the hint that explains each. */
 function transportOptions(
   t: Translate,
 ): readonly { value: Transport; label: string; hint: string }[] {
   return [
     { value: "stdio", label: "stdio", hint: t("settings.mcpTransport.stdioHint") },
     { value: "http", label: "http", hint: t("settings.mcpTransport.httpHint") },
-    { value: "sse", label: "sse", hint: t("settings.mcpTransport.sseHint") },
   ];
 }
 
-type Transport = "stdio" | "http" | "sse";
+type Transport = "stdio" | "http";
 
 export function McpServerEditor({
   server,
@@ -47,7 +45,7 @@ export function McpServerEditor({
   const editing = server !== null;
   const [name, setName] = useState(server?.name ?? "");
   const [transport, setTransport] = useState<Transport>(
-    server?.transport === "http" || server?.transport === "sse" ? server.transport : "stdio",
+    server?.transport === "http" ? "http" : "stdio",
   );
   const [command, setCommand] = useState(server?.command ?? "");
   const [args, setArgs] = useState(server?.args ?? "");
@@ -208,7 +206,7 @@ export function McpServerEditor({
           >{t("settings.mcpScope.project")}</button>
         </div>
         <span className={styles.fieldHint}>
-          {canUseProject ? t("settings.mcpEditor.projectNote", { path: `${projectPath}/.mcp.json` }) : t("settings.mcpEditor.noProject")}
+          {canUseProject ? t("settings.mcpEditor.projectNote", { path: `${projectPath}/.pi/mcp.json` }) : t("settings.mcpEditor.noProject")}
         </span>
       </div>
 

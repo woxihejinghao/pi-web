@@ -21,8 +21,6 @@ import {
 import {
   McpConfigError,
   deleteMcpServer,
-  importMcpConfigs,
-  installMcpAdapter,
   probeMcpServer,
   readMcp,
   saveMcpServer,
@@ -394,8 +392,8 @@ function parseSecretRows(value: unknown): McpSecretRow[] {
 function parseMcpDraft(value: unknown): McpServerDraft {
   const draft = asObject(value);
   const transport = draft.transport;
-  if (transport !== "stdio" && transport !== "http" && transport !== "sse") {
-    throw badRequest("transport must be stdio, http, or sse");
+  if (transport !== "stdio" && transport !== "http") {
+    throw badRequest("transport must be stdio or http");
   }
   const text = (key: string): string => (typeof draft[key] === "string" ? draft[key] : "");
   return {
@@ -882,35 +880,12 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   // --- MCP servers ----------------------------------------------------------
 
   /**
-   * The MCP inventory: every server the adapter would load for a workspace,
-   * plus the files it read and the host configs it could import.
-   *
-   * pi has no MCP support of its own — it comes from the `pi-mcp-adapter`
-   * extension — so this is served through the adapter's exported config layer
-   * rather than by parsing its files here. When the extension is missing the
-   * response says so (`available: false`) instead of looking empty.
+   * The MCP inventory: every server pi would load for a workspace, read from
+   * pi's own two `mcp.json` files.
    */
   route("GET", "/api/mcp", async ({ res, query }) => {
     const projectPath = query.get("projectPath");
     json(res, 200, await readMcp(projectPath && projectPath.length > 0 ? projectPath : null));
-  });
-
-  /**
-   * Install `pi-mcp-adapter` (the extension MCP support comes from).
-   *
-   * Same operation as `pi install npm:pi-mcp-adapter`, through pi's own package
-   * manager, so the two agree on where the package lands and what settings.json
-   * records. It can take a while — npm has to resolve and download — and the
-   * page shows progress rather than blocking on a spinner with no explanation.
-   */
-  route("POST", "/api/mcp/install", async ({ res, body }) => {
-    const payload = body === undefined ? {} : asObject(body);
-    const view = await installMcpAdapter(optionalProjectPath(payload));
-    // The next pi process has to load the new extension, and MCP servers are
-    // connected at startup; retiring the resident ones is the equivalent of
-    // dsh's 重启.
-    await registry.closeAllExcept(null, "mcp-adapter-installed");
-    json(res, 200, view);
   });
 
   /** Create or update one server. Secrets are write-only, like provider keys. */
@@ -941,8 +916,8 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   /**
    * Enable or disable one server for a workspace.
    *
-   * This writes the project-local Pi override, which is what pi's own
-   * `/mcp disable` does — there is no user-level "off" for an MCP server.
+   * This writes a project entry in the workspace's `.pi/mcp.json`, which is
+   * what pi's own `/mcp` does — there is no user-level "off" for a server.
    */
   route("PUT", "/api/mcp/state", async ({ res, body }) => {
     const payload = asObject(body);
@@ -952,16 +927,6 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       name: requireString(payload, "name"),
       enabled: payload.enabled,
     });
-    await registry.closeAllExcept(null, "mcp-config-changed");
-    json(res, 200, view);
-  });
-
-  route("POST", "/api/mcp/imports", async ({ res, body }) => {
-    const payload = asObject(body);
-    const kinds = Array.isArray(payload.kinds)
-      ? payload.kinds.filter((kind): kind is string => typeof kind === "string")
-      : [];
-    const view = await importMcpConfigs(optionalProjectPath(payload), kinds);
     await registry.closeAllExcept(null, "mcp-config-changed");
     json(res, 200, view);
   });

@@ -2,7 +2,7 @@ import { createServer, request as httpRequest, type Server } from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AddressInfo } from "node:net";
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1643,35 +1643,18 @@ describe("extensions api", () => {
 });
 
 describe("mcp api", () => {
-  // Same isolation rule as the model and extension APIs: the adapter is loaded
-  // from the agent dir, so a stub package goes there instead of the user's
-  // real ~/.pi/agent install.
+  // Same isolation rule as the model and extension APIs: the user layer is
+  // pi's own `mcp.json` in the agent dir, so a temp agent dir stands in for
+  // the real ~/.pi/agent.
   let agentDir: string;
 
   beforeEach(async () => {
     agentDir = await mkdtemp(join(tmpdir(), "piws-api-mcp-"));
     process.env.PI_CODING_AGENT_DIR = agentDir;
-    const packageDir = join(agentDir, "npm", "node_modules", "pi-mcp-adapter");
-    await mkdir(join(packageDir, "dist"), { recursive: true });
-    await writeFile(
-      join(packageDir, "package.json"),
-      JSON.stringify({
-        name: "pi-mcp-adapter",
-        version: "0.0.0",
-        exports: { "./config": { import: "./dist/config.js" } },
-      }),
-      "utf8",
-    );
-    await copyFile(
-      join(HERE, "testing", "stub-mcp-adapter.mjs"),
-      join(packageDir, "dist", "config.js"),
-    );
   });
 
   afterEach(async () => {
     delete process.env.PI_CODING_AGENT_DIR;
-    const mcp = await import("./mcp.ts");
-    mcp.resetMcpAdapterCache();
     await rm(agentDir, { recursive: true, force: true });
   });
 
@@ -1688,9 +1671,8 @@ describe("mcp api", () => {
 
     const res = await api("/api/mcp");
     expect(res.status).toBe(200);
-    expect(res.body.available).toBe(true);
     expect(res.body.servers).toMatchObject([{ name: "figma", transport: "stdio" }]);
-    expect(res.body.paths.piGlobal).toBe(join(agentDir, "mcp.json"));
+    expect(res.body.paths.global).toBe(join(agentDir, "mcp.json"));
     // Secret values never reach the response.
     expect(JSON.stringify(res.body)).not.toContain("secret");
   });
@@ -1751,7 +1733,7 @@ describe("mcp api", () => {
     expect(noWorkspace.body.error).toMatch(/工作区/);
   });
 
-  it("deletes a server and refuses one owned by another agent", async () => {
+  it("deletes a server and reports an unknown one", async () => {
     await seedServer("figma", { command: "npx" });
     const deleted = await api("/api/mcp/servers", {
       method: "DELETE",
@@ -1760,28 +1742,12 @@ describe("mcp api", () => {
     expect(deleted.status).toBe(200);
     expect(deleted.body.servers).toEqual([]);
 
-    await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ imports: ["cursor"] }), "utf8");
     const refused = await api("/api/mcp/servers", {
       method: "DELETE",
-      body: JSON.stringify({ name: "from-cursor" }),
+      body: JSON.stringify({ name: "ghost" }),
     });
     expect(refused.status).toBe(400);
-    expect(refused.body.error).toMatch(/cursor/);
-  });
-
-  it("imports another agent's config", async () => {
-    const res = await post("/api/mcp/imports", { kinds: ["cursor"] });
-    expect(res.status).toBe(200);
-    expect(res.body.servers).toMatchObject([{ name: "from-cursor", hostImport: true }]);
-  });
-
-  it("treats install as a no-op when the adapter already loads", async () => {
-    // The install endpoint shells out to pi's package manager, so this asserts
-    // the guard: with the stub present it must answer from the loaded module
-    // instead of running npm again.
-    const res = await post("/api/mcp/install", {});
-    expect(res.status).toBe(200);
-    expect(res.body.available).toBe(true);
+    expect(refused.body.error).toMatch(/ghost/);
   });
 
   it("restarts by retiring the resident processes", async () => {
@@ -1792,34 +1758,6 @@ describe("mcp api", () => {
     expect(res.status).toBe(200);
     expect(res.body.closed).toBeGreaterThan(0);
     expect(registry.list()).toHaveLength(0);
-  });
-});
-
-describe("mcp api without the adapter", () => {
-  // No stub package here on purpose: this is the state a user is in before
-  // installing pi-mcp-adapter, and the page has to say so rather than render an
-  // empty inventory. Nothing in this block may call the install endpoint — it
-  // would run a real `npm install`.
-  let agentDir: string;
-
-  beforeEach(async () => {
-    agentDir = await mkdtemp(join(tmpdir(), "piws-api-mcp-missing-"));
-    process.env.PI_CODING_AGENT_DIR = agentDir;
-    const mcp = await import("./mcp.ts");
-    mcp.resetMcpAdapterCache();
-  });
-
-  afterEach(async () => {
-    delete process.env.PI_CODING_AGENT_DIR;
-    await rm(agentDir, { recursive: true, force: true });
-  });
-
-  it("answers with an install hint instead of an empty list", async () => {
-    const res = await api("/api/mcp");
-    expect(res.status).toBe(200);
-    expect(res.body.available).toBe(false);
-    expect(res.body.unavailableReason).toMatch(/pi-mcp-adapter/);
-    expect(res.body.servers).toEqual([]);
   });
 });
 

@@ -1,55 +1,36 @@
 /**
- * pi's MCP servers, read and written through pi-mcp-adapter's own config layer.
+ * pi's MCP servers, read and written in pi's own two `mcp.json` files.
  *
- * pi itself has no MCP support; it comes from the `pi-mcp-adapter` extension.
- * That extension owns a config format with more moving parts than it looks:
- * a shared `~/.config/mcp/mcp.json`, the tool-agnostic `~/.agents` files, Pi's
- * own overrides in the agent dir and `.pi/`, project `.mcp.json`, compatibility
- * imports from cursor / claude-code / codex / opencode, and a merge order where
- * project wins over global and Pi-owned files win over shared ones. So this
- * module does not parse those files itself — it loads the adapter's exported
- * `pi-mcp-adapter/config` entry point and calls its `loadMcpConfig`,
- * `getServerProvenance`, `getMcpDiscoverySummary`, and write helpers.
+ * pi has built-in MCP support: it reads `mcp.json` in the agent dir and, for a
+ * project, `<project>/.pi/mcp.json`. This module does not delegate that to an
+ * extension — the semantics below mirror pi's own loader
+ * (`extensions/mcp/config.ts`), because a list that disagrees with what pi
+ * connects to is worse than no list:
  *
- * The same reasoning as the extensions section: a list that disagrees with what
- * pi actually connects to is worse than no list. The cost is that this page
- * only works when the adapter is installed, which is reported as
- * `available: false` rather than as an empty inventory.
+ * - a project entry replaces a global entry with the same name;
+ * - a project entry without `command`, `url`, or `type` overrides only
+ *   `enabled`, `exposure`, and `toolExposure` of the global server, so "off in
+ *   this workspace" is expressible without restating credentials;
+ * - two names that differ only in `-` versus `_` share a tool namespace and the
+ *   second one is rejected;
+ * - the format is strict JSON, like pi's reader (comments are an error there
+ *   too, so they are an error here rather than something this page would
+ *   silently rewrite away).
  *
  * Two things never leave this process: environment values and header values.
- * The adapter's config is a plain object holding API keys in `env`, so the
- * views built here carry key *names* only.
+ * The config is a plain object holding API keys in `env`, so the views built
+ * here carry key *names* only.
  */
 
-import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import {
-  DefaultPackageManager,
-  SettingsManager,
-  getAgentDir,
-} from "@earendil-works/pi-coding-agent";
-import { noProjectCwd } from "./config.ts";
+import { dirname, join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { probeMcpEntry, type McpProbeResult } from "./mcp-probe.ts";
 
-const ADAPTER_PACKAGE = "pi-mcp-adapter";
-
-/** What `pi install` takes on the command line, and what the page offers. */
-export const ADAPTER_SOURCE = `npm:${ADAPTER_PACKAGE}`;
-
-/**
- * Compatibility imports whose provenance is a *shared* file rather than another
- * agent's private config. They are reported with `kind: "import"` by the
- * adapter (that is how its merge list treats them), but their definitions do
- * live in files a user can edit here, unlike a cursor or claude-code file.
- */
-const SHARED_IMPORT_KINDS = new Set([
-  "global MCP config",
-  ".agents MCP config",
-  ".agents/mcp MCP config",
-]);
+/** pi's project config directory (`.pi`, next to the project's other pi files). */
+const PROJECT_CONFIG_DIR = ".pi";
+/** The file name in both layers. */
+const CONFIG_FILE = "mcp.json";
 
 export class McpConfigError extends Error {
   constructor(message: string) {
@@ -62,181 +43,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// --- the adapter's module surface -------------------------------------------
-
 /**
- * The subset of a server entry this UI renders and writes. The real schema is
- * much wider (`lifecycle`, `directTools`, `searchKeywords`, `oauth`, …) and is
- * preserved by spreading the stored entry before applying an edit.
+ * The subset of a pi server entry this UI reads and writes. The real schema is
+ * wider (`oauth`, `toolExposure`, `timeout`, …) and unknown fields are preserved
+ * by spreading the stored entry before applying an edit.
  */
 export interface McpServerEntry {
+  type?: string;
   command?: string;
   args?: string[];
-  socket?: string;
   env?: Record<string, string>;
   cwd?: string;
   url?: string;
   headers?: Record<string, string>;
-  auth?: "oauth" | "bearer" | false;
-  bearerToken?: string;
-  bearerTokenEnv?: string;
-  httpTransport?: "streamable-http" | "sse";
-  disabled?: boolean;
+  /** OAuth client settings for servers without dynamic client registration. */
+  oauth?: Record<string, unknown>;
+  /** Use a `/login` provider's token instead of OAuth. Global layer only. */
+  auth?: { provider: string };
+  enabled?: boolean;
+  exposure?: string;
+  description?: string;
+  toolExposure?: Record<string, string>;
+  timeout?: number;
   [key: string]: unknown;
 }
 
-interface AdapterSource {
-  id: string;
-  label: string;
-  path: string;
-  exists: boolean;
-  scope: "global" | "project";
-  kind: "shared" | "pi";
-  serverCount: number;
-}
-
-interface AdapterSummary {
-  sources: AdapterSource[];
-  imports: Array<{ kind: string; path: string; serverCount: number }>;
-  hostConfigs: Array<{ kind: string; path: string; serverCount: number; active: boolean }>;
-  hostConfigDiscovery: "off" | "prompt" | "on";
-  conflicts: Array<{
-    serverName: string;
-    sources: Array<{ kind: "shared" | "pi" | "host"; path: string }>;
-    winner: { kind: "shared" | "pi" | "host"; path: string };
-  }>;
-  totalServerCount: number;
-  hasAnyConfig: boolean;
-}
-
-interface AdapterProvenance {
-  path: string;
-  kind: "user" | "project" | "import";
-  importKind?: string;
-}
-
-/** Declared locally because the package is not a dependency of this server. */
-interface AdapterConfigModule {
-  loadMcpConfig(overridePath?: string, cwd?: string): { mcpServers?: Record<string, McpServerEntry> };
-  getMcpDiscoverySummary(overridePath?: string, cwd?: string): AdapterSummary;
-  getServerProvenance(overridePath?: string, cwd?: string): Map<string, AdapterProvenance>;
-  findAvailableImportConfigs(cwd?: string): Array<{ kind: string; path: string }>;
-  previewCompatibilityImports(importKinds: string[], overridePath?: string): { afterText: string };
-  ensureCompatibilityImports(kinds: string[], overridePath?: string): { path: string; added: string[] };
-  writeSharedServerEntry(filePath: string, serverName: string, entry: McpServerEntry): string;
-  writeProjectServerDisabledOverride(
-    overridePath: string | undefined,
-    cwd: string,
-    serverName: string,
-    disabled: boolean,
-  ): { path: string; changed: boolean };
-  getGenericGlobalConfigPath(): string;
-  getProjectConfigPath(cwd?: string): string;
-  getProjectPiConfigPath(cwd?: string): string;
-  getPiGlobalConfigPath(overridePath?: string): string;
-  getSharedConfigPath(target: "project" | "global", cwd?: string): string;
-}
-
-let cached: AdapterConfigModule | null = null;
-let lastFailure: string | null = null;
-
-/**
- * Test seam: forget the loaded module.
- *
- * The module is cached because loading it is not free, but the path it came
- * from is derived from the agent dir — which tests repoint per file. Dropping
- * the cache is also what makes installing the adapter take effect without a
- * server restart, so it is not a test-only concern.
- */
-export function resetMcpAdapterCache(): void {
-  cached = null;
-  lastFailure = null;
-}
-
-/**
- * Where the adapter's config entry point lives, per its own `exports`.
- *
- * The adapter is installed by pi into the agent dir's npm root, so this is a
- * path lookup rather than a module resolution — the package is deliberately not
- * a dependency here (it is an extension the *user* installs, like any other pi
- * package). `exports["./config"]` is the public entry, so following it keeps us
- * off the package's internal layout.
- */
-async function findConfigEntry(packageDir: string): Promise<string | null> {
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
-  } catch {
-    return null;
-  }
-  if (!isRecord(manifest)) return null;
-
-  const candidates: string[] = [];
-  const declared = isRecord(manifest.exports) ? manifest.exports["./config"] : undefined;
-  if (typeof declared === "string") {
-    candidates.push(declared);
-  } else if (isRecord(declared)) {
-    for (const key of ["import", "default", "require", "types"]) {
-      const value = declared[key];
-      if (typeof value === "string") candidates.push(value);
-    }
-  }
-  // A source checkout of the adapter has no `dist/`; tsx (which runs this
-  // server) can load the TypeScript entry directly.
-  candidates.push("./dist/config.js", "./config.ts");
-
-  for (const candidate of candidates) {
-    const path = resolve(packageDir, candidate);
-    if (existsSync(path)) return path;
-  }
-  return null;
-}
-
-/**
- * Load the adapter's config module, or explain why it is not available.
- *
- * Failures are not cached: installing the adapter should be enough to make the
- * page work on the next refresh, without restarting this server.
- */
-async function adapter(): Promise<AdapterConfigModule | null> {
-  if (cached !== null) return cached;
-
-  const packageDir = join(getAgentDir(), "npm", "node_modules", ADAPTER_PACKAGE);
-  const entry = await findConfigEntry(packageDir);
-  if (entry === null) {
-    lastFailure = `未安装 ${ADAPTER_PACKAGE}（pi 的 MCP 支持由这个扩展提供）`;
-    return null;
-  }
-  try {
-    const module = (await import(pathToFileURL(entry).href)) as AdapterConfigModule;
-    if (
-      typeof module.loadMcpConfig !== "function" ||
-      typeof module.getMcpDiscoverySummary !== "function" ||
-      typeof module.writeProjectServerDisabledOverride !== "function"
-    ) {
-      lastFailure = `${ADAPTER_PACKAGE} 的 config 入口缺少预期的导出`;
-      return null;
-    }
-    cached = module;
-    return module;
-  } catch (err) {
-    lastFailure = `无法加载 ${ADAPTER_PACKAGE} 的 config 模块：${(err as Error).message}`;
-    return null;
-  }
-}
-
-// --- reading ----------------------------------------------------------------
-
-export type McpTransport = "stdio" | "http" | "sse" | "socket" | "unknown";
+export type McpTransport = "stdio" | "http" | "unknown";
 
 export interface McpServerView {
   name: string;
   transport: McpTransport;
-  /** Command line for stdio, URL for remote transports, socket path otherwise. */
+  /** Command line for stdio, URL for remote. */
   detail: string;
   /**
    * The editable fields, so the editor can prefill them without the row having
-   * to round-trip through `pi`. `args` is the joined form; the server keeps the
+   * to round-trip through pi. `args` is the joined form; the server keeps the
    * stored array untouched unless the text actually changed.
    */
   command: string | null;
@@ -247,96 +88,213 @@ export interface McpServerView {
   envKeys: string[];
   /** Header *names* only, same reason. */
   headerKeys: string[];
-  /** Declared authentication, resolved from `auth` plus the token fields. */
-  auth: "oauth" | "bearer" | "none";
-  /** Whether the server would connect: the adapter only honours `disabled: true`. */
-  enabled: boolean;
-  /** The file pi would write this server's override to. */
-  sourcePath: string;
-  sourceKind: "user" | "project" | "import";
-  importKind: string | null;
   /**
-   * True when the definition comes from another agent's config file (cursor,
-   * claude-code, …). Those files are not ours to rewrite: the adapter can
-   * disable such a server through the project override, and that is all this
-   * page offers for them.
+   * Declared authentication. `oauth` is the default for an HTTP server without
+   * an `Authorization` header (pi signs in on 401); `provider` means the entry
+   * sends a `/login` provider's token instead.
    */
-  hostImport: boolean;
+  auth: "oauth" | "provider" | "none";
+  /** Whether the server would connect: pi only skips `enabled: false`. */
+  enabled: boolean;
+  /** The file this definition comes from; what an edit or delete targets. */
+  sourcePath: string;
+  sourceKind: "user" | "project";
 }
 
 export interface McpView {
-  available: boolean;
-  unavailableReason: string | null;
   agentDir: string;
   projectPath: string | null;
   servers: McpServerView[];
-  sources: AdapterSource[];
-  imports: Array<{ kind: string; path: string; serverCount: number }>;
-  hostConfigs: Array<{ kind: string; path: string; serverCount: number; active: boolean }>;
-  /** Detected host configs that are not imported yet. */
-  importable: Array<{ kind: string; path: string }>;
-  /** `settings.hostConfigDiscovery`; when `on`, every detected host config loads. */
-  hostConfigDiscovery: "off" | "prompt" | "on";
-  conflicts: AdapterSummary["conflicts"];
+  /** Problems read from the config files; the list still renders without them. */
+  errors: string[];
   /** Every file this page may read or write, for the layout footer. */
   paths: {
-    /** Where "add (global)" writes: the shared user-global config. */
+    /** Where "add (global)" writes, and where pi reads user-level servers. */
     global: string;
-    /** Where "add (workspace)" writes. */
+    /** Where "add (workspace)" writes. Empty without a workspace. */
     project: string;
-    /** Where enable/disable writes: the workspace's Pi override. */
-    projectPi: string;
-    /** Pi's global override, which the adapter also rewrites on import. */
-    piGlobal: string;
   };
   error: string | null;
 }
 
+// --- paths ------------------------------------------------------------------
+
+export function mcpPaths(projectPath: string | null): McpView["paths"] {
+  return {
+    global: join(getAgentDir(), CONFIG_FILE),
+    project:
+      projectPath === null || projectPath.length === 0
+        ? ""
+        : join(projectPath, PROJECT_CONFIG_DIR, CONFIG_FILE),
+  };
+}
+
+// --- reading ----------------------------------------------------------------
+
+/** Keys a project entry may set when it only overrides a global server. */
+const OVERRIDE_KEYS = ["enabled", "exposure", "toolExposure"];
+
+/**
+ * Whether an entry overrides a server defined elsewhere instead of defining
+ * one. This is pi's own test, so the page and the loader agree on which project
+ * entries need a global counterpart.
+ */
+function isOverride(value: Record<string, unknown>): boolean {
+  return value.command === undefined && value.url === undefined && value.type === undefined;
+}
+
+/** pi's tool namespace for a server: `mcp__<name>` with `-` replaced by `_`. */
+function namespaceOf(name: string): string {
+  return `mcp__${name.replace(/-/g, "_")}`;
+}
+
+interface LoadedServer {
+  name: string;
+  entry: McpServerEntry;
+  scope: "global" | "project";
+  path: string;
+}
+
+/**
+ * Read one `mcp.json`. A missing file is an empty config; an unreadable or
+ * malformed one is an error the caller records and skips, so one bad file does
+ * not hide the other layer.
+ */
+async function readConfigFile(filePath: string): Promise<Record<string, unknown>> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw new McpConfigError(`无法读取 ${filePath}：${(err as Error).message}`);
+  }
+  if (raw.trim().length === 0) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    // pi's loader is strict JSON too; rather than strip comments and rewrite the
+    // file differently, refuse and let the user fix that file by hand.
+    throw new McpConfigError(`${filePath} 不是标准 JSON：${(err as Error).message}`);
+  }
+  if (!isRecord(parsed)) throw new McpConfigError(`${filePath} 的顶层必须是对象。`);
+  if (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers)) {
+    throw new McpConfigError(`${filePath} 的 mcpServers 必须是对象。`);
+  }
+  return parsed;
+}
+
+/**
+ * Merge the two layers the way pi does: global first, project on top.
+ * Disabled servers stay in the list so they can be enabled again.
+ */
+async function loadServers(
+  projectPath: string | null,
+): Promise<{ servers: LoadedServer[]; errors: string[] }> {
+  const paths = mcpPaths(projectPath);
+  const layers: Array<{ scope: "global" | "project"; path: string }> = [
+    { scope: "global", path: paths.global },
+  ];
+  if (paths.project.length > 0) layers.push({ scope: "project", path: paths.project });
+
+  const servers = new Map<string, LoadedServer>();
+  const errors: string[] = [];
+
+  for (const layer of layers) {
+    let raw: Record<string, unknown>;
+    try {
+      raw = await readConfigFile(layer.path);
+    } catch (err) {
+      errors.push((err as Error).message);
+      continue;
+    }
+    const entries = isRecord(raw.mcpServers) ? raw.mcpServers : {};
+
+    for (const [name, value] of Object.entries(entries)) {
+      if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+        errors.push(`${layer.path}：服务器名 ${name} 含非法字符（只允许字母、数字、_ 和 -）。`);
+        continue;
+      }
+      if (!isRecord(value)) {
+        errors.push(`${layer.path}：${name} 不是一个对象。`);
+        continue;
+      }
+
+      if (layer.scope === "project" && isOverride(value)) {
+        const base = servers.get(name);
+        if (base === undefined) {
+          errors.push(`${layer.path}：${name} 没有 command 或 url，全局层也没有同名服务器可以覆盖。`);
+          continue;
+        }
+        const extra = Object.keys(value).filter((key) => !OVERRIDE_KEYS.includes(key));
+        if (extra.length > 0) {
+          errors.push(`${layer.path}：${name} 是覆盖项，只能设置 ${OVERRIDE_KEYS.join("、")}。`);
+          continue;
+        }
+        servers.set(name, { ...base, entry: { ...base.entry, ...value } });
+        continue;
+      }
+
+      if (typeof value.command !== "string" && typeof value.url !== "string") {
+        errors.push(`${layer.path}：${name} 需要 command 或 url。`);
+        continue;
+      }
+
+      // Names that differ only in `-` and `_` would share a tool namespace.
+      const clash = [...servers.keys()].find(
+        (other) => other !== name && namespaceOf(other) === namespaceOf(name),
+      );
+      if (clash !== undefined) {
+        errors.push(`${layer.path}：${name} 与 ${clash} 的工具命名空间冲突。`);
+        continue;
+      }
+
+      servers.set(name, {
+        name,
+        entry: value as McpServerEntry,
+        scope: layer.scope,
+        path: layer.path,
+      });
+    }
+  }
+
+  return { servers: [...servers.values()], errors };
+}
+
 function transportOf(entry: McpServerEntry): McpTransport {
   if (typeof entry.command === "string" && entry.command.length > 0) return "stdio";
-  if (typeof entry.socket === "string" && entry.socket.length > 0) return "socket";
-  if (typeof entry.url === "string" && entry.url.length > 0) {
-    return entry.httpTransport === "sse" ? "sse" : "http";
-  }
+  if (typeof entry.url === "string" && entry.url.length > 0) return "http";
   return "unknown";
 }
 
 function detailOf(entry: McpServerEntry, transport: McpTransport): string {
   if (transport === "stdio") {
-    const args = Array.isArray(entry.args) ? entry.args.filter((a) => typeof a === "string") : [];
+    const args = Array.isArray(entry.args) ? entry.args.filter((arg) => typeof arg === "string") : [];
     return [entry.command, ...args].join(" ");
   }
-  if (transport === "socket") return String(entry.socket);
-  if (typeof entry.url === "string") return entry.url;
-  return "";
+  return typeof entry.url === "string" ? entry.url : "";
 }
 
-function authOf(entry: McpServerEntry): "oauth" | "bearer" | "none" {
-  if (entry.auth === "bearer" || typeof entry.bearerToken === "string" || typeof entry.bearerTokenEnv === "string") {
-    return "bearer";
-  }
-  if (entry.auth === false) return "none";
-  if (entry.auth === "oauth" || isRecord(entry.oauth)) return "oauth";
-  // A URL with no explicit mode is auto-detected as OAuth by the adapter.
-  return typeof entry.url === "string" ? "oauth" : "none";
+function authOf(entry: McpServerEntry): "oauth" | "provider" | "none" {
+  if (typeof entry.url !== "string" || entry.url.length === 0) return "none";
+  if (isRecord(entry.auth) && typeof entry.auth.provider === "string") return "provider";
+  // OAuth only applies to HTTP servers without an `Authorization` header; a
+  // literal header means the credential comes from the config file instead.
+  const headers = isRecord(entry.headers) ? entry.headers : {};
+  if (Object.keys(headers).some((key) => key.toLowerCase() === "authorization")) return "none";
+  return "oauth";
 }
 
 function keyNames(value: unknown): string[] {
-  return isRecord(value)
-    ? Object.keys(value).filter((key) => typeof key === "string")
-    : [];
+  return isRecord(value) ? Object.keys(value).filter((key) => typeof key === "string") : [];
 }
 
-function toServerView(
-  name: string,
-  entry: McpServerEntry,
-  provenance: AdapterProvenance | undefined,
-): McpServerView {
+function toServerView(server: LoadedServer): McpServerView {
+  const { entry } = server;
   const transport = transportOf(entry);
-  const importKind = provenance?.importKind ?? null;
-  const args = Array.isArray(entry.args) ? entry.args.filter((a) => typeof a === "string") : [];
+  const args = Array.isArray(entry.args) ? entry.args.filter((arg) => typeof arg === "string") : [];
   return {
-    name,
+    name: server.name,
     transport,
     detail: detailOf(entry, transport),
     command: typeof entry.command === "string" ? entry.command : null,
@@ -346,117 +304,34 @@ function toServerView(
     envKeys: keyNames(entry.env),
     headerKeys: keyNames(entry.headers),
     auth: authOf(entry),
-    enabled: entry.disabled !== true,
-    sourcePath: provenance?.path ?? "",
-    sourceKind: provenance?.kind ?? "user",
-    importKind,
-    hostImport: importKind !== null && !SHARED_IMPORT_KINDS.has(importKind),
-  };
-}
-
-function cwdFor(projectPath: string | null): string {
-  return projectPath ?? noProjectCwd();
-}
-
-/**
- * The compatibility imports Pi has been told to load.
- *
- * The adapter reports *detected* host configs separately from the ones that are
- * actually imported, and the difference lives in the `imports` array of Pi's
- * own `mcp.json`. Reading that array here would mean parsing a file the adapter
- * also reads (comments included), so the question is asked through its own
- * preview helper with an empty addition: the "after" text is that file with its
- * current imports, already normalized.
- */
-function importedKinds(module: AdapterConfigModule): Set<string> {
-  try {
-    const parsed: unknown = JSON.parse(module.previewCompatibilityImports([]).afterText);
-    const imports = isRecord(parsed) && Array.isArray(parsed.imports) ? parsed.imports : [];
-    return new Set(imports.filter((kind): kind is string => typeof kind === "string"));
-  } catch {
-    return new Set();
-  }
-}
-
-async function buildView(
-  module: AdapterConfigModule,
-  projectPath: string | null,
-  extra: { servers?: McpServerView[] } = {},
-): Promise<McpView> {
-  const cwd = cwdFor(projectPath);
-  const summary = module.getMcpDiscoverySummary(undefined, cwd);
-  const provenance = module.getServerProvenance(undefined, cwd);
-
-  let servers = extra.servers;
-  if (servers === undefined) {
-    const config = module.loadMcpConfig(undefined, cwd);
-    const entries = isRecord(config?.mcpServers) ? config.mcpServers : {};
-    servers = Object.entries(entries)
-      .filter(([, entry]) => isRecord(entry))
-      .map(([name, entry]) => toServerView(name, entry as McpServerEntry, provenance.get(name)));
-  }
-
-  const importable =
-    summary.hostConfigDiscovery === "on"
-      ? []
-      : module
-          .findAvailableImportConfigs(cwd)
-          .filter((candidate) => !importedKinds(module).has(candidate.kind));
-
-  return {
-    available: true,
-    unavailableReason: null,
-    agentDir: getAgentDir(),
-    projectPath,
-    servers,
-    sources: summary.sources,
-    imports: summary.imports,
-    hostConfigs: summary.hostConfigs,
-    importable,
-    hostConfigDiscovery: summary.hostConfigDiscovery,
-    conflicts: summary.conflicts,
-    paths: {
-      global: module.getSharedConfigPath("global", cwd),
-      project: module.getSharedConfigPath("project", cwd),
-      projectPi: module.getProjectPiConfigPath(cwd),
-      piGlobal: module.getPiGlobalConfigPath(),
-    },
-    error: null,
-  };
-}
-
-function unavailableView(projectPath: string | null, reason: string): McpView {
-  const agentDir = getAgentDir();
-  return {
-    available: false,
-    unavailableReason: reason,
-    agentDir,
-    projectPath,
-    servers: [],
-    sources: [],
-    imports: [],
-    hostConfigs: [],
-    importable: [],
-    hostConfigDiscovery: "off",
-    conflicts: [],
-    paths: {
-      global: join(homedir(), ".config", "mcp", "mcp.json"),
-      project: projectPath === null ? "" : join(projectPath, ".mcp.json"),
-      projectPi: projectPath === null ? "" : join(projectPath, ".pi", "mcp.json"),
-      piGlobal: join(agentDir, "mcp.json"),
-    },
-    error: null,
+    enabled: entry.enabled !== false,
+    sourcePath: server.path,
+    sourceKind: server.scope === "project" ? "project" : "user",
   };
 }
 
 /** Read the MCP inventory for one workspace. Never throws; reports failure. */
-export async function readMcp(projectPath: string | null): Promise<McpView> {  const module = await adapter();
-  if (module === null) return unavailableView(projectPath, lastFailure ?? "MCP 支持不可用");
+export async function readMcp(projectPath: string | null): Promise<McpView> {
+  const paths = mcpPaths(projectPath);
   try {
-    return await buildView(module, projectPath);
+    const { servers, errors } = await loadServers(projectPath);
+    return {
+      agentDir: getAgentDir(),
+      projectPath,
+      servers: servers.map(toServerView),
+      errors,
+      paths,
+      error: null,
+    };
   } catch (err) {
-    const view = unavailableView(projectPath, (err as Error).message);
-    return { ...view, available: true, error: (err as Error).message };
+    return {
+      agentDir: getAgentDir(),
+      projectPath,
+      servers: [],
+      errors: [],
+      paths,
+      error: (err as Error).message,
+    };
   }
 }
 
@@ -470,7 +345,7 @@ export interface McpSecretRow {
 
 export interface McpServerDraft {
   name: string;
-  transport: "stdio" | "http" | "sse";
+  transport: "stdio" | "http";
   /** stdio fields. */
   command: string;
   args: string;
@@ -512,21 +387,25 @@ function mergeSecrets(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Existing entry for a name, used to preserve fields the form does not show. */
+/**
+ * The entry an edit should start from.
+ *
+ * The write target's own copy wins, so editing a project entry does not import
+ * values the global layer happens to carry. When the target file has no copy at
+ * all, the merged definition is the fallback — that is what keeps stored secret
+ * values when a server defined in one layer is edited into the other.
+ */
 async function storedEntry(
-  module: AdapterConfigModule,
-  cwd: string,
-  name: string | null,
+  servers: Record<string, unknown>,
+  lookupName: string | null,
+  projectPath: string | null,
+  name: string,
 ): Promise<McpServerEntry> {
-  if (name === null) return {};
-  try {
-    const config = module.loadMcpConfig(undefined, cwd);
-    const entries = isRecord(config?.mcpServers) ? config.mcpServers : {};
-    const entry = entries[name];
-    return isRecord(entry) ? (entry as McpServerEntry) : {};
-  } catch {
-    return {};
+  if (lookupName !== null && isRecord(servers[lookupName])) {
+    return servers[lookupName] as McpServerEntry;
   }
+  const { servers: merged } = await loadServers(projectPath);
+  return merged.find((server) => server.name === name)?.entry ?? {};
 }
 
 /** Build the entry an edit should store, keeping everything the form omits. */
@@ -541,8 +420,6 @@ function buildEntry(stored: McpServerEntry, draft: McpServerDraft): McpServerEnt
   delete next.env;
   delete next.url;
   delete next.headers;
-  delete next.socket;
-  delete next.httpTransport;
 
   if (draft.transport === "stdio") {
     next.command = draft.command.trim();
@@ -558,7 +435,6 @@ function buildEntry(stored: McpServerEntry, draft: McpServerDraft): McpServerEnt
     if (env !== undefined) next.env = env;
   } else {
     next.url = draft.url.trim();
-    if (draft.transport === "sse") next.httpTransport = "sse";
     const headers = mergeSecrets(draft.headers, stored.headers);
     if (headers !== undefined) next.headers = headers;
   }
@@ -568,8 +444,8 @@ function buildEntry(stored: McpServerEntry, draft: McpServerDraft): McpServerEnt
 function requireName(value: string): string {
   const name = value.trim();
   if (name.length === 0) throw new McpConfigError("服务器名称不能为空。");
-  if (!/^[A-Za-z0-9._-]+$/.test(name)) {
-    throw new McpConfigError("名称只能包含字母、数字、点、下划线和短横线。");
+  if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+    throw new McpConfigError("名称只能包含字母、数字、下划线和短横线。");
   }
   return name;
 }
@@ -579,7 +455,7 @@ function validateDraft(draft: McpServerDraft): McpServerDraft {
   if (draft.transport === "stdio" && draft.command.trim().length === 0) {
     throw new McpConfigError("stdio 服务器需要一个命令。");
   }
-  if (draft.transport !== "stdio") {
+  if (draft.transport === "http") {
     const url = draft.url.trim();
     if (url.length === 0) throw new McpConfigError("远程服务器需要一个 URL。");
     try {
@@ -592,98 +468,42 @@ function validateDraft(draft: McpServerDraft): McpServerDraft {
   return { ...draft, name };
 }
 
-/** Read a JSON config file, tolerating anything unreadable as `{}`. */
-async function readConfigJson(filePath: string): Promise<Record<string, unknown>> {
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw new McpConfigError(`无法读取 ${filePath}：${(err as Error).message}`);
-  }
-  if (raw.trim().length === 0) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    // The adapter tolerates comments in these files; JSON.parse does not. Rather
-    // than strip them (and risk rewriting the file differently), refuse and let
-    // the user edit that file by hand.
-    throw new McpConfigError(`${filePath} 不是标准 JSON（可能含注释）：${(err as Error).message}`);
-  }
-  if (!isRecord(parsed)) throw new McpConfigError(`${filePath} 的顶层必须是对象。`);
-  return parsed;
-}
-
 /** Temp file + rename, so a crash mid-write cannot truncate the config. */
-async function writeJsonAtomic(filePath: string, data: unknown): Promise<void> {
+async function writeConfigFile(filePath: string, data: unknown): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await rename(tmp, filePath);
 }
 
-function serversKeyOf(raw: Record<string, unknown>): string {
-  if (raw.mcpServers !== undefined) return "mcpServers";
-  if (raw["mcp-servers"] !== undefined) return "mcp-servers";
-  return "mcpServers";
-}
-
-/**
- * Remove one server from a config file.
- *
- * The adapter has no delete helper — its own panel disables servers instead of
- * removing them — so this is the one place that rewrites a file directly. It
- * touches a single key and keeps every other field as it was read.
- */
-async function removeServerFromFile(filePath: string, name: string): Promise<boolean> {
-  const raw = await readConfigJson(filePath);
-  const key = serversKeyOf(raw);
-  const servers = raw[key];
-  if (!isRecord(servers) || servers[name] === undefined) return false;
-  delete servers[name];
-  raw[key] = servers;
-  await writeJsonAtomic(filePath, raw);
-  return true;
-}
-
-function targetFileFor(
-  module: AdapterConfigModule,
-  input: SaveMcpServerInput,
-): string {
-  const cwd = cwdFor(input.projectPath);
+/** Create or update one server, then answer with the re-read inventory. */
+export async function saveMcpServer(input: SaveMcpServerInput): Promise<McpView> {
+  const draft = validateDraft(input.draft);
+  const paths = mcpPaths(input.projectPath);
+  let filePath: string;
   if (input.scope === "project") {
-    if (input.projectPath === null) {
+    if (paths.project.length === 0) {
       throw new McpConfigError("要先选择一个工作区，才能把服务器加到工作区。");
     }
-    return module.getSharedConfigPath("project", cwd);
+    filePath = paths.project;
+  } else {
+    filePath = paths.global;
   }
-  return module.getSharedConfigPath("global", cwd);
-}
 
-/** Create or update one MCP server, then answer with the re-read inventory. */
-export async function saveMcpServer(input: SaveMcpServerInput): Promise<McpView> {
-  const module = await adapter();
-  if (module === null) throw new McpConfigError(lastFailure ?? "MCP 支持不可用");
-
-  const draft = validateDraft(input.draft);
-  const cwd = cwdFor(input.projectPath);
-  const filePath = targetFileFor(module, input);
-  const stored = await storedEntry(module, cwd, input.originalName);
-  const entry = buildEntry(stored, draft);
-
-  // The adapter owns this write: it knows the file's `mcp-servers` alias and
-  // how to keep the rest of the document intact.
-  module.writeSharedServerEntry(filePath, draft.name, entry);
+  const raw = await readConfigFile(filePath);
+  const servers = isRecord(raw.mcpServers) ? raw.mcpServers : {};
+  const lookupName = input.originalName ?? draft.name;
+  const stored = await storedEntry(servers, lookupName, input.projectPath, draft.name);
 
   // A rename has to remove the old key from the same file, or both definitions
-  // would load. When the old name came from a shared file instead, it stays
-  // there — this write is an override, and the origin is reported on the row.
+  // would load.
   if (input.originalName !== null && input.originalName !== draft.name) {
-    await removeServerFromFile(filePath, input.originalName);
+    delete servers[input.originalName];
   }
-
-  return await buildView(module, input.projectPath);
+  servers[draft.name] = buildEntry(stored, draft);
+  raw.mcpServers = servers;
+  await writeConfigFile(filePath, raw);
+  return await readMcp(input.projectPath);
 }
 
 export interface DeleteMcpServerInput {
@@ -692,62 +512,26 @@ export interface DeleteMcpServerInput {
 }
 
 /**
- * Delete a server definition from the file that actually carries it.
+ * Delete a server definition from the topmost file that carries one.
  *
- * `sourcePath` from the adapter is the *write* target, which for a shared or
- * imported server is Pi's override file — deleting there would leave the
- * original definition loading. So the definition is located in the readable
- * layers first, highest precedence last, and removed from the topmost file that
- * has it. If a lower layer also defines it, the row comes back after this,
- * which is the truth: removing an override re-exposes what it shadowed.
+ * The project layer is tried first: for a server whose project entry is only an
+ * override, removing it re-exposes the global definition, and the row coming
+ * back after this is the truth rather than a failure.
  */
 export async function deleteMcpServer(input: DeleteMcpServerInput): Promise<McpView> {
-  const module = await adapter();
-  if (module === null) throw new McpConfigError(lastFailure ?? "MCP 支持不可用");
+  const paths = mcpPaths(input.projectPath);
+  const candidates = [paths.project, paths.global].filter((path) => path.length > 0);
 
-  const cwd = cwdFor(input.projectPath);
-  const provenance = module.getServerProvenance(undefined, cwd).get(input.name);
-  if (provenance === undefined) {
-    throw new McpConfigError(`没有找到 MCP 服务器 ${input.name}。`);
+  for (const filePath of candidates) {
+    const raw = await readConfigFile(filePath);
+    const servers = isRecord(raw.mcpServers) ? raw.mcpServers : {};
+    if (servers[input.name] === undefined) continue;
+    delete servers[input.name];
+    raw.mcpServers = servers;
+    await writeConfigFile(filePath, raw);
+    return await readMcp(input.projectPath);
   }
-  const importKind = provenance.importKind ?? null;
-  if (importKind !== null && !SHARED_IMPORT_KINDS.has(importKind)) {
-    throw new McpConfigError(
-      `${input.name} 定义在 ${importKind} 的配置里，请在那个文件里删除；这里只能停用它。`,
-    );
-  }
-
-  for (const filePath of definitionFiles(module, input.projectPath, cwd)) {
-    if (await removeServerFromFile(filePath, input.name)) {
-      return await buildView(module, input.projectPath);
-    }
-  }
-  throw new McpConfigError(`没有在可写的配置文件里找到 ${input.name}。`);
-}
-
-/**
- * The readable definition files, lowest precedence first.
- *
- * Mirrors the adapter's merge order (`~/.config/mcp` → `.agents` → Pi global →
- * project `.mcp.json` → `.pi/mcp.json`). Ancestor-directory discovery is
- * deliberately left out: a file outside the selected workspace is not something
- * this page should rewrite.
- */
-function definitionFiles(
-  module: AdapterConfigModule,
-  projectPath: string | null,
-  cwd: string,
-): string[] {
-  const files: string[] = [
-    module.getGenericGlobalConfigPath(),
-    join(homedir(), ".agents", "mcp.json"),
-    join(homedir(), ".agents", "mcp", "mcp.json"),
-    module.getPiGlobalConfigPath(),
-  ];
-  if (projectPath !== null) {
-    files.push(module.getProjectConfigPath(cwd), module.getProjectPiConfigPath(cwd));
-  }
-  return files;
+  throw new McpConfigError(`没有在配置文件里找到 MCP 服务器 ${input.name}。`);
 }
 
 export interface McpEnabledInput {
@@ -759,77 +543,38 @@ export interface McpEnabledInput {
 /**
  * Enable or disable a server for one workspace.
  *
- * Disabling writes the project-local Pi override, which is what the adapter's
- * own `/mcp disable` does: pi has no user-level "off" for an MCP server, so the
- * state is per workspace. Enabling writes `disabled: false` only when a lower
- * layer had disabled it.
+ * pi has no user-level "off": the state is a project entry. When the workspace's
+ * own file already carries the definition, its `enabled` is edited in place;
+ * otherwise a project override is added, of which `enabled` is the only key.
  */
 export async function setMcpServerEnabled(input: McpEnabledInput): Promise<McpView> {
-  const module = await adapter();
-  if (module === null) throw new McpConfigError(lastFailure ?? "MCP 支持不可用");
-  if (input.projectPath === null) {
+  const paths = mcpPaths(input.projectPath);
+  if (paths.project.length === 0) {
     throw new McpConfigError("启用/停用会写入工作区的 .pi/mcp.json，请先选择一个工作区。");
   }
-  module.writeProjectServerDisabledOverride(
-    undefined,
-    cwdFor(input.projectPath),
-    input.name,
-    !input.enabled,
-  );
-  return await buildView(module, input.projectPath);
-}
 
-/**
- * Install `pi-mcp-adapter` through pi's own package manager.
- *
- * This is the same operation as `pi install npm:pi-mcp-adapter`: the manager
- * installs into the agent dir's npm root and records the source in settings, so
- * the terminal and this page agree afterwards. It lives here because the
- * alternative — printing a command and sending the user out of the page — turns
- * a missing dependency into a dead end.
- *
- * Installing is not instant (npm has to resolve and download), so the caller
- * shows progress. A failure is not cached anywhere: the module loader retries on
- * every read, so a successful install takes effect on the next refresh without
- * restarting this server.
- */
-export async function installMcpAdapter(projectPath: string | null): Promise<McpView> {
-  const existing = await adapter();
-  if (existing !== null) {
-    // Already installed. Do not touch settings again just because the button
-    // was pressed twice.
-    return await buildView(existing, projectPath);
+  const raw = await readConfigFile(paths.project);
+  const servers = isRecord(raw.mcpServers) ? raw.mcpServers : {};
+  const existing = servers[input.name];
+
+  if (isRecord(existing)) {
+    // `enabled: true` on a full definition is the default, so pi drops the key
+    // there; on an override it is a real statement and has to stay.
+    if (input.enabled && !isOverride(existing)) delete existing.enabled;
+    else existing.enabled = input.enabled;
+    if (Object.keys(existing).length === 0) delete servers[input.name];
+  } else {
+    const merged = await loadServers(input.projectPath);
+    const current = merged.servers.find((server) => server.name === input.name);
+    if (current === undefined) throw new McpConfigError(`没有找到 MCP 服务器 ${input.name}。`);
+    // Already on by default: an override that only says "enabled" would be noise.
+    if (input.enabled && current.entry.enabled !== false) return await readMcp(input.projectPath);
+    servers[input.name] = { enabled: input.enabled };
   }
 
-  const agentDir = getAgentDir();
-  const cwd = noProjectCwd();
-  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
-  const packages = new DefaultPackageManager({ cwd, agentDir, settingsManager });
-  try {
-    await packages.installAndPersist(ADAPTER_SOURCE);
-  } catch (err) {
-    throw new McpConfigError(`安装 ${ADAPTER_SOURCE} 失败：${(err as Error).message}`);
-  }
-
-  resetMcpAdapterCache();
-  const module = await adapter();
-  if (module === null) {
-    // The install reported success but the package still cannot be loaded.
-    // Saying so matters: retrying the install will not help.
-    throw new McpConfigError(
-      `已安装 ${ADAPTER_SOURCE}，但仍无法加载：${lastFailure ?? "未知原因"}`,
-    );
-  }
-  return await buildView(module, projectPath);
-}
-
-/** Import servers from other agents' config files (`/mcp setup`'s job). */
-export async function importMcpConfigs(projectPath: string | null, kinds: string[]): Promise<McpView> {
-  const module = await adapter();
-  if (module === null) throw new McpConfigError(lastFailure ?? "MCP 支持不可用");
-  if (kinds.length === 0) throw new McpConfigError("没有选择要导入的配置。");
-  module.ensureCompatibilityImports(kinds);
-  return await buildView(module, projectPath);
+  raw.mcpServers = servers;
+  await writeConfigFile(paths.project, raw);
+  return await readMcp(input.projectPath);
 }
 
 /**
@@ -846,14 +591,8 @@ export async function probeMcpServer(
   projectPath: string | null,
   name: string,
 ): Promise<McpProbeResult> {
-  const module = await adapter();
-  if (module === null) throw new McpConfigError(lastFailure ?? "MCP 支持不可用");
-
-  const cwd = cwdFor(projectPath);
-  const config = module.loadMcpConfig(undefined, cwd);
-  const entries = isRecord(config?.mcpServers) ? config.mcpServers : {};
-  const entry = entries[name];
-  if (!isRecord(entry)) throw new McpConfigError(`没有找到 MCP 服务器 ${name}。`);
-
-  return await probeMcpEntry(entry as McpServerEntry);
+  const { servers } = await loadServers(projectPath);
+  const entry = servers.find((server) => server.name === name)?.entry;
+  if (entry === undefined) throw new McpConfigError(`没有找到 MCP 服务器 ${name}。`);
+  return await probeMcpEntry(entry);
 }

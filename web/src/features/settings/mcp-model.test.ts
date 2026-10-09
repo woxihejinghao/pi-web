@@ -23,30 +23,19 @@ function server(overrides: Partial<McpServerView> & { name: string }): McpServer
     enabled: true,
     sourcePath: "/home/u/.pi/agent/mcp.json",
     sourceKind: "user",
-    importKind: null,
-    hostImport: false,
     ...overrides,
   };
 }
 
 function view(servers: McpServerView[]): McpView {
   return {
-    available: true,
-    unavailableReason: null,
     agentDir: "/home/u/.pi/agent",
     projectPath: "/work/repo",
     servers,
-    sources: [],
-    imports: [],
-    hostConfigs: [],
-    importable: [],
-    hostConfigDiscovery: "off",
-    conflicts: [],
+    errors: [],
     paths: {
-      global: "/home/u/.config/mcp/mcp.json",
-      project: "/work/repo/.mcp.json",
-      projectPi: "/work/repo/.pi/mcp.json",
-      piGlobal: "/home/u/.pi/agent/mcp.json",
+      global: "/home/u/.pi/agent/mcp.json",
+      project: "/work/repo/.pi/mcp.json",
     },
     error: null,
   };
@@ -56,14 +45,12 @@ describe("filterServers", () => {
   const inventory = view([
     server({ name: "global-a" }),
     server({ name: "workspace-b", sourceKind: "project", enabled: false }),
-    server({ name: "imported-c", sourceKind: "import", importKind: "cursor", hostImport: true }),
   ]);
 
   it("keeps everything with both filters on 全部", () => {
     expect(filterServers(inventory, "all", "all").map((s) => s.name)).toEqual([
       "global-a",
       "workspace-b",
-      "imported-c",
     ]);
   });
 
@@ -76,7 +63,6 @@ describe("filterServers", () => {
     ]);
     expect(filterServers(inventory, "all", "enabled").map((s) => s.name)).toEqual([
       "global-a",
-      "imported-c",
     ]);
   });
 
@@ -86,13 +72,8 @@ describe("filterServers", () => {
 });
 
 describe("scopeLabel", () => {
-  it("names the origin agent for imports and the scope otherwise", () => {
+  it("names the layer a definition comes from", () => {
     expect(scopeLabel(server({ name: "a" }))).toBe("全局");
     expect(scopeLabel(server({ name: "b", sourceKind: "project" }))).toBe("当前工作区");
-    expect(
-      scopeLabel(
-        server({ name: "c", sourceKind: "import", importKind: "claude-code", hostImport: true }),
-      ),
-    ).toBe("来自 claude-code");
   });
 });

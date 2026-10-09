@@ -570,17 +570,9 @@ export const actions = {
     actions.setNotice(tr()("notice.deleted", { name }));
   },
 
-  async importMcpConfigs(projectPath: string | null, kinds: string[]): Promise<void> {
-    const mcp = await api.importMcpConfigs({ projectPath, kinds });
-    appStore.update((state) => ({ ...state, mcp }));
-    actions.setNotice(
-        tr()("notice.mcpImported", { kinds: kinds.join(tr()("notice.kindsSeparator")) }),
-      );
-  },
-
   /**
-   * Enable or disable one server. This writes the workspace override, so it
-   * reports the same thing the adapter's `/mcp disable` does.
+   * Enable or disable one server. This writes a project entry, so it reports
+   * the same thing pi's own `/mcp` does for that workspace.
    */
   async setMcpServerEnabled(
     projectPath: string | null,
@@ -616,19 +608,6 @@ export const actions = {
     } catch (err) {
       actions.setNotice((err as Error).message);
     }
-  },
-
-  /**
-   * Install `pi-mcp-adapter`.
-   *
-   * Rethrows instead of routing through `setNotice`: this is a long request
-   * with a real chance of failing, and the message belongs next to the button
-   * that started it rather than in a banner the user may have scrolled past.
-   */
-  async installMcpAdapter(projectPath: string | null): Promise<void> {
-    const mcp = await api.installMcpAdapter(projectPath);
-    appStore.update((state) => ({ ...state, mcp }));
-    actions.setNotice(tr()("notice.mcpAdapterInstalled"));
   },
 
   async refreshProjects(): Promise<void> {

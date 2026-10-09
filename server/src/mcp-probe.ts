@@ -12,8 +12,7 @@
  * downloading before it ever speaks the protocol, which is why the timeout is
  * generous and why nothing here happens on page load.
  *
- * Scope: stdio and HTTP(S). The rmcp-mux socket transport is reported as
- * unsupported rather than guessed at.
+ * Scope: stdio and HTTP(S), which is what pi's built-in MCP support speaks.
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -311,13 +310,6 @@ export async function probeMcpEntry(
   }
   if (typeof entry.url === "string" && entry.url.length > 0) {
     return await probeHttp(entry, timeoutMs);
-  }
-  if (typeof entry.socket === "string" && entry.socket.length > 0) {
-    return {
-      ok: false,
-      message: "socket 传输（rmcp-mux）暂不支持检查。",
-      durationMs: 0,
-    };
   }
   return {
     ok: false,

@@ -31,14 +31,10 @@ export type ScopeFilter = "all" | "user" | "project";
 export type StateFilter = "all" | "enabled" | "disabled";
 
 /**
- * What the row says about where the definition came from.
- *
- * An imported server gets its origin agent's name: "全局" would be wrong for a
- * definition that lives in `~/.cursor/mcp.json` and is only *read* through Pi's
- * import list.
+ * What the row says about where the definition came from. pi reads two layers,
+ * so a row is either the user-level `mcp.json` or a project `.pi/mcp.json`.
  */
 export function scopeLabel(server: McpServerView, t: Translate): string {
-  if (server.hostImport) return t("settings.mcpOrigin.from", { kind: server.importKind ?? "" });
   return server.sourceKind === "project"
     ? t("settings.mcpScope.project")
     : t("settings.mcpScope.user");

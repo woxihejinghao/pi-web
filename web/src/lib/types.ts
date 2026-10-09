@@ -652,13 +652,13 @@ export interface UpdatesView {
 }
 
 /**
- * One MCP server as `pi-mcp-adapter` would load it for a workspace. Secret
+ * One MCP server as pi's own loader would resolve it for a workspace. Secret
  * *values* never appear here — `envKeys` and `headerKeys` are names only.
  */
 export interface McpServerView {
   name: string;
-  transport: "stdio" | "http" | "sse" | "socket" | "unknown";
-  /** Command line, URL, or socket path — whatever the row should show. */
+  transport: "stdio" | "http" | "unknown";
+  /** Command line or URL — whatever the row should show. */
   detail: string;
   /** Editable fields for the editor; `args` is the joined form. */
   command: string | null;
@@ -667,45 +667,21 @@ export interface McpServerView {
   url: string | null;
   envKeys: string[];
   headerKeys: string[];
-  auth: "oauth" | "bearer" | "none";
+  /** `oauth` is the default for an HTTP server without an Authorization header. */
+  auth: "oauth" | "provider" | "none";
   enabled: boolean;
-  /** The file pi would write this server's override to. */
+  /** The file this definition comes from; what an edit or delete targets. */
   sourcePath: string;
-  sourceKind: "user" | "project" | "import";
-  importKind: string | null;
-  /** True when another agent's config file owns the definition. */
-  hostImport: boolean;
-}
-
-export interface McpSourceView {
-  id: string;
-  label: string;
-  path: string;
-  exists: boolean;
-  scope: "global" | "project";
-  kind: "shared" | "pi";
-  serverCount: number;
+  sourceKind: "user" | "project";
 }
 
 export interface McpView {
-  /** False when `pi-mcp-adapter` is not installed — pi has no MCP of its own. */
-  available: boolean;
-  unavailableReason: string | null;
   agentDir: string;
   projectPath: string | null;
   servers: McpServerView[];
-  sources: McpSourceView[];
-  imports: { kind: string; path: string; serverCount: number }[];
-  hostConfigs: { kind: string; path: string; serverCount: number; active: boolean }[];
-  /** Detected host configs that have not been imported yet. */
-  importable: { kind: string; path: string }[];
-  hostConfigDiscovery: "off" | "prompt" | "on";
-  conflicts: {
-    serverName: string;
-    sources: { kind: string; path: string }[];
-    winner: { kind: string; path: string };
-  }[];
-  paths: { global: string; project: string; projectPi: string; piGlobal: string };
+  /** Problems read from the config files; the list still renders without them. */
+  errors: string[];
+  paths: { global: string; project: string };
   error: string | null;
 }
 
@@ -727,7 +703,7 @@ export interface McpSecretRow {
 
 export interface McpServerDraft {
   name: string;
-  transport: "stdio" | "http" | "sse";
+  transport: "stdio" | "http";
   command: string;
   args: string;
   cwd: string;
