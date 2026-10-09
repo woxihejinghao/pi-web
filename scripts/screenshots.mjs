@@ -138,13 +138,33 @@ const steps = await evaluate(`(async () => {
   if (rightbarButton) { rightbarButton.click(); done.push('rightbar'); await sleep(1000); }
 
   const newTab = byTitle('新建标签页') ?? byTitle('New tab');
-  if (newTab) {
+
+  // The change set is normally the tab the sidebar restores, so this only makes
+  // sure it is the one on top. A fresh profile restores the file tree instead,
+  // in which case the tab comes from the "+" menu — which is closed again with
+  // Escape, because that portal only listens for real pointer events and a
+  // synthetic click would leave it open on top of the panel.
+  const changesTab = byText(['文件变更', 'Changes']);
+  if (changesTab) {
+    changesTab.click(); done.push('changes'); await sleep(2000);
+  } else if (newTab) {
     newTab.click(); await sleep(600);
-    const changes = byText(['文件变更', 'Changes']);
-    if (changes) { changes.click(); done.push('changes'); await sleep(2200); }
+    const changesItem = byText(['文件变更', 'Changes']);
+    if (changesItem) { changesItem.click(); done.push('changes-new'); await sleep(2000); }
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(700);
   }
 
-  const scroller = [...document.querySelectorAll('div')].find((el) => el.scrollHeight > el.clientHeight + 200 && /scroll/i.test(el.className));
+  // Scroll the transcript back to the top so the shot starts at the first user
+  // message. The transcript is a sibling of the composer, not an ancestor, so
+  // this climbs the composer's ancestors and takes the tallest overflowing
+  // container inside the first one that has any. CSS-module hashes change with
+  // every style edit, so nothing here matches on a class name.
+  let scroller = null;
+  for (let el = document.querySelector('textarea'); el && !scroller; el = el.parentElement) {
+    const overflowing = [...el.querySelectorAll('div')].filter((d) => d.scrollHeight > d.clientHeight + 20);
+    if (overflowing.length > 0) scroller = overflowing.sort((a, b) => b.scrollHeight - b.clientHeight - (a.scrollHeight - a.clientHeight))[0];
+  }
   if (scroller) { scroller.scrollTop = 0; done.push('scrollTop'); await sleep(900); }
 
   return done.join(',');

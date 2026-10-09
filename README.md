@@ -10,13 +10,36 @@ npx pi-web-simple    # serves the UI + API on http://127.0.0.1:5319
 
 Requires Node.js `>= 22.19.0`. Binds to `127.0.0.1` only.
 
-**Highlights** — server-side directory picker · multi-session, one idle-recycled pi process per session · SSE streaming chat with Markdown + shiki highlighting · image input · session fork and topic tree · model picker · right sidebar (file tree, preview, git changes, embedded browser) · full git panel (stage, commit, push, restore, switch branch) · model / plugin / MCP settings.
+**Highlights** — server-side directory picker · multi-session, one idle-recycled pi process per session · SSE streaming chat with Markdown + shiki highlighting · image input · session fork and rename · model picker · left sidebar with view options (grouping / ordering, drag to reorder) and in-place search · right sidebar (file tree, preview, git changes, terminal, embedded browser — splittable into two columns, tabs can be dragged out into floating panels, with shortcuts) · full git panel (stage, commit, push, restore, switch branch) · model / plugin / MCP settings.
+
+The right sidebar's **terminal** needs one optional native dependency. It ships as a prebuilt binary per platform:
+
+```sh
+npm install node-pty        # optional; already declared as an optionalDependency
+```
+
+When it cannot be installed (no prebuilt binary for the platform, or no local toolchain), only that one tab is affected — **Terminal** in the “+” menu is greyed out with the reason on hover, and everything else works as usual.
+
+Common actions in the right sidebar have global shortcuts, with the bindings taken from deepseek-harness so muscle memory carries across both apps:
+
+| Action | Desktop | Browser |
+| :-- | :-- | :-- |
+| Collapse / expand the sidebar | `⌥⌘B` | `⇧⌘B` |
+| Full-screen the pane | `⌥⌘↵` | `⌥⌘↵` |
+| Open a file tab | `⌘P` | `⌥⌘P` |
+| New terminal | `` ⌃` `` | `` ⌃` `` |
+| New browser tab | `⌘T` | `⌥⌘T` |
+| Split the current column | `⌘\` | `⌘\` |
+
+Written the macOS way (`⌃` Control · `⌥` Option · `⇧` Shift · `⌘` Command); on Windows and Linux those become `Ctrl` / `Alt` / `Shift` / `Ctrl`, so collapsing the sidebar is `Ctrl+Alt+B`. The browser column carries an extra `⌥` because `⌘P` (print), `⌘T` (new tab) and `⌘⇧B` (bookmarks bar) belong to the browser and cannot be taken; `⌘\` is the exception, free in both. Hovering a button or a menu item shows the key it answers to, so there is no need to come back to this table.
+
+The dock is mouse-driven too: drag a tab to the left or right edge of a column to split, onto the drop card in the other column to move it there, onto the tab strip for a vertical insertion line, or outside the sidebar to turn it into a floating panel (draggable, resizable from the bottom-right corner, and dockable again from the button in its header). The divider between the two columns can be dragged to resize them.
 
 | Dark theme | Light theme |
 | :---: | :---: |
 | ![Main view in the dark theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.en.png) | ![Main view in the light theme](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.en.png) |
 
-*Left: dark theme, right: light theme (follows the system by default, and can be pinned in settings). Both show the same session: workspace and sessions in the left column, the conversation with its thinking and tool calls (read / edit / write / Bash) in the middle, and the file changes on the right, where they can be staged, committed and pushed directly.*
+*Left: dark theme, right: light theme (follows the system by default, and can be pinned in settings). Both show the same session: workspace and sessions in the left column, the conversation with its folded thinking and tool steps in the middle, and the file changes on the right, where they can be staged, committed and pushed directly.*
 
 ---
 
@@ -84,11 +107,15 @@ Details, troubleshooting and the trade-offs: [docs/desktop.md](./docs/desktop.md
 
 The desktop app shares `~/.pi-web-simple` and `~/.pi` with the CLI, so both see the same
 projects and sessions, and it prefers port 5319 (falling back to an ephemeral port) so the two
-can run side by side.
+can run side by side. On macOS the window is `hiddenInset`: the sidebar runs all the way to the
+top edge of the window and shows the system vibrancy material behind it, while the red/yellow/
+green buttons float on top of it. Windows and Linux keep the platform's own title bar.
 
 The address is the same one the dev server puts in the address bar, so there is only one port to remember. Every variable, with defaults: [environment variables](./docs/configuration.md).
 
 First run: click **+** in the left column, walk to the target directory in the picker (the shortcuts at the top jump straight to home / Desktop / Documents / Downloads / root, and a path can be pasted into the address bar), then click **Choose this directory** to add the project. Click **+** under the project to start a session.
+
+To the right of the groups header sit three buttons: search, view options and **+**. View options switch the **grouping** (by workspace / workspace tree / single list) and the **ordering** (manual / recently updated); with manual ordering, workspace and session rows can be dragged straight into place, with the insertion line drawn on the edge of the drop target. The workspace order goes to the server, the manual session order lives in this browser, and both drags only work between siblings (see [known limitations](./docs/known-limitations.md)).
 
 ### Use it as a pi package
 
