@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { formatRunDuration } from "../../lib/duration.ts";
 import { useT } from "../../lib/app-state.ts";
+import { PI_MARK_URL } from "../../lib/brand.ts";
+import { formatRunDuration } from "../../lib/duration.ts";
 import styles from "./TurnStatus.module.css";
 
 /**
@@ -21,19 +22,13 @@ import styles from "./TurnStatus.module.css";
  *   so it costs no layout and keeps the line-height of ordinary text.
  */
 /**
- * pi's own mark — the same π the sidebar brand draws — in the running row's
- * icon box. dsh puts its whale tail here; this is whose agent is working.
+ * pi's own mark — the same artwork the sidebar brand and the desktop icon
+ * draw — in the running row's icon box. dsh puts its whale tail here; this is
+ * whose agent is working. The bitmap is square, so the radius below keeps it a
+ * tile at this size instead of a stamp.
  */
 function PiMark() {
-  return (
-    <span className={styles.mark} aria-hidden>
-      <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
-        <rect x="1" y="3" width="14" height="2.8" rx="1.4" />
-        <path d="M4.6 3H7.4L5.7 14H2.9Z" />
-        <path d="M8.6 3H11.4L9.7 14H6.9Z" />
-      </svg>
-    </span>
-  );
+  return <img className={styles.mark} src={PI_MARK_URL} alt="" draggable={false} />;
 }
 
 export function TurnStatus({ startTime }: { startTime?: number | undefined }) {

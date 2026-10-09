@@ -23,17 +23,14 @@
 }
 
 .mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   width: 30px;
   height: 30px;
   border-radius: 10px;
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-inverted);
-  font-size: 19px;
-  font-weight: 600;
-  line-height: 1;
+  object-fit: cover;
+  /* Same hairline as the sidebar's `.brandMark`: without it the black tile
+     dissolves into a dark page. */
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3);
   flex: 0 0 auto;
 }
 
@@ -186,9 +183,9 @@
 
 /* Same card as the conversation composer, with dsh's taller hero variant.
  * dsh draws both from one `InputBar` card, so the surface tokens — the 22px
- * corner, the gradient edge, the l2 scrollbar thumb — are identical here;
- * only `min-height` differs. See Composer.module.css for why the edge is a
- * half-pixel border and why the lift is not `--dsw-elevation-soft`. */
+ * corner, the l2 elevation stroke, the soft lift and the l2 scrollbar thumb —
+ * are identical here; only `min-height` differs. See Composer.module.css for
+ * the elevation pair and for why the stroke colour is rebound per card. */
 .composer {
   position: relative;
   box-sizing: border-box;
@@ -196,16 +193,13 @@
   flex-direction: column;
   gap: 12px;
   padding-top: 0;
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   border-radius: 22px;
-  border: 0.5px solid transparent;
-  background:
-    linear-gradient(var(--dsw-specific-input-major), var(--dsw-specific-input-major)) padding-box,
-    linear-gradient(180deg, transparent, var(--dsw-alias-border-l3)) border-box;
+  background: var(--dsw-specific-input-major);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-  box-shadow:
-    0 0 32px rgba(0, 0, 0, 0.04),
-    0 8px 20px rgba(0, 0, 0, 0.07);
+  box-shadow: var(--dsw-elevation-soft);
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }

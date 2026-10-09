@@ -19,8 +19,7 @@ import type {
   ProviderInput,
   ProviderModelEntry,
   RpcSessionState,
-  SessionTreeView,
-  SessionView,
+  SessionListPage,
   SlashCommandList,
   StartLocation,
   TerminalInfo,
@@ -256,10 +255,26 @@ export const api = {
       body: JSON.stringify({ ids }),
     }),
 
-  listSessions: (projectId: string, includeHidden = false) =>
-    request<SessionView[]>(
-      `/api/projects/${encodeURIComponent(projectId)}/sessions${includeHidden ? "?includeHidden=true" : ""}`,
-    ),
+  /**
+   * One page of a workspace's sessions.
+   *
+   * `limit` is how many rows the caller can draw; the server answers with those
+   * plus the total, so the sidebar can offer the rest behind "show more"
+   * without holding the whole list. `focus` keeps the open conversation's
+   * metadata in the page even when it sorts below the cut.
+   */
+  listSessions: (
+    projectId: string,
+    options: { limit?: number; focus?: string | null } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.focus) params.set("focus", options.focus);
+    const query = params.toString();
+    return request<SessionListPage>(
+      `/api/projects/${encodeURIComponent(projectId)}/sessions${query.length > 0 ? `?${query}` : ""}`,
+    );
+  },
 
   createSession: (projectId: string, model?: { provider: string; id: string } | null) =>
     request<{
@@ -461,9 +476,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ entryId }),
     }),
-
-  getSessionTree: (sessionPath: string) =>
-    request<SessionTreeView>(`/api/sessions/${sessionId(sessionPath)}/tree`),
 
   getState: (sessionPath: string) =>
     request<{ sessionPath: string; state: RpcSessionState }>(

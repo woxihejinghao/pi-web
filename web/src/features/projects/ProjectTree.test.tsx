@@ -9,6 +9,7 @@ import { appStore, type PendingUiRequest } from "../../lib/app-state.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
 import type { ProjectView, SessionView } from "../../lib/types.ts";
 import { ProjectTreeItem } from "./ProjectTree.tsx";
+import { useSidebarDrag, type RowDragHandlers, type SidebarDrag } from "./use-sidebar-drag.ts";
 
 function workspace(overrides: Partial<ProjectView> = {}): ProjectNode {
   return {
@@ -309,5 +310,200 @@ describe("ProjectTree session status mark", () => {
 
     expect(html).not.toContain('data-state="warning"');
     expect(html).not.toContain("等待回答");
+  });
+});
+
+/**
+ * The rows are one page of the server's answer: what is still folded away is
+ * counted by `sessionTotals`, not by however many sessions the sidebar happens
+ * to be holding.
+ */
+describe("ProjectTree session page", () => {
+  const session = (path: string): SessionView => ({
+    path,
+    id: path,
+    cwd: "/Users/dev/proj",
+    title: `session ${path}`,
+    titleSource: "session",
+    preview: "",
+    created: "2025-01-01T00:00:00.000Z",
+    modified: "2025-01-01T00:00:00.000Z",
+    messageCount: 1,
+    hidden: false,
+  });
+
+  /** Render a workspace holding `sessions`, which `total` says are not all of them. */
+  function renderWith(sessions: SessionView[], total: number): string {
+    const before = appStore.get();
+    appStore.set({
+      ...before,
+      selectedProjectId: "p1",
+      expandedProjects: { p1: true },
+      selectedSessionPath: null,
+      unsavedSessions: {},
+      sessions: { p1: sessions },
+      sessionTotals: { p1: total },
+      revealedSessions: {},
+      sessionQuery: "",
+    });
+    try {
+      return renderToStaticMarkup(<ProjectTreeItem node={workspace()} />);
+    } finally {
+      appStore.set(before);
+    }
+  }
+
+  const page = Array.from({ length: 5 }, (_, index) => session(`/sessions/p1/${index}.jsonl`));
+
+  it("counts the folded rows from the server's total", () => {
+    expect(renderWith(page, 7)).toContain("展开其余 2 个会话");
+  });
+
+  it("offers nothing more once the page is the whole list", () => {
+    expect(renderWith(page, 5)).not.toContain("展开其余");
+  });
+});
+
+/**
+ * A search filters the loaded rows, and a workspace with nothing left folds
+ * away entirely. The bail-out that does the folding has to sit after the
+ * component's hooks (see `ProjectTree.tsx`): returning above them makes the
+ * component render a different number of hooks than its previous render, and
+ * React treats that as a crash — which is exactly what typing in the sidebar's
+ * field used to do.
+ */
+describe("ProjectTree search", () => {
+  const session = (path: string, title: string): SessionView => ({
+    path,
+    id: path,
+    cwd: "/Users/dev/proj",
+    title,
+    titleSource: "session",
+    preview: "",
+    created: "2025-01-01T00:00:00.000Z",
+    modified: "2025-01-01T00:00:00.000Z",
+    messageCount: 1,
+    hidden: false,
+  });
+
+  function renderSearch(sessions: SessionView[], query: string): string {
+    const before = appStore.get();
+    appStore.set({
+      ...before,
+      selectedProjectId: "p1",
+      expandedProjects: { p1: true },
+      selectedSessionPath: null,
+      unsavedSessions: {},
+      sessions: { p1: sessions },
+      sessionTotals: { p1: sessions.length },
+      revealedSessions: {},
+      sessionQuery: query,
+    });
+    try {
+      return renderToStaticMarkup(<ProjectTreeItem node={workspace()} />);
+    } finally {
+      appStore.set(before);
+    }
+  }
+
+  const sessions = [session("/sessions/p1/a.jsonl", "alpha"), session("/sessions/p1/b.jsonl", "beta")];
+
+  it("keeps only the rows whose title matches", () => {
+    const html = renderSearch(sessions, "alph");
+    expect(html).toContain("alpha");
+    expect(html).not.toContain("beta");
+  });
+
+  it("folds the whole workspace away when nothing matches it", () => {
+    expect(renderSearch(sessions, "zzz")).toBe("");
+  });
+});
+
+/**
+ * The drag wiring is a hook, so a static render of rows cannot see it directly.
+ * This probe calls it and prints what one row was handed.
+ */
+function DragProbe({ accountKey, path }: { accountKey: string; path: string }) {
+  const row = useSidebarDrag([]).sessionRow(accountKey, path);
+  return (
+    <span
+      data-draggable={String(row.draggable)}
+      data-marker={String(row.marker)}
+    />
+  );
+}
+
+describe("useSidebarDrag", () => {
+  it("offers a drag for a session with a file on disk", () => {
+    const html = renderToStaticMarkup(
+      <DragProbe accountKey="p1" path="/sessions/p1/one.jsonl" />,
+    );
+    expect(html).toContain('data-draggable="true"');
+    // Nothing is being dragged yet, so no row draws a marker.
+    expect(html).toContain('data-marker="null"');
+  });
+
+  it("leaves a draft out: it has no position to save", () => {
+    const html = renderToStaticMarkup(<DragProbe accountKey="p1" path="draft:7" />);
+    expect(html).toContain('data-draggable="false"');
+  });
+});
+
+/**
+ * The insert marker is a class on the row, and the row only gets it from the
+ * drag wiring — so this hands the renderer a wiring that reports one, which is
+ * exactly what a pointer hovering that row would produce.
+ */
+describe("ProjectTree drop markers", () => {
+  const MARKED = "/sessions/p1/two.jsonl";
+
+  const row = (marker: "before" | "after" | null): RowDragHandlers => ({
+    draggable: true,
+    marker,
+    onDragStart: () => undefined,
+    onDragEnd: () => undefined,
+    onDragOver: () => undefined,
+    onDrop: () => undefined,
+  });
+
+  const drag: SidebarDrag = {
+    sessionRow: (_accountKey, path) => row(path === MARKED ? "before" : null),
+    projectRow: () => row(null),
+  };
+
+  const session = (path: string, title: string): SessionView => ({
+    path,
+    id: path,
+    cwd: "/Users/dev/proj",
+    title,
+    titleSource: "session",
+    preview: "",
+    created: "2026-01-01T00:00:00.000Z",
+    modified: "2026-01-01T00:00:00.000Z",
+    messageCount: 1,
+    hidden: false,
+  });
+
+  it("marks the row the pointer is over — and only that row", () => {
+    const before = appStore.get();
+    appStore.set({
+      ...before,
+      selectedProjectId: "p1",
+      expandedProjects: { p1: true },
+      sessions: { p1: [session("/sessions/p1/one.jsonl", "one"), session(MARKED, "two")] },
+      sessionTotals: { p1: 2 },
+      revealedSessions: {},
+      unsavedSessions: {},
+      sessionQuery: "",
+    });
+    try {
+      const html = renderToStaticMarkup(<ProjectTreeItem node={workspace()} drag={drag} />);
+      expect(html).toContain("dropBefore");
+      expect(html).not.toContain("dropAfter");
+      // One row carries it; the other does not.
+      expect(html.match(/dropBefore/g)).toHaveLength(1);
+    } finally {
+      appStore.set(before);
+    }
   });
 });

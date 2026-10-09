@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { desktopBridge, pathForFile } from "./desktop.ts";
+import { desktopBridge, markDocumentPlatform, pathForFile } from "./desktop.ts";
 
 const file = { name: "proj" } as File;
 
@@ -55,5 +55,24 @@ describe("pathForFile", () => {
     });
     expect(desktopBridge()).not.toBeNull();
     expect(pathForFile(file)).toBeNull();
+  });
+});
+
+describe("markDocumentPlatform", () => {
+  it("leaves <html> unmarked in a browser, which is what keeps the web sidebar opaque", () => {
+    const dataset: Record<string, string> = {};
+    vi.stubGlobal("document", { documentElement: { dataset } });
+    markDocumentPlatform();
+    expect(dataset.platform).toBeUndefined();
+  });
+
+  it("republishes the shell's platform for the CSS that cannot read the bridge", () => {
+    const dataset: Record<string, string> = {};
+    vi.stubGlobal("document", { documentElement: { dataset } });
+    vi.stubGlobal("window", {
+      piWebDesktop: { isDesktop: true, platform: "darwin", electronVersion: "44.0.0" },
+    });
+    markDocumentPlatform();
+    expect(dataset.platform).toBe("darwin");
   });
 });

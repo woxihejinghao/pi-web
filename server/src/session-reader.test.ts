@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { messageText, readSessionSnapshot, readSessionTree } from "./session-reader.ts";
+import { messageText, readSessionSnapshot } from "./session-reader.ts";
 
 const HEADER = {
   type: "session",
@@ -161,40 +161,3 @@ describe("messageText", () => {
   });
 });
 
-describe("readSessionTree", () => {
-  let dir: string;
-
-  beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "piws-tree-"));
-  });
-
-  afterEach(async () => {
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it("returns the tree, the leaf, and the session id", async () => {
-    const path = await writeSession(dir, [
-      HEADER,
-      message("m1", null, "user", "q"),
-      message("m2", "m1", "assistant", "a"),
-    ]);
-
-    const tree = readSessionTree(path);
-    expect(tree.sessionId).toBe(HEADER.id);
-    expect(tree.tree.length).toBeGreaterThan(0);
-
-    // `tree` is typed as an opaque shape here; this walks it defensively.
-    type Node = { entry: { id: string }; children: Node[] };
-    const ids = new Set<string>();
-    const walk = (nodes: readonly Node[]): void => {
-      for (const node of nodes as readonly Node[]) {
-        ids.add(node.entry.id);
-        walk((node.children ?? []) as Node[]);
-      }
-    };
-    walk(tree.tree as unknown as Node[]);
-    expect(ids.has("m1")).toBe(true);
-    // The leaf is the tip of the active branch and must be part of the tree.
-    if (tree.leafId !== null) expect(ids.has(tree.leafId)).toBe(true);
-  });
-});

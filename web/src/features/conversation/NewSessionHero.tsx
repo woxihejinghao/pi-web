@@ -7,6 +7,7 @@ import {
   SendIcon,
 } from "../../components/icons.tsx";
 import { actions, appStore, useT } from "../../lib/app-state.ts";
+import { PI_MARK_URL } from "../../lib/brand.ts";
 import { useStore } from "../../lib/store.ts";
 import { AttachmentInput, AttachmentStrip, AttachButton } from "./AttachmentStrip.tsx";
 import { DraftMirror } from "./DraftMirror.tsx";
@@ -205,9 +206,7 @@ export function NewSessionHero() {
     <div className={styles.hero}>
       <div className={styles.inner}>
         <div className={styles.titleRow}>
-          <span className={styles.mark} aria-hidden>
-            π
-          </span>
+          <img className={styles.mark} src={PI_MARK_URL} alt="" draggable={false} />
           <h1 className={styles.title}>{t("hero.title")}</h1>
           <span className={styles.badge}>{t("hero.badge")}</span>
         </div>

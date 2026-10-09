@@ -37,6 +37,28 @@ export function desktopBridge(): PiWebDesktopBridge | null {
 }
 
 /**
+ * Mirror the shell's platform onto `<html data-platform>` so stylesheets can
+ * scope desktop-only presentation.
+ *
+ * CSS selectors cannot read `window.piWebDesktop`, so the one fact shortcut
+ * detection takes from the bridge has to be republished as an attribute for
+ * the one consumer that has no other way to see it: the macOS sidebar tint,
+ * which is translucent so the window's vibrancy material shows through (see
+ * `theme/index.css` and `layout/AppLayout.module.css`).
+ *
+ * A browser leaves the attribute off, which is exactly the condition those
+ * rules test — the plain web bundle therefore keeps the opaque sidebar and
+ * never grows a desktop-only branch. dsh's own preload stamps the same
+ * attribute for the same reason; this one only sets it from the page because
+ * the shell's preload is deliberately DOM-free (see `desktop/src/preload.cts`).
+ */
+export function markDocumentPlatform(): void {
+  const bridge = desktopBridge();
+  if (bridge === null || typeof document === "undefined") return;
+  document.documentElement.dataset.platform = bridge.platform;
+}
+
+/**
  * The absolute path behind a dropped file, or null.
  *
  * Only the shell can answer this. A browser deliberately hides where a dragged

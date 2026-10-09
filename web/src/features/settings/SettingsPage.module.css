@@ -18,6 +18,18 @@
   border-right: 0.5px solid var(--dsw-alias-border-l2);
 }
 
+/*
+ * macOS: the window is opened with `hiddenInset` (desktop/src/main.cts), so the
+ * traffic lights float over this column's top-left corner — exactly where the
+ * back button is the first thing under them. The page is not a drag row, so
+ * the controls would otherwise sit on top of the button and swallow its
+ * clicks. This step replaces the nav's own 16px top padding with the frame's
+ * published clearance, which puts the whole column below the controls.
+ */
+:global(html[data-platform="darwin"]) .nav {
+  padding-top: var(--dsh-frame-top-clearance);
+}
+
 .back {
   display: flex;
   align-self: flex-start;

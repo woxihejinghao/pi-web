@@ -2,6 +2,16 @@ import { useMemo } from "react";
 import { api } from "./api.ts";
 import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
 import { showNotification } from "./notifications.ts";
+import { buildProjectTree, flattenProjectTree } from "./project-tree.ts";
+import {
+  loadSidebarView,
+  moveInOrder,
+  moveWorkspace,
+  saveSidebarView,
+  type SessionGroupBy,
+  type SessionOrderBy,
+  type SidebarView,
+} from "./sidebar-view.ts";
 import { createEmitter, createStore, useStoreSelector, type Emitter, type Store } from "./store.ts";
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
@@ -50,6 +60,13 @@ export type PendingUiRequest = PendingUiDialog;
  */
 export const DRAFT_PREFIX = "draft:";
 
+/**
+ * How many sessions a workspace shows before folding the rest behind "show
+ * more" — dsh's five. This is the page the sidebar asks the server for, so the
+ * two have to agree (see `refreshSessions`).
+ */
+export const SESSIONS_PAGE_SIZE = 5;
+
 export function isDraftSession(sessionPath: string | null): boolean {
   return typeof sessionPath === "string" && sessionPath.startsWith(DRAFT_PREFIX);
 }
@@ -93,6 +110,13 @@ export interface AppState {
   selectedProjectId: string | null;
   /** Sessions per project id; a missing key means "not loaded yet". */
   sessions: Record<string, SessionView[]>;
+  /**
+   * How many visible sessions each project has, as the server counts them.
+   *
+   * `sessions` holds only the page the sidebar has fetched, so the total is
+   * what labels "show more" with the number of rows still folded away.
+   */
+  sessionTotals: Record<string, number>;
   selectedSessionPath: string | null;
   /**
    * Session paths this browser created that pi has not written to disk yet,
@@ -145,6 +169,16 @@ export interface AppState {
   /** Sidebar filter across project titles and session titles. */
   sessionQuery: string;
   searchOpen: boolean;
+  /**
+   * How the sidebar groups what it draws, how it orders the rows, and the
+   * manual order each account was left in.
+   *
+   * Cached in `localStorage` rather than on the server: this is a property of
+   * one browser's sidebar, not of the workspaces themselves — dsh keeps the
+   * same state in its own persisted store, and the shape here is a copy of it
+   * (see `sidebar-view.ts`).
+   */
+  sidebarView: SidebarView;
   /** Slash commands per project id, as reported by a running pi process. */
   commands: Record<string, SlashCommand[]>;
   /** Host home directory; empty until known, which just leaves paths absolute. */
@@ -189,6 +223,7 @@ const initialState: AppState = {
   projects: [],
   selectedProjectId: null,
   sessions: {},
+  sessionTotals: {},
   selectedSessionPath: null,
   unsavedSessions: {},
   activeSessions: [],
@@ -201,6 +236,7 @@ const initialState: AppState = {
   revealedSessions: {},
   sessionQuery: "",
   searchOpen: false,
+  sidebarView: loadSidebarView(),
   commands: {},
   home: "",
   settings: DEFAULT_SETTINGS,
@@ -217,6 +253,15 @@ let draftRequest: Promise<string | null> | null = null;
 
 /** In-flight command listings per project id, so rapid switching asks once. */
 const commandsRequests = new Map<string, Promise<void>>();
+
+/**
+ * The newest session-list request per project id.
+ *
+ * The answer that arrives last is not necessarily the newest one — "show more"
+ * can be clicked twice before either reply lands — so a late answer for an
+ * older page is dropped rather than put back on screen.
+ */
+const sessionRequests = new Map<string, number>();
 
 export const appStore: Store<AppState> = createStore(initialState);
 
@@ -300,6 +345,7 @@ export function resetAppState(): void {
   appStore.set({ ...initialState });
   draftRequest = null;
   commandsRequests.clear();
+  sessionRequests.clear();
 }
 
 export const actions = {
@@ -621,7 +667,7 @@ export const actions = {
         return { ...state, projects, selectedProjectId };
       });
       const selected = appStore.get().selectedProjectId;
-      if (selected) await actions.refreshSessions(selected);
+      if (selected) await actions.refreshSessions(selected, { force: true });
     } catch (err) {
       actions.setNotice((err as Error).message);
     }
@@ -692,16 +738,59 @@ export const actions = {
     return request;
   },
 
-  async refreshSessions(projectId: string): Promise<void> {
+  /**
+   * Load (or reload) one project's page of sessions.
+   *
+   * Without `force` this is a no-op once the sidebar already holds everything
+   * the current view would ask for: expanding a workspace that was expanded
+   * before must not cost another round trip, and the server pushes
+   * `sessions_changed` whenever a session file moves, so a held page cannot go
+   * stale behind the user's back.
+   *
+   * The page size is whatever the sidebar is showing, and a search asks for the
+   * whole list because it filters titles on the client rather than asking the
+   * server. `focus` keeps the open conversation in the answer even when it
+   * sorts below the cut.
+   */
+  async refreshSessions(projectId: string, options: { force?: boolean } = {}): Promise<void> {
+    const before = appStore.get();
+    const loaded = before.sessions[projectId];
+    const total = before.sessionTotals[projectId];
+    const searching = before.sessionQuery.trim().length > 0;
+    // The flat list has no workspace rows, so it has no "show more" either: the
+    // whole history is what it draws, and the whole history is what it asks for.
+    const wholeList = searching || before.sidebarView.groupBy === "flat";
+    const limit = wholeList
+      ? undefined
+      : (before.revealedSessions[projectId] ?? SESSIONS_PAGE_SIZE);
+
+    if (options.force !== true && loaded !== undefined) {
+      // Everything this view would draw: the page it asked for, capped by how
+      // many sessions the workspace actually has.
+      const wanted = limit ?? total ?? 0;
+      if (loaded.length >= Math.min(wanted, total ?? wanted)) return;
+    }
+
+    const sequence = (sessionRequests.get(projectId) ?? 0) + 1;
+    sessionRequests.set(projectId, sequence);
+
     try {
-      const sessions = await api.listSessions(projectId, true);
+      const page = await api.listSessions(projectId, {
+        limit,
+        focus: before.selectedSessionPath,
+      });
+      if (sessionRequests.get(projectId) !== sequence) return;
       appStore.update((state) => {
-        const next = { ...state, sessions: { ...state.sessions, [projectId]: sessions } };
+        const next = {
+          ...state,
+          sessions: { ...state.sessions, [projectId]: page.sessions },
+          sessionTotals: { ...state.sessionTotals, [projectId]: page.total },
+        };
         // A locally-created session whose file has landed is now a real row, so
         // its provisional entry is retired here rather than rendered twice.
         const unsaved = state.unsavedSessions[projectId];
         if (unsaved === undefined) return next;
-        const onDisk = new Set(sessions.map((session) => session.path));
+        const onDisk = new Set(page.sessions.map((session) => session.path));
         const remaining = unsaved.filter((path) => !onDisk.has(path));
         if (remaining.length === unsaved.length) return next;
         return {
@@ -918,7 +1007,7 @@ export const actions = {
   /** Refresh the sidebar for the project the user is currently in. */
   refreshSelectedProjectSessions(): void {
     const projectId = appStore.get().selectedProjectId;
-    if (projectId) void actions.refreshSessions(projectId);
+    if (projectId) void actions.refreshSessions(projectId, { force: true });
   },
 
   markExternalChanged(sessionPath: string): void {    appStore.update((state) => ({
@@ -1062,24 +1151,152 @@ export const actions = {
     });
   },
 
-  /** Reveal another page of sessions for one project. */
+  /**
+   * Reveal another page of sessions for one project.
+   *
+   * The rows have to be fetched: the sidebar only ever held the page it was
+   * showing, so the next one is a request rather than a re-slice.
+   */
   revealMoreSessions(projectId: string, nextCount: number): void {
     appStore.update((state) => ({
       ...state,
       revealedSessions: { ...state.revealedSessions, [projectId]: nextCount },
     }));
+    void actions.refreshSessions(projectId, { force: true });
+  },
+
+  /**
+   * Switch how the sidebar groups what it draws.
+   *
+   * Turning on the one-list view widens every workspace to its whole session
+   * history: that view has no workspace rows — and so no "show more" — to
+   * reveal the rest from, so the rest has to be here already.
+   */
+  setGroupBy(groupBy: SessionGroupBy): void {
+    if (appStore.get().sidebarView.groupBy === groupBy) return;
+    appStore.update((state) => {
+      const sidebarView = { ...state.sidebarView, groupBy };
+      saveSidebarView(sidebarView);
+      return { ...state, sidebarView };
+    });
+    if (groupBy === "flat") {
+      for (const project of appStore.get().projects) {
+        void actions.refreshSessions(project.id);
+      }
+    }
+  },
+
+  /**
+   * Switch the session order.
+   *
+   * Manual keeps an account's saved arrangement if it has one — that order is
+   * the user's own work, and re-seeding it from the current recency every time
+   * they glanced at `updated` for a moment would throw it away. An account with
+   * nothing saved falls back to the recency order it is already showing (see
+   * `reconcileManualOrder`), so the switch itself never moves a row.
+   */
+  setOrderBy(orderBy: SessionOrderBy): void {
+    if (appStore.get().sidebarView.orderBy === orderBy) return;
+    appStore.update((state) => {
+      const sidebarView = { ...state.sidebarView, orderBy };
+      saveSidebarView(sidebarView);
+      return { ...state, sidebarView };
+    });
+  },
+
+  /**
+   * Save one account's manual order.
+   *
+   * `accountKey` is a workspace id, or `FLAT_ORDER_KEY` for the one list — dsh
+   * writes both into the same map, and so does this.
+   */
+  setSessionOrder(accountKey: string, order: readonly string[]): void {
+    appStore.update((state) => {
+      const sidebarView = {
+        ...state.sidebarView,
+        sessionOrder: { ...state.sidebarView.sessionOrder, [accountKey]: [...order] },
+      };
+      saveSidebarView(sidebarView);
+      return { ...state, sidebarView };
+    });
+  },
+
+  /**
+   * Drop one session onto another's edge.
+   *
+   * `order` is what the list is showing right now, and it is the caller's
+   * because only the renderer knows which rows survive the current filter and
+   * the revealed-page limit. A drop that changes nothing writes nothing.
+   */
+  moveSession(
+    accountKey: string,
+    order: readonly string[],
+    sourceId: string,
+    targetId: string,
+    half: "before" | "after",
+  ): void {
+    const next = moveInOrder(order, sourceId, targetId, half);
+    if (next === undefined) return;
+    actions.setSessionOrder(accountKey, next);
+  },
+
+  /**
+   * Drop one workspace onto another's edge.
+   *
+   * The positions go to the server rather than to a browser-local order: a
+   * workspace is a real entity here and already has `PUT /api/projects/order`,
+   * which dsh's Host does for its own Workspaces. `anchorId` is the workspace
+   * the dragged row lands before, or undefined to land last; the caller gates
+   * the drop to siblings, so an id from another subtree never arrives.
+   */
+  async moveProject(sourceId: string, anchorId: string | undefined): Promise<void> {
+    const state = appStore.get();
+    // The order the tree currently draws, which is what the ids have to be
+    // listed in: the endpoint rejects a list that is not every project once.
+    const ids = flattenProjectTree(
+      buildProjectTree(state.projects, {
+        nest: state.sidebarView.groupBy === "workspace-tree",
+      }),
+    ).map((node) => node.project.id);
+    const next = moveWorkspace(ids, sourceId, anchorId);
+    if (next === undefined) return;
+    try {
+      const projects = await api.reorderProjects(next);
+      appStore.update((current) => ({ ...current, projects }));
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+    }
   },
 
   setSessionQuery(sessionQuery: string): void {
+    const wasSearching = appStore.get().sessionQuery.trim().length > 0;
     appStore.update((state) => ({ ...state, sessionQuery }));
+    // A search screens titles on the client, so it needs the rows the paginated
+    // sidebar never fetched: widen every workspace it covers to the whole list.
+    // Once per search, not once per keystroke, and `refreshSessions` still
+    // skips a workspace whose list is already complete.
+    if (sessionQuery.trim().length > 0 && !wasSearching) {
+      for (const projectId of Object.keys(appStore.get().sessions)) {
+        void actions.refreshSessions(projectId);
+      }
+    }
   },
 
-  toggleSearch(): void {
-    appStore.update((state) => ({
-      ...state,
-      searchOpen: !state.searchOpen,
-      sessionQuery: state.searchOpen ? "" : state.sessionQuery,
-    }));
+  openSearch(): void {
+    appStore.update((state) => ({ ...state, searchOpen: true }));
+  },
+
+  /**
+   * Close the search and clear it in one step.
+   *
+   * A collapsed field holding a filter the list is still wearing would be a
+   * filter the user can neither see nor clear, so every way out — Escape, the
+   * field's own clear control, a click outside an empty field — lands here.
+   * dsh folds the same two writes into its `setSearchExpanded(false)` and
+   * clear paths.
+   */
+  closeSearch(): void {
+    appStore.update((state) => ({ ...state, searchOpen: false, sessionQuery: "" }));
   },
 
   setNotice(notice: string | null): void {

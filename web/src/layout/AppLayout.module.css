@@ -15,11 +15,105 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--dsw-specific-sidebar-fill);
+  /*
+   * dsh's sidebar surface. The colour is not a flat fill: dsh paints the
+   * column with two washes over the fill — a blue one off the top, gone by a
+   * third of the column, and a blue-grey-violet one rising through the bottom
+   * third — which is what gives the sidebar its soft top-to-bottom tint. This
+   * shell keeps both washes on every platform (over the opaque fill they read
+   * as the same soft tint) and only makes the fill itself translucent on
+   * macOS, where dsh's window vibrancy is what the transparency exists for.
+   *
+   * The values are copied from dsh's `AppFrame.module.css` `.sidebarCol`,
+   * light and dark, so the two sidebars stay diffable. */
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(122 155 240 / 0.1),
+      rgb(122 155 240 / 0) 35%,
+      rgb(143 137 184 / 0) 68%,
+      rgb(143 137 184 / 0.09)
+    ),
+    var(--dsw-specific-sidebar-fill);
   /* l3 rather than l2: dsh's AppFrame draws the column separator in l3, and a
      sidebar that is one step lighter than the rest of the chrome reads as a
      seam under the hover fills. */
   border-right: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+/* Dark keeps the washes at a lower alpha and drops the blue cast below (dsh
+   does the same, for the same reason: the light-mode wash reads purple over
+   dark fills). */
+:global(html[data-appearance="dark"]) .sidebar {
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(122 155 240 / 0.08),
+      rgb(122 155 240 / 0) 35%,
+      rgb(143 137 184 / 0) 68%,
+      rgb(143 137 184 / 0.07)
+    ),
+    var(--dsw-specific-sidebar-fill);
+}
+
+/*
+ * macOS desktop: the window is vibrant (desktop/src/main.cts), so the sidebar
+ * stops painting an opaque ground and leaves a translucent tint for the
+ * material to read through — the second half of the transparent chain, whose
+ * first half is `html`/`body` going transparent in `theme/index.css`. The
+ * centre and the right panel stay opaque: only the column that sits against
+ * the window's own material is meant to show it.
+ *
+ * The tint is dsh's exactly — its fill mixed 97% toward the wash blue, then
+ * held at 40% (light) or mixed 50% toward transparent (dark). The separator
+ * moves off the translucent sidebar onto the opaque centre, where it cannot
+ * mix with the wallpaper and read as a seam (dsh's comment on `.centerCol`).
+ */
+:global(html[data-platform="darwin"]) .shell {
+  background: transparent;
+}
+
+:global(html[data-platform="darwin"]) .sidebar {
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(122 155 240 / 0.1),
+      rgb(122 155 240 / 0) 35%,
+      rgb(143 137 184 / 0) 68%,
+      rgb(143 137 184 / 0.09)
+    ),
+    color-mix(in srgb, color-mix(in srgb, var(--dsw-specific-sidebar-fill) 97%, rgb(122 155 240)) 40%, transparent);
+  border-right: none;
+}
+
+:global(html[data-platform="darwin"][data-appearance="dark"]) .sidebar {
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(122 155 240 / 0.08),
+      rgb(122 155 240 / 0) 35%,
+      rgb(143 137 184 / 0) 68%,
+      rgb(143 137 184 / 0.07)
+    ),
+    color-mix(in srgb, var(--dsw-specific-sidebar-fill) 50%, transparent);
+}
+
+/*
+ * macOS Reduce Transparency: the OS flattens the window's vibrancy layer to a
+ * solid grey, so the thin tint and washes would read washed-out over it. A
+ * near-opaque fill of the same token replaces them (dsh's rule, same tokens),
+ * in both themes.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  :global(html[data-platform="darwin"]) .sidebar,
+  :global(html[data-platform="darwin"][data-appearance="dark"]) .sidebar {
+    background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 90%, transparent);
+  }
+}
+
+:global(html[data-platform="darwin"]) .main {
+  background: var(--dsw-alias-bg-base);
+  border-left: 0.5px solid var(--dsw-alias-border-l3);
 }
 
 .main {

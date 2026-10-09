@@ -87,6 +87,13 @@ interface AppPaths {
   nodeBinDir: string | null;
   cwd: string;
   preload: string;
+  /**
+   * The brand bitmap to hand Electron (`desktop/resources/icon.png`), or null
+   * when there is nothing to hand over. Only unpackaged runs need it: a packaged
+   * app carries its icon in the bundle (`mac`'s `.icns`, `win`'s `.ico`), while
+   * `electron .` would otherwise wear Electron's own icon in the Dock.
+   */
+  icon: string | null;
 }
 
 function appPaths(): AppPaths {
@@ -109,6 +116,7 @@ function appPaths(): AppPaths {
       // scope depend on where the user happened to install the app.
       cwd: app.getPath("home"),
       preload,
+      icon: null,
     };
   }
   // Unpackaged: `electron .` inside `desktop/` runs against the checkout, using
@@ -116,6 +124,10 @@ function appPaths(): AppPaths {
   const repoRoot = resolve(app.getAppPath(), "..");
   const nodeBin = process.env.PI_WEB_DESKTOP_NODE ?? "node";
   const nodeBinDir = dirname(nodeBin);
+  // `electron .` runs out of Electron's own bundle, so the Dock (and the
+  // taskbar on Windows/Linux) would show Electron's icon without this. The
+  // packaged app never needs it — see the field's comment on `AppPaths`.
+  const icon = join(app.getAppPath(), "resources", "icon.png");
   return {
     serverEntry: join(repoRoot, "server", "build", "index.js"),
     staticDir: join(repoRoot, "web", "dist"),
@@ -123,6 +135,7 @@ function appPaths(): AppPaths {
     nodeBinDir: nodeBinDir === "." ? null : nodeBinDir,
     cwd: repoRoot,
     preload,
+    icon: existsSync(icon) ? icon : null,
   };
 }
 
@@ -294,6 +307,34 @@ function createWindow(handle: ServerHandle, paths: AppPaths): BrowserWindow {
     show: false,
     backgroundColor: "#0f1115",
     title: "pi-web-simple",
+    // Windows and Linux take the window/taskbar icon from here. macOS ignores
+    // it (its Dock icon is the bundle's, or the `dock.setIcon` in `main`).
+    ...(paths.icon !== null ? { icon: paths.icon } : {}),
+    // macOS opens with the window's `sidebar` vibrancy material so the web UI's
+    // transparent sidebar (`web/src/theme/index.css`,
+    // `web/src/layout/AppLayout.module.css`) has something to read through —
+    // the same material deepseek-harness gives its window. `'active'` keeps
+    // the material stable when the window loses focus; `'followWindow'` washes
+    // the sidebar out. The transparent `backgroundColor` is what lets the
+    // material show behind the page; the fill above stays as the pre-paint and
+    // as the whole window's colour when there is no material.
+    //
+    // `hiddenInset` keeps the native traffic lights but draws the title-bar
+    // band transparent, so the page extends to the window's top edge and the
+    // sidebar tint runs under the controls instead of stopping below an opaque
+    // strip. `trafficLightPosition` matches deepseek-harness' inset. Because the
+    // band is no longer an opaque bar, the window is dragged from rows the page
+    // marks instead — see the `[data-window-drag]` rules in `theme/index.css`,
+    // which are also what keeps the controls under that band clickable.
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 16, y: 18 },
+          vibrancy: "sidebar" as const,
+          visualEffectState: "active" as const,
+          backgroundColor: "#00000000",
+        }
+      : {}),
     webPreferences: {
       preload: paths.preload,
       nodeIntegration: false,
@@ -449,6 +490,10 @@ async function main(): Promise<void> {
   const paths = appPaths();
   app.setName("pi-web-simple");
   if (process.platform === "darwin") {
+    // Under `electron .` the Dock shows Electron's icon, and there is no bundle
+    // of ours for it to read instead — so hand it the same PNG the packaging
+    // scripts turn into the `.icns`.
+    if (paths.icon !== null) app.dock?.setIcon(paths.icon);
     app.setAboutPanelOptions({
       applicationName: "pi-web-simple",
       applicationVersion: app.getVersion(),

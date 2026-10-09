@@ -81,7 +81,7 @@ import {
 import { type SessionHandle, type SessionRegistry, type SlashCommand } from "./registry.ts";
 import { deleteSession } from "./session-delete.ts";
 import { assertAllowedSessionPath, getSessionRoot, sessionDirFor } from "./session-path.ts";
-import { readSessionSnapshot, readSessionTree } from "./session-reader.ts";
+import { readSessionSnapshot } from "./session-reader.ts";
 import { setSessionTitle } from "./session-title.ts";
 import { listSessions } from "./sessions.ts";
 import {
@@ -356,6 +356,18 @@ function optionalString(body: Record<string, unknown>, key: string): string | un
   if (value === undefined) return undefined;
   if (typeof value !== "string") throw badRequest(`${key} must be a string`);
   return value;
+}
+
+/**
+ * A count from the query string, or undefined when it is missing or nonsense.
+ *
+ * A page size is a rendering hint, not a constraint on the data: a client that
+ * asks for something unusable gets the default view rather than a 400.
+ */
+function optionalPositiveInt(value: string | null): number | undefined {
+  if (value === null || value.trim().length === 0) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 /**
@@ -1007,11 +1019,16 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
 
   route("GET", "/api/projects/:id/sessions", async ({ res, params, query }) => {
     const project = await getProject(params.id!);
-    const sessions = await listSessions(project.path, {
+    // One page plus the total: the sidebar draws a few rows and labels "show
+    // more" with the count, so it never has to hold every session of a
+    // workspace (see `listSessions`).
+    const page = await listSessions(project.path, {
       sessionDir: sessionDirFor(project.path, sessionRoot),
       includeHidden: query.get("includeHidden") === "true",
+      limit: optionalPositiveInt(query.get("limit")),
+      focus: query.get("focus") ?? undefined,
     });
-    json(res, 200, sessions);
+    json(res, 200, page);
   });
 
   /**
@@ -1287,32 +1304,6 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       messages: snapshot.messages,
       forkPoints: snapshot.forkPoints,
     });
-  });
-
-  /**
-   * The entry tree behind a session, for the `/tree` view.
-   *
-   * Read from disk when no process is resident, same as the transcript: a tree
-   * is not worth a 1.5–3.2s cold start, and the file is the authority when
-   * nothing is running.
-   */
-  route("GET", "/api/sessions/:id/tree", async ({ res, params }) => {
-    const sessionPath = allowedPath(params.id!);
-    const live = registry.get(sessionPath);
-
-    if (live && !live.dead) {
-      const { tree, leafId } = await callClient(live, () => live.client.getTree());
-      json(res, 200, { sessionId: live.sessionId, tree, leafId, source: "live" });
-      return;
-    }
-
-    let snapshot;
-    try {
-      snapshot = readSessionTree(sessionPath);
-    } catch (err) {
-      throw notFound(`无法读取会话：${(err as Error).message}`);
-    }
-    json(res, 200, { ...snapshot, source: "disk" });
   });
 
   /**

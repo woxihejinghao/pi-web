@@ -5,17 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>pi-web-simple</title>
     <!--
-      Inline so there is no second file to keep in sync with the sidebar's brand
-      mark, which is the same π on the same near-black square. Without any icon
+      The brand mark: `public/pi-mark.png`, the same bitmap the sidebar tile,
+      the new-session hero, and the desktop app icon use. A PNG link rather than
+      the inline SVG that used to sit here — the artwork is a bitmap (a hand-
+      drawn π on black), so there is nothing to vectorize, and one file keeps the
+      browser tab aligned with everything else in the shell. Without any icon
       link the browser still asks for /favicon.ico and logs a 404 on every load.
-      Dark ink is deliberate: the mark inverts in dark mode, but a favicon cannot
-      react to the page, and a dark tile reads correctly on both light and dark
-      browser chrome.
+      The tile is dark on purpose: a favicon cannot react to the page, and a dark
+      tile reads correctly on both light and dark browser chrome.
     -->
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%230f1115'/%3E%3Ctext x='16' y='17' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' font-size='19' font-weight='600' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'%3E%CF%80%3C/text%3E%3C/svg%3E"
-    />
+    <link rel="icon" type="image/png" href="/pi-mark.png" />
     <script>
       //
       // Resolve the appearance preference before the first paint. The value is

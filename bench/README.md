@@ -136,7 +136,7 @@ load-stub 的 20k events/s/会话是刻意压到上限的。真实模型流式�
 
 仍可改进：
 
-4. 多工作区这一侧（`watch.ts` 每项目一个 `fs.watch`、`sessions.ts` 每项目一次 `SessionManager.list`）本次未压测；从代码看成本是 O(项目数)、非递归、单层，在几十个项目规模内可忽略。
+4. 多工作区这一侧（`watch.ts` 每项目一个 `fs.watch`、`sessions.ts` 每项目一次目录签名 + 缓存未命中时一次 `SessionManager.list`）本次未压测；从代码看成本是 O(项目数)、非递归、单层，在几十个项目规模内可忽略。
 5. **流式 Markdown 的解析成本**（当前会话 1.19 ms/事件的主因）：每个 delta 都用累计后的 partial 文本调一次 `react-markdown`。已有 rAF 合并，但仍可进一步按时间窗节流，或对已固定的前缀做缓存，避免每帧重新解析整段。
 6. `distanceFromBottom` 已从 render 期间移进 `useLayoutEffect`（`MessageList.tsx`），强制布局只在提交后发生一次；进一步可以换成 `ResizeObserver` 缓存。
 

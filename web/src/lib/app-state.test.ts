@@ -29,6 +29,7 @@ vi.mock("./api.ts", () => ({
     listCommands: vi.fn(),
     listUiRequests: vi.fn(),
     env: vi.fn(),
+    reorderProjects: vi.fn(),
   },
 }));
 
@@ -92,7 +93,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetAppState();
   mocked.listProjects.mockResolvedValue([]);
-  mocked.listSessions.mockResolvedValue([]);
+  mocked.listSessions.mockResolvedValue({ sessions: [], total: 0 });
   mocked.prewarmSession.mockResolvedValue({ ok: true, projectPath: "/home/me/proj" });
   mocked.listCommands.mockResolvedValue({ commands: [] });
   mocked.listUiRequests.mockResolvedValue({ requests: [] });
@@ -185,7 +186,7 @@ describe("draft sessions", () => {
       expect(appStore.get().unsavedSessions).toEqual({ "project-1": [REAL_PATH] });
     });
 
-    mocked.listSessions.mockResolvedValue([diskSession(REAL_PATH)]);
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 1 });
     await actions.refreshSessions("project-1");
 
     expect(appStore.get().unsavedSessions).toEqual({ "project-1": [] });
@@ -484,13 +485,122 @@ describe("sidebar ui state", () => {
     expect(appStore.get().revealedSessions.p1).toBe(10);
   });
 
-  it("clears the search query when the field is closed", () => {
+  it("closes the search and clears it in one step, keeping the query while it is open", () => {
     actions.setSessionQuery("abc");
-    actions.toggleSearch(); // opens
+    actions.openSearch();
     expect(appStore.get().searchOpen).toBe(true);
-    actions.toggleSearch(); // closes and clears
+    // Opening keeps what was typed: the field is the query's only surface, so
+    // dropping it here would be dropping something the user can still see.
+    expect(appStore.get().sessionQuery).toBe("abc");
+    actions.closeSearch();
     expect(appStore.get().searchOpen).toBe(false);
     expect(appStore.get().sessionQuery).toBe("");
+  });
+});
+
+/**
+ * The sidebar's viewing preferences: how it groups what it draws, how it orders
+ * the rows, and the manual arrangement a drag leaves behind. All three are
+ * cached in `localStorage`, so these stand one up and read it back.
+ */
+describe("sidebar view preferences", () => {
+  const entries = new Map<string, string>();
+  const KEY = "pi-web-simple.sidebar-view.v1";
+  const stored = (): Record<string, unknown> =>
+    JSON.parse(entries.get(KEY) ?? "{}") as Record<string, unknown>;
+
+  const project = (id: string, order: number): ProjectView => ({
+    id,
+    path: `/home/me/${id}`,
+    title: id,
+    order,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    exists: true,
+  });
+
+  beforeEach(() => {
+    resetAppState();
+    entries.clear();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string): string | null => entries.get(key) ?? null,
+      setItem: (key: string, value: string): void => {
+        entries.set(key, value);
+      },
+      removeItem: (key: string): void => {
+        entries.delete(key);
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    // The file's own stub; `unstubAllGlobals` takes it down with the rest.
+    vi.stubGlobal("navigator", { language: "zh-CN" });
+  });
+
+  it("saves the grouping and the order as they are picked", () => {
+    actions.setGroupBy("flat");
+    expect(appStore.get().sidebarView.groupBy).toBe("flat");
+    expect(stored().groupBy).toBe("flat");
+
+    actions.setOrderBy("manual");
+    expect(appStore.get().sidebarView.orderBy).toBe("manual");
+    expect(stored().orderBy).toBe("manual");
+  });
+
+  it("saves one account's manual order under its key", () => {
+    actions.setSessionOrder("p1", ["b", "a"]);
+    actions.setSessionOrder("p2", ["c"]);
+    expect(appStore.get().sidebarView.sessionOrder).toEqual({ p1: ["b", "a"], p2: ["c"] });
+    expect(stored().sessionOrder).toEqual({ p1: ["b", "a"], p2: ["c"] });
+  });
+
+  it("permutes the order a drop reports and saves the result", () => {
+    actions.moveSession("p1", ["a", "b", "c"], "c", "a", "before");
+    expect(appStore.get().sidebarView.sessionOrder.p1).toEqual(["c", "a", "b"]);
+  });
+
+  it("writes nothing for a drop that changes nothing", () => {
+    actions.moveSession("p1", ["a", "b", "c"], "b", "c", "before");
+    expect(appStore.get().sidebarView.sessionOrder).toEqual({});
+    expect(entries.has(KEY)).toBe(false);
+  });
+
+  it("sends a workspace drop to the server, in the order the tree draws", async () => {
+    appStore.update((state) => ({ ...state, projects: [project("a", 0), project("b", 1)] }));
+    mocked.reorderProjects.mockResolvedValue([project("b", 0), project("a", 1)]);
+
+    await actions.moveProject("a", undefined);
+
+    expect(mocked.reorderProjects).toHaveBeenCalledWith(["b", "a"]);
+    expect(appStore.get().projects.map((p) => p.id)).toEqual(["b", "a"]);
+  });
+
+  it("surfaces a rejected workspace reorder instead of reordering anyway", async () => {
+    appStore.update((state) => ({ ...state, projects: [project("a", 0), project("b", 1)] }));
+    mocked.reorderProjects.mockRejectedValue(new Error("reorder must list every project once"));
+
+    await actions.moveProject("b", "a");
+
+    expect(appStore.get().notice).toBe("reorder must list every project once");
+    expect(appStore.get().projects.map((p) => p.id)).toEqual(["a", "b"]);
+  });
+
+  it("widens every workspace when the one list is picked", async () => {
+    // The flat view has no workspace rows, and so no "show more" to reveal the
+    // rest from: it has to hold the whole history already.
+    appStore.update((state) => ({ ...state, projects: [project("a", 0), project("b", 1)] }));
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 1 });
+
+    actions.setGroupBy("flat");
+    await vi.waitFor(() => {
+      expect(mocked.listSessions).toHaveBeenCalledTimes(2);
+    });
+    expect(mocked.listSessions.mock.calls.map((call) => call[1]?.limit)).toEqual([
+      undefined,
+      undefined,
+    ]);
   });
 });
 
@@ -823,14 +933,14 @@ describe("session list refresh on first assistant output", () => {
       exists: true,
     };
     mocked.listProjects.mockResolvedValue([project]);
-    mocked.listSessions.mockResolvedValue([] as SessionView[]);
+    mocked.listSessions.mockResolvedValue({ sessions: [], total: 0 });
 
     await actions.bootstrap();
     mocked.listSessions.mockClear();
 
     actions.refreshSelectedProjectSessions();
     await vi.waitFor(() => {
-      expect(mocked.listSessions).toHaveBeenCalledWith("project-1", true);
+      expect(mocked.listSessions).toHaveBeenCalledWith("project-1", { limit: 5, focus: null });
     });
   });
 
@@ -838,5 +948,82 @@ describe("session list refresh on first assistant output", () => {
     mocked.listSessions.mockClear();
     actions.refreshSelectedProjectSessions();
     expect(mocked.listSessions).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The sidebar fetches one page rather than the workspace's whole history: it
+ * holds the rows the server sent plus a count, and asks for more only when it
+ * has to.
+ */
+describe("session list pagination", () => {
+  const project: ProjectView = {
+    id: "project-1",
+    path: "/home/me/proj",
+    title: "proj",
+    order: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    exists: true,
+  };
+
+  beforeEach(() => {
+    mocked.listProjects.mockResolvedValue([project]);
+  });
+
+  it("skips a fetch when the page it would ask for is already held", async () => {
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 1 });
+    await actions.bootstrap();
+    mocked.listSessions.mockClear();
+
+    await actions.refreshSessions("project-1");
+    expect(mocked.listSessions).not.toHaveBeenCalled();
+
+    // A forced refresh — `sessions_changed`, a reconnect, a hide — still goes out.
+    await actions.refreshSessions("project-1", { force: true });
+    expect(mocked.listSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the next page when the workspace reveals more", async () => {
+    mocked.listSessions.mockResolvedValue({ sessions: [], total: 12 });
+    await actions.bootstrap();
+    mocked.listSessions.mockClear();
+
+    actions.revealMoreSessions("project-1", 10);
+    expect(appStore.get().revealedSessions["project-1"]).toBe(10);
+    await vi.waitFor(() => {
+      expect(mocked.listSessions).toHaveBeenCalledWith("project-1", { limit: 10, focus: null });
+    });
+  });
+
+  it("keeps the total the server reported with the page", async () => {
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 12 });
+    await actions.bootstrap();
+
+    expect(appStore.get().sessionTotals["project-1"]).toBe(12);
+    expect(appStore.get().sessions["project-1"]).toHaveLength(1);
+  });
+
+  it("widens a loaded workspace to the whole list when a search starts", async () => {
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 12 });
+    await actions.bootstrap();
+    mocked.listSessions.mockClear();
+
+    // A search screens titles on the client, so it cannot work from one page.
+    actions.setSessionQuery("one");
+    await vi.waitFor(() => {
+      expect(mocked.listSessions).toHaveBeenCalledTimes(1);
+    });
+    const call = mocked.listSessions.mock.calls.at(-1);
+    expect(call?.[0]).toBe("project-1");
+    expect(call?.[1]?.limit).toBeUndefined();
+
+    // Keystrokes after the first one do not ask again.
+    mocked.listSessions.mockResolvedValue({
+      sessions: [diskSession(REAL_PATH)],
+      total: 1,
+    });
+    actions.setSessionQuery("one two");
+    expect(mocked.listSessions).toHaveBeenCalledTimes(1);
   });
 });

@@ -76,6 +76,33 @@ describe("buildProjectTree", () => {
   it("handles an empty project list", () => {
     expect(buildProjectTree([])).toEqual([]);
   });
+
+  it("draws every workspace at the root when nesting is off", () => {
+    // dsh's plain "Workspaces" grouping: the same rows, with the ancestor
+    // directories left as headers rather than parents.
+    const tree = buildProjectTree(
+      [
+        project("parent", "/Users/me/code", 0),
+        project("child", "/Users/me/code/app", 1),
+      ],
+      { nest: false },
+    );
+    expect(tree.map((node) => node.project.id)).toEqual(["parent", "child"]);
+    expect(tree.every((node) => node.depth === 0)).toBe(true);
+    expect(tree.every((node) => node.children.length === 0)).toBe(true);
+  });
+
+  it("keeps the same order whether or not it nests", () => {
+    // The ids and their stored `order` are the authority either way, so
+    // switching groupings must not reshuffle what the server holds.
+    const projects = [
+      project("parent", "/Users/me/code", 0),
+      project("child", "/Users/me/code/app", 1),
+      project("other", "/Users/me/other", 2),
+    ];
+    expect(flattenProjectTree(buildProjectTree(projects)).map((node) => node.project.id))
+      .toEqual(flattenProjectTree(buildProjectTree(projects, { nest: false })).map((node) => node.project.id));
+  });
 });
 
 describe("flattenProjectTree", () => {

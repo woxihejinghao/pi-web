@@ -8,9 +8,11 @@
  * session, 14px titles, 10px timestamps). Both are MIT; see
  * THIRD_PARTY_NOTICES.md.
  *
- * Two things deliberately do not follow it, each noted where it happens: the
- * brand is a letter mark rather than dsh's wordmark artwork, and the search
- * field is its own row (dsh expands one inside the section header).
+ * One thing deliberately does not follow it, noted where it happens: the brand
+ * is a letter mark rather than dsh's wordmark artwork. The search field is
+ * dsh's — expanded in place inside the section header, never a row of its own
+ * — and its rules are copied from
+ * `ui-workspace/rows/WorkspaceBrowser.module.css`.
  */
 
 .sidebar {
@@ -32,12 +34,45 @@
 }
 
 /*
+ * macOS only: the window opens with `hiddenInset` (desktop/src/main.cts), so
+ * the title-bar band is transparent and the traffic lights float over this
+ * column. This strip is what they float over. It is 52px tall with the
+ * column's own padding cancelled — the negative margins are why its box, and
+ * therefore the window's drag surface, reaches the window's top edge — and it
+ * is marked `data-window-drag` in markup, which `theme/index.css` turns into
+ * the one `-webkit-app-region: drag` rule. The brand row tucks 12px back under
+ * it (below), landing clear of the controls without shortening the strip; this
+ * is dsh's geometry exactly.
+ *
+ * The element is rendered on every platform and hidden on all of them but
+ * macOS: one empty div is cheaper than a platform check inside React.
+ */
+.topStrip {
+  display: none;
+}
+
+:global(html[data-platform="darwin"]) .topStrip {
+  display: block;
+  flex: none;
+  height: 52px;
+  margin: -6px calc(-1 * var(--dsh-sidebar-inline-padding)) 0;
+}
+
+/* The strip's full 52px foot leaves the brand too low; tuck it back under the
+   strip, still clear of the traffic lights (which end around y 30). */
+:global(html[data-platform="darwin"]) .topStrip + .brand {
+  margin-top: -12px;
+}
+
+/*
  * The brand row is dsh's `.logoRow`: a 60px box with 8px of vertical padding,
  * 4px on the left so the mark lines up with the section header's label (both
  * land at 16px from the column edge), and a 4px foot before the New Session bar.
  *
- * The mark is this project's own (a "π" tile); what is matched is the 24px
- * identity height dsh gives its mark-and-name group, and the 18px/600 name on
+ * The mark is this project's own artwork — a black tile with a white π, the
+ * same bitmap the desktop build ships as its window icon; it is cropped to a
+ * squircle by the radius below. What is matched is the 24px identity height dsh
+ * gives its mark-and-name group, and the 18px/600 name on
  * a 24px line with the 0.04em tracking. The name is longer than a wordmark, so
  * the row clips rather than wraps.
  */
@@ -54,18 +89,19 @@
 }
 
 .brandMark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   width: 24px;
   height: 24px;
   border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-inverted);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
+  object-fit: cover;
   flex: 0 0 auto;
+  /* The artwork carries its own ink; nothing behind it should show through the
+     rounded corners. On a dark theme the tile and the column behind it are both
+     near-black, so this hairline is what keeps the square readable; on light it
+     lands on the same black and disappears, which is why it needs no theme
+     switch. */
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3);
 }
 
 .brandName {
@@ -147,7 +183,9 @@
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* dsh's `flex-end`, not `space-between`: the slot between label and actions
+     is the search, and it is what holds the two apart while it is collapsed. */
+  justify-content: flex-end;
   gap: 4px;
   height: 36px;
   padding-left: 4px;
@@ -158,21 +196,64 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* dsh states no size here, so it inherits the column's 14px on a 20px line. */
+/* dsh states no size here, so it inherits the column's 14px on a 20px line. The
+   max-width is its guard for a long locale label; expanding the search is what
+   drives it to zero (`Hidden`), with the visibility transition delayed to the
+   end so the label does not vanish before it has slid away. */
 .sectionLabel {
   flex: none;
+  max-width: 45%;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   line-height: 20px;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    max-width 180ms var(--ds-ease-in-out),
+    margin-right 180ms var(--ds-ease-in-out),
+    opacity 120ms var(--ds-ease-in-out),
+    transform 180ms var(--ds-ease-in-out),
+    visibility 0s linear;
 }
 
+.sectionLabelHidden {
+  max-width: 0;
+  margin-right: -4px;
+  opacity: 0;
+  transform: translateX(-4px);
+  visibility: hidden;
+  transition-delay: 0s, 0s, 0s, 0s, 180ms;
+}
+
+/* The trailing actions give their room to the expanding search and come back to
+   the right edge when it collapses. */
 .sectionActions {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 0 auto;
+  flex: none;
+  /* Two 28px controls and the 4px between them; expanding the search folds
+     both of them away, so this is also the width the transition collapses. */
+  max-width: 64px;
+  opacity: 1;
+  overflow: hidden;
+  visibility: visible;
+  transition:
+    max-width 180ms var(--ds-ease-in-out),
+    opacity 120ms var(--ds-ease-in-out),
+    transform 180ms var(--ds-ease-in-out),
+    visibility 0s linear;
+}
+
+.sectionActionsHidden {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(4px);
+  visibility: hidden;
+  pointer-events: none;
+  transition-delay: 0s, 0s, 0s, 180ms;
 }
 
 /*
@@ -200,36 +281,170 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Held while a toggle's own surface is open (the search field). */
-.iconButtonActive {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+/* --- search (dsh's inline header field) -------------------------------- */
+
+/*
+ * The slot the search lives in. Collapsed it is exactly one 28px control wide
+ * and pushed to the right edge (`margin-left: auto`), so a resting header reads
+ * label … icon … actions; expanded it takes every pixel the label and the
+ * actions gave up. Only the max-width animates, which is what lets the pill
+ * grow out of the icon's own box.
+ */
+.searchSlot {
+  flex: 1;
+  max-width: 28px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding-left: 0;
+  box-sizing: border-box;
+  transition:
+    max-width 180ms var(--ds-ease-in-out),
+    padding-left 180ms var(--ds-ease-in-out);
+}
+
+.searchSlotExpanded {
+  max-width: 100%;
+  padding-left: 0;
 }
 
 /*
- * The search field is its own row rather than dsh's inline header expansion:
- * this shell opens it as a mode (`state.searchOpen`) instead of as part of a
- * header that grows. It keeps the rows' 2px inset so its edges line up with
- * them.
+ * The field itself: a transparent 28px row at rest — just the icon, with the
+ * cursor set to `text` so the whole row reads as clickable, which it is (the
+ * container's click focuses the input) — that becomes dsh's 30px pill once
+ * expanded: a hairline `border-l4` on the 12px corner, still over no fill, so
+ * it sits in the column rather than on it. `calc(100% + 4px)` with a −2px
+ * inline margin lets the pill use the header's own negative right margin as
+ * edge room.
  */
-.searchRow {
-  flex: 0 0 auto;
-  padding: 0 0 8px;
-}
-
-.searchInput {
+.search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0;
   width: 100%;
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
   border-radius: var(--dsw-radius-sm);
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  background: var(--dsw-alias-bg-layer-1);
-  font-size: 12.5px;
+  background: transparent;
+  cursor: text;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  transition:
+    width 180ms var(--ds-ease-in-out),
+    padding 180ms var(--ds-ease-in-out),
+    border-color 180ms var(--ds-ease-in-out),
+    background-color 180ms var(--ds-ease-in-out);
 }
 
-.searchInput:focus {
+.searchExpanded {
+  width: calc(100% + 4px);
+  height: 30px;
+  margin-inline: -2px;
+  padding: 0 4px 0 0;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-caption);
+}
+
+/*
+ * The magnifier. It is a control while collapsed (a 28px box with a hover
+ * fill) and part of the field's own frame once expanded — the pill already
+ * draws the edge, so a second fill there would read as a button inside a
+ * button. dsh drops the glyph to 11px at the same time.
+ */
+.searchButton {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+}
+
+.searchExpanded .searchButton {
+  width: 28px;
+  height: 30px;
+}
+
+.searchButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.searchExpanded .searchButton:hover {
+  background: transparent;
+}
+
+/* The pill clips an outward ring, so these two controls keep theirs inside
+ * (dsh's `outline-offset: -2px`), in this project's ring colour. */
+.searchButton:focus-visible,
+.clearButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-link);
+  outline-offset: -2px;
+}
+
+/*
+ * The input stays mounted and only fades in: a field that mounted on expand
+ * would need its focus re-granted in an effect after the first paint, and this
+ * way the click that opened the search can land the caret itself. It holds no
+ * tab stop while collapsed (`tabIndex={-1}` in the markup), so the icon is the
+ * only way in from the keyboard — and the only visible thing to go back to.
+ */
+.searchInput {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  border: none;
   outline: none;
-  border-color: var(--dsw-alias-border-l4);
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  transition: opacity 120ms var(--ds-ease-in-out);
+}
+
+.searchExpanded .searchInput {
+  margin-left: -2px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The clear control: dsh's 24px box, rendered only while expanded — there is
+ * nothing to clear in a field that is not there. */
+.clearButton {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.clearButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 /*
@@ -449,11 +664,12 @@
 }
 
 /*
- * The workspace row's overflow menu.
+ * A menu floating over the sidebar — the workspace row's `...` and the section
+ * header's view options both use it (see `SidebarMenu`).
  *
- * It is portalled into `document.body` (see `ProjectRowMenu`), so it is placed
- * in viewport coordinates and cannot be clipped by the sidebar's scroll
- * container. dsh's float menu: layer-1 surface, hairline border, float shadow.
+ * It is portalled into `document.body`, so it is placed in viewport
+ * coordinates and cannot be clipped by the sidebar's scroll container. dsh's
+ * float menu: layer-1 surface, hairline border, float shadow.
  */
 .projectMenu {
   position: fixed;
@@ -490,6 +706,69 @@
 /* The one entry that can take the workspace away, so it reads as the risk. */
 .projectMenuItemDanger {
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* --- view options menu -------------------------------------------------- */
+
+/* dsh's `viewOptionsMenu`: the group labels and the longer option names need
+   more room than the row menu's two entries. */
+.viewMenu {
+  min-width: 200px;
+}
+
+/*
+ * A group heading. dsh's `.label` (figma `.Menu_cell` label): 11px tertiary,
+ * no hover, no pointer.
+ */
+.menuLabel {
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Separator cell (figma 122:9481): py 3 / px 2 around the hairline. l2, not
+   l1, for the same reason as the menu's own border: l1 is near-invisible on
+   this surface. */
+.menuSeparator {
+  height: 0.5px;
+  margin: 3px 2px;
+  background: var(--dsw-alias-border-l2);
+}
+
+/* dsh's dense list (`dense` on its Menu): 30px rows instead of 34, with 4px
+   of block padding. The base row states a 32px `height`, so this clears it
+   and lets `min-height` do the work. */
+.menuItemDense {
+  min-height: 30px;
+  height: auto;
+  padding-block: 4px;
+  gap: 6px;
+}
+
+.menuItemIcon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-menu-icon);
+}
+
+.menuItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The trailing selection mark, in the primary ink: among a group of otherwise
+   equal rows, the chosen one is the brightest. */
+.menuCheck {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
 }
 
 /* --- session row --- */
@@ -668,6 +947,72 @@
  * depth, written inline), and with no hover fill — it is a disclosure, not a
  * row, and the text lightening one step is the whole affordance there too.
  */
+/*
+ * The drop marker: a leading chevron and a 2px rule drawn between two rows.
+ * dsh's `.sessionRow.dropBefore/.dropAfter` byte for byte — the chevron is two
+ * 5x7 diagonals of the business color meeting at the left edge, the rule runs
+ * from x=4 to the row's right inset. Absolutely positioned so it neither
+ * resembles a row border nor moves anything when it appears.
+ */
+.dropBefore,
+.dropAfter {
+  position: relative;
+}
+
+.dropBefore::before,
+.dropAfter::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 4px;
+  height: 12px;
+  background:
+    linear-gradient(
+      55deg,
+      transparent calc(50% - 1px),
+      var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ) 0 0 / 5px 7px no-repeat,
+    linear-gradient(
+      125deg,
+      transparent calc(50% - 1px),
+      var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ) 0 5px / 5px 7px no-repeat,
+    linear-gradient(
+      var(--dsw-alias-state-business-primary) 0 0
+    ) 4px 5px / calc(100% - 4px) 2px no-repeat;
+  pointer-events: none;
+}
+
+.dropBefore::before {
+  top: -7px;
+}
+
+.dropAfter::after {
+  bottom: -7px;
+}
+
+/*
+ * A workspace marker spans the header all the way to its right edge and sits
+ * one pixel further out than a session's: the header is the taller row, and the
+ * two are read against each other while the pointer moves between them.
+ * Upstream's `.workspaceDropBefore/.workspaceDropAfter`.
+ */
+.projectRow.dropBefore::before,
+.projectRow.dropAfter::after {
+  right: 0;
+}
+
+.projectRow.dropBefore::before {
+  top: -8px;
+}
+
+.projectRow.dropAfter::after {
+  bottom: -8px;
+}
+
 .revealMore {
   /* The list is a block scroller now, so nothing stretches this button for us;
      dsh states the full width on `.sessionOverflowButton` itself. */

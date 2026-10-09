@@ -81,24 +81,3 @@ export function readSessionSnapshot(sessionPath: string): SessionSnapshot {
     forkPoints: forkPointsFrom(manager),
   };
 }
-
-/**
- * The session's entry tree, for the `/tree` view.
- *
- * Roots are returned as an array because a session can in principle be
- * re-rooted by compaction; in practice a session file has one root.
- */
-export interface SessionTreeSnapshot {
-  sessionId: string;
-  tree: unknown[];
-  leafId: string | null;
-}
-
-export function readSessionTree(sessionPath: string): SessionTreeSnapshot {
-  const manager = SessionManager.open(sessionPath);
-  return {
-    sessionId: manager.getSessionId(),
-    tree: manager.getTree(),
-    leafId: manager.getLeafId(),
-  };
-}

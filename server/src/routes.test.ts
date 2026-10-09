@@ -297,8 +297,47 @@ describe("sessions api", () => {
 
     const res = await api(`/api/projects/${project.id}/sessions`);
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].title).toBe("hello there");
+    expect(res.body.total).toBe(1);
+    expect(res.body.sessions).toHaveLength(1);
+    expect(res.body.sessions[0].title).toBe("hello there");
+  });
+
+  it("pages the session list without losing the total", async () => {
+    const project = await createProject("paged-sessions");
+    const sessionDir = sessionDirFor(project.path, sessionRoot);
+    await mkdir(sessionDir, { recursive: true });
+    for (const [name, id, at] of [
+      ["older.jsonl", "aaaa2222-2222-3333-4444-555555555555", "2026-01-01T00:00:00.000Z"],
+      ["newer.jsonl", "bbbb2222-2222-3333-4444-555555555555", "2026-02-01T00:00:00.000Z"],
+    ] as const) {
+      await writeFile(
+        join(sessionDir, name),
+        `${JSON.stringify({
+          type: "session",
+          version: 3,
+          id,
+          timestamp: at,
+          cwd: project.path,
+        })}\n${JSON.stringify({
+          type: "message",
+          id: "m1",
+          parentId: null,
+          timestamp: at,
+          message: { role: "user", content: id, timestamp: Date.parse(at) },
+        })}\n`,
+        "utf8",
+      );
+    }
+
+    const page = await api(`/api/projects/${project.id}/sessions?limit=1`);
+    expect(page.status).toBe(200);
+    expect(page.body.total).toBe(2);
+    expect(page.body.sessions).toHaveLength(1);
+    expect(page.body.sessions[0].path.endsWith("newer.jsonl")).toBe(true);
+
+    // A page size is a display hint: nonsense falls back to the full list.
+    const bogus = await api(`/api/projects/${project.id}/sessions?limit=zero`);
+    expect(bogus.body.sessions).toHaveLength(2);
   });
 
   it("creates a session, prompts it, and reads it back", async () => {
@@ -499,7 +538,7 @@ describe("sessions api", () => {
     await expect(readFile(sessionFile, "utf8")).rejects.toThrow();
 
     const listed = await api(`/api/projects/${project.id}/sessions?includeHidden=true`);
-    expect(listed.body).toHaveLength(0);
+    expect(listed.body.sessions).toHaveLength(0);
   });
 
   it("closes a resident process before deleting its session", async () => {
@@ -958,7 +997,8 @@ describe("builtin command api", () => {
 
   it("rejects a built-in this ui does not implement", async () => {
     const sessionPath = await openProjectSession("builtin-unknown");
-    // pi has a /tree command; it needs a tree-navigation UI we do not have.
+    // pi has a /tree command; this ui has no tree-navigation surface to run it
+    // from, so the command is refused rather than accepted and ignored.
     const res = await run(sessionPath, { name: "tree" });
     expect(res.status).toBe(400);
   });
@@ -1527,8 +1567,8 @@ describe("model providers api", () => {
   });
 });
 
-describe("fork and tree api", () => {
-  it("reports fork points and a tree alongside the transcript", async () => {
+describe("fork api", () => {
+  it("reports fork points alongside the transcript", async () => {
     const project = await createProject("fork-project");
     const created = await post("/api/sessions", { projectId: project.id });
     const sessionPath = created.body.sessionPath;
@@ -1541,12 +1581,6 @@ describe("fork and tree api", () => {
     // the UI reads them unconditionally.
     expect(Array.isArray(messages.body.forkPoints)).toBe(true);
     expect(Array.isArray(messages.body.messages)).toBe(true);
-
-    const tree = await api(`/api/sessions/${encodeURIComponent(sessionPath)}/tree`);
-    expect(tree.status).toBe(200);
-    expect(Array.isArray(tree.body.tree)).toBe(true);
-    expect(tree.body).toHaveProperty("leafId");
-    expect(["live", "disk"]).toContain(tree.body.source);
   });
 
   it("forks at an entry and reports the new session file", async () => {

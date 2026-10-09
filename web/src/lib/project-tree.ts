@@ -17,20 +17,34 @@ function isAncestor(ancestor: string, descendant: string): boolean {
 }
 
 /**
- * Nest each project under its nearest registered ancestor directory, matching
- * dsh's "Workspace Tree" grouping. Projects with no registered parent stay at
- * the root, so an unrelated set of paths renders as a flat list.
+ * Order the registered projects into the rows the sidebar draws.
+ *
+ * `nest` is dsh's `nestWorkspaces`: on, each project falls under its nearest
+ * registered ancestor directory (its "Workspace Tree" grouping); off, every
+ * project is a root of its own (its plain "Workspaces" grouping). Both read the
+ * same `order` field, so switching between them never reshuffles what the
+ * server holds — the ids in `projects` stay the authority either way.
+ *
+ * @param projects - every registered workspace.
+ * @param options.nest - nest under ancestor directories (default true).
+ * @returns the root nodes, each carrying its depth from the top level.
  */
-export function buildProjectTree(projects: ProjectView[]): ProjectNode[] {
+export function buildProjectTree(
+  projects: ProjectView[],
+  options: { nest?: boolean } = {},
+): ProjectNode[] {
+  const nest = options.nest ?? true;
   const ordered = [...projects].sort((a, b) => a.order - b.order);
 
   const parentOf = new Map<string, string | null>();
   for (const project of ordered) {
     let nearest: ProjectView | null = null;
-    for (const candidate of ordered) {
-      if (candidate.id === project.id) continue;
-      if (!isAncestor(candidate.path, project.path)) continue;
-      if (!nearest || candidate.path.length > nearest.path.length) nearest = candidate;
+    if (nest) {
+      for (const candidate of ordered) {
+        if (candidate.id === project.id) continue;
+        if (!isAncestor(candidate.path, project.path)) continue;
+        if (!nearest || candidate.path.length > nearest.path.length) nearest = candidate;
+      }
     }
     parentOf.set(project.id, nearest?.id ?? null);
   }

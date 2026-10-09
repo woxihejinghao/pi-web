@@ -15,6 +15,25 @@
   min-height: 48px;
 }
 
+/*
+ * macOS only: before a Session exists this pane renders the new-session hero
+ * instead of a header, and the hero is centred in the column — so the top of
+ * the column, which is the window's title-bar band, would have no drag surface
+ * at all. This empty row is that surface: it carries the `data-window-drag`
+ * mark (`theme/index.css` turns it into the drag rule) and reserves the band
+ * the header would occupy. Hidden on every other platform, where the native
+ * title bar owns the drag and the hero keeps the whole column.
+ */
+.headerBlank {
+  display: none;
+}
+
+:global(html[data-platform="darwin"]) .headerBlank {
+  display: block;
+  flex: none;
+  height: 40px;
+}
+
 .headerTitle {
   font-size: 14px;
   font-weight: 600;
@@ -109,36 +128,13 @@
   flex: 0 0 auto;
 }
 
-/* Pushed to the right edge of the header, opposite the title. */
-.headerAction {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  height: 26px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 13px;
-  font: inherit;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
-  background: none;
-  cursor: pointer;
-}
-
-.headerAction:hover {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-/* The right sidebar's toggle sits after the topic-tree button, in the same
- * corner. It carries no `margin-left: auto` of its own — that belongs to the
- * first trailing action, and two auto margins would push the pair apart. */
+/* The right sidebar's toggle, pushed to the right edge of the header opposite
+ * the title. */
 .headerPanelAction {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-left: auto;
   flex: 0 0 auto;
   width: 26px;
   height: 26px;

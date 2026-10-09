@@ -73,7 +73,7 @@ export function connectEvents(): () => void {
   source.addEventListener("open", () => {
     void actions.refreshProjects();
     const selected = appStore.get().selectedProjectId;
-    if (selected) void actions.refreshSessions(selected);
+    if (selected) void actions.refreshSessions(selected, { force: true });
     // The stream dropped and came back: frames were missed while it was away.
     // Tell whoever is reading to re-read instead of appending past the hole.
     if (opened) streamRestored.emit();
@@ -102,7 +102,7 @@ export function connectEvents(): () => void {
     const projectId = data?.projectPath
       ? state.projects.find((project) => project.path === data.projectPath)?.id
       : state.selectedProjectId;
-    if (projectId) void actions.refreshSessions(projectId);
+    if (projectId) void actions.refreshSessions(projectId, { force: true });
   });
 
   source.addEventListener("session_event", (raw) => {

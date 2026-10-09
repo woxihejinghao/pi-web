@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { AlertIcon, RefreshIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { api } from "../../lib/api.ts";
@@ -16,7 +16,6 @@ import { MessageList } from "./MessageList.tsx";
 import { NewSessionHero } from "./NewSessionHero.tsx";
 import { parseBuiltinCommand } from "./slash.ts";
 import { TodoPanel } from "./TodoPanel.tsx";
-import { TreeDialog } from "./TreeDialog.tsx";
 import { useComposerState } from "./useComposerState.ts";
 import { useConversation } from "./useConversation.ts";
 import styles from "./ConversationPane.module.css";
@@ -24,7 +23,6 @@ import styles from "./ConversationPane.module.css";
 export function ConversationPane() {
   const t = useT();
   const state = useStore(appStore);
-  const [treeOpen, setTreeOpen] = useState(false);
   // A draft has no pi process yet, so the conversation runs without a path
   // until the spawn resolves and swaps the real one in.
   const selected = state.selectedSessionPath;
@@ -164,6 +162,10 @@ export function ConversationPane() {
   if (!sessionPath && !draft) {
     return (
       <div className={styles.pane}>
+        {/* macOS only (the rule hides it elsewhere): with no Session there is no
+            header, so this empty row keeps the center column's window-drag band
+            over the hero. */}
+        <header className={styles.headerBlank} data-window-drag aria-hidden />
         <NewSessionHero />
         {questionCard}
       </div>
@@ -178,18 +180,10 @@ export function ConversationPane() {
 
   return (
     <div className={styles.pane}>
-      <header className={styles.header}>
+      <header className={styles.header} data-window-drag>
         <span className={styles.headerTitle}>{project?.title ?? "pi-web-simple"}</span>
         <span className={styles.headerSub}>{headerSub}</span>
         {draft ? <span className={styles.spinner} aria-hidden /> : null}
-        {sessionPath !== null && !draft ? (
-          <button
-            type="button"
-            className={styles.headerAction}
-            onClick={() => setTreeOpen(true)}
-          >
-            <Glyph name="branch" size={14} />{t("pane.topicTree")}</button>
-        ) : null}
         {sessionPath !== null && !draft && !rightbarOpen ? (
           <button
             type="button"
@@ -202,17 +196,6 @@ export function ConversationPane() {
           </button>
         ) : null}
       </header>
-
-      {treeOpen && sessionPath !== null ? (
-        <TreeDialog
-          sessionPath={sessionPath}
-          onFork={(entryId) => {
-            setTreeOpen(false);
-            onFork(entryId);
-          }}
-          onClose={() => setTreeOpen(false)}
-        />
-      ) : null}
 
       {isExternal ? (
         <div className={styles.banner} role="status">

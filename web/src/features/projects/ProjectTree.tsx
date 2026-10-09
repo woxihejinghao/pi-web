@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useRef, useState, type RefObject } from "react";
 import clsx from "clsx";
 import { EyeOffIcon } from "../../components/icons.tsx";
-import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts";
+import { actions, appStore, isDraftSession, SESSIONS_PAGE_SIZE, useT } from "../../lib/app-state.ts";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { StateDot, type StateDotState } from "../../components/StateDot.tsx";
 import type { MessageKey } from "../../lib/i18n/index.ts";
@@ -10,24 +9,13 @@ import { formatRelativeTime } from "../../lib/format.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
 import { useStore } from "../../lib/store.ts";
 import styles from "../../layout/Sidebar.module.css";
-
-/** dsh shows five sessions per workspace before folding the rest. */
-const PAGE_SIZE = 5;
-
-/** Where a workspace's overflow menu is anchored, in viewport coordinates. */
-interface MenuAnchor {
-  top: number;
-  right: number;
-}
+import { sessionRowsOf } from "./session-rows.ts";
+import { NO_DRAG, type RowDragHandlers, type SidebarDrag } from "./use-sidebar-drag.ts";
+import { SidebarMenu, anchorBelow, type MenuAnchor } from "./SidebarMenu.tsx";
 
 /**
  * The workspace row's overflow menu: rename and remove, folded behind the `...`
  * that dsh puts there.
- *
- * Rendered into `document.body` because the sidebar's list is a scroll
- * container — an absolutely positioned menu would be clipped by it. `fixed`
- * coordinates come from the trigger and the menu is right-aligned to it, which
- * is the direction dsh opens it in.
  */
 function ProjectRowMenu({
   anchor,
@@ -43,41 +31,13 @@ function ProjectRowMenu({
   onRemove: () => void;
 }) {
   const t = useT();
-  const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // The trigger is part of the menu for dismissal purposes: clicking `...`
-    // again has to toggle, not close-then-reopen from the pointerdown below.
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (menuRef.current?.contains(target) === true) return;
-      if (triggerRef.current?.contains(target) === true) return;
-      onClose();
-    };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") onClose();
-    };
-    // Scrolling moves the trigger but not the menu, so dismiss rather than
-    // leave the menu pinned to nothing.
-    const onScroll = (): void => onClose();
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("scroll", onScroll, true);
-    };
-  }, [onClose, triggerRef]);
-
-  return createPortal(
-    <div
-      ref={menuRef}
-      className={styles.projectMenu}
-      role="menu"
-      aria-label={t("project.actions")}
-      style={{ top: anchor.top, right: anchor.right }}
+  return (
+    <SidebarMenu
+      anchor={anchor}
+      triggerRef={triggerRef}
+      onClose={onClose}
+      ariaLabel={t("project.actions")}
     >
       <button
         type="button"
@@ -99,8 +59,7 @@ function ProjectRowMenu({
         }}
       >
         <Glyph name="trash" size={16} />{t("project.delete")}</button>
-    </div>,
-    document.body,
+    </SidebarMenu>
   );
 }
 
@@ -119,7 +78,8 @@ interface SessionStatus {
   label: MessageKey;
 }
 
-function sessionStatus(
+/** The run-state mark one session row shows, from its two inputs. */
+export function sessionStatus(
   activity: "ongoing" | "done" | undefined,
   pending: boolean,
 ): SessionStatus | undefined {
@@ -129,7 +89,12 @@ function sessionStatus(
   return undefined;
 }
 
-function SessionRow({
+/**
+ * One session row: a status slot, the title, and the actions the pointer
+ * reveals. Exported because the one-list grouping draws the same row with no
+ * workspace standing over it.
+ */
+export function SessionRow({
   sessionPath,
   title,
   time,
@@ -137,6 +102,7 @@ function SessionRow({
   external,
   status,
   indent,
+  drag,
   canDelete = true,
 }: RowProps & {
   sessionPath: string;
@@ -146,6 +112,8 @@ function SessionRow({
   external: boolean;
   /** dsh's status mark; undefined leaves the leading slot empty. */
   status?: SessionStatus;
+  /** The row's drag wiring; `draggable` is false for a row with no file yet. */
+  drag: RowDragHandlers;
   /** False for a row that has no file on disk yet, so there is nothing to remove. */
   canDelete?: boolean;
 }) {
@@ -169,9 +137,19 @@ function SessionRow({
 
   return (
     <div
-      className={clsx(styles.sessionRow, active && styles.sessionRowActive)}
+      className={clsx(
+        styles.sessionRow,
+        active && styles.sessionRowActive,
+        drag.marker === "before" && styles.dropBefore,
+        drag.marker === "after" && styles.dropAfter,
+      )}
       style={{ paddingLeft: 8 + indent }}
       title={sessionPath}
+      draggable={drag.draggable}
+      onDragStart={drag.onDragStart}
+      onDragEnd={drag.onDragEnd}
+      onDragOver={drag.onDragOver}
+      onDrop={drag.onDrop}
     >
       {/*
        * dsh's leading slot is always in the row: a session with no run-state
@@ -233,7 +211,14 @@ function SessionRow({
 }
 
 /** One workspace and the sessions nested underneath it. */
-export function ProjectTreeItem({ node }: { node: ProjectNode }) {
+export function ProjectTreeItem({
+  node,
+  drag = NO_DRAG,
+}: {
+  node: ProjectNode;
+  /** The tree-wide drag wiring; left out by a standalone render, which then draws static rows. */
+  drag?: SidebarDrag;
+}) {
   const t = useT();
   const state = useStore(appStore);
   const project = node.project;
@@ -253,32 +238,19 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
   const query = state.sessionQuery.trim().toLowerCase();
   const searching = query.length > 0;
 
-  const all = state.sessions[project.id] ?? [];
-  const visible = all.filter((session) => !session.hidden);
-  const matched = searching
-    ? visible.filter((session) => session.title.toLowerCase().includes(query))
-    : visible;
+  // Which rows this workspace draws, in which order. The search filter, the
+  // manual arrangement, the revealed-page cut and the drafts that lead the
+  // column all live in `sessionRowsOf`, because the drag handler has to permute
+  // exactly the list that is on screen.
+  const rows = sessionRowsOf(state, project.id);
+  const shown = rows.sessions;
+  const unsaved = rows.drafts;
+  const remaining = rows.remaining;
 
-  const limit = searching ? matched.length : (state.revealedSessions[project.id] ?? PAGE_SIZE);
-  const shown = matched.slice(0, limit);
-  const remaining = matched.length - shown.length;
-
-  // Sessions this browser created that pi has not written to disk yet are not
-  // in `all`, but they still need a row, pinned to the top like dsh's
-  // "新会话". Ownership comes from `unsavedSessions`, recorded when the session
-  // was started: a session opened elsewhere is not in this workspace's list and
-  // must not be claimed here.
   const selected = state.selectedSessionPath;
   /** True when this row's session is the one an extension is blocked on. */
   const pendingFor = (path: string | null): boolean =>
     path !== null && state.pendingUiRequests.some((item) => item.sessionPath === path);
-  const unsaved = (state.unsavedSessions[project.id] ?? []).filter(
-    (path) => !all.some((session) => session.path === path),
-  );
-
-  if (searching && matched.length === 0 && !project.title.toLowerCase().includes(query)) {
-    return null;
-  }
 
   const renameProject = async (): Promise<void> => {
     const next = window.prompt(t("project.renamePrompt"), project.title);
@@ -300,6 +272,15 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
     setMenuAt(null);
   }, []);
 
+  // A workspace with nothing to show under the current query folds away
+  // entirely — but **after** every hook. Bailing out above them makes this
+  // component call fewer hooks than on its previous render, and React treats
+  // that as a crash ("Rendered fewer hooks than expected"), not as a row that
+  // disappeared.
+  if (searching && rows.sessions.length === 0 && !project.title.toLowerCase().includes(query)) {
+    return null;
+  }
+
   /**
    * The selected workspace's mark only reads in the brand color while it is open:
    * a collapsed workspace is not the one the transcript is showing, and tinting
@@ -307,22 +288,17 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
    */
   const accented = current && expanded;
 
-  /**
-   * Open the overflow menu under its own trigger.
-   *
-   * Viewport coordinates, because the menu is portalled out of the scrolling
-   * list; `right` is measured from the viewport edge so the menu grows leftward
-   * from the trigger instead of off the sidebar.
-   */
+  /** Open the overflow menu under its own trigger, or fold it back up. */
   const toggleMenu = (): void => {
     if (menuAt !== null) {
       setMenuAt(null);
       return;
     }
-    const rect = menuButtonRef.current?.getBoundingClientRect();
-    if (rect === undefined) return;
-    setMenuAt({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    const anchor = anchorBelow(menuButtonRef.current);
+    if (anchor !== null) setMenuAt(anchor);
   };
+
+  const projectDrag = drag.projectRow(project.id);
 
   return (
     <>
@@ -331,10 +307,17 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
           styles.projectRow,
           current && styles.projectRowCurrent,
           menuAt !== null && styles.menuOpen,
+          projectDrag.marker === "before" && styles.dropBefore,
+          projectDrag.marker === "after" && styles.dropAfter,
         )}
         data-workspace-row=""
         style={{ paddingLeft: 8 + indent }}
         title={project.path}
+        draggable={projectDrag.draggable}
+        onDragStart={projectDrag.onDragStart}
+        onDragEnd={projectDrag.onDragEnd}
+        onDragOver={projectDrag.onDragOver}
+        onDrop={projectDrag.onDrop}
       >
         <button
           type="button"
@@ -412,6 +395,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               external={false}
               status={sessionStatus(state.sessionActivity[path], pendingFor(path))}
               indent={indent}
+              drag={drag.sessionRow(project.id, path)}
               canDelete={false}
             />
           ))}
@@ -429,6 +413,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
                 pendingFor(session.path),
               )}
               indent={indent}
+              drag={drag.sessionRow(project.id, session.path)}
             />
           ))}
 
@@ -437,7 +422,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
               type="button"
               className={styles.revealMore}
               style={{ paddingLeft: 28 + indent }}
-              onClick={() => actions.revealMoreSessions(project.id, limit + PAGE_SIZE)}
+              onClick={() => actions.revealMoreSessions(project.id, rows.limit + SESSIONS_PAGE_SIZE)}
             >
               {t("session.expandAll", { count: remaining })}
             </button>
@@ -450,7 +435,7 @@ export function ProjectTreeItem({ node }: { node: ProjectNode }) {
       ) : null}
 
       {node.children.map((child) => (
-        <ProjectTreeItem key={child.project.id} node={child} />
+        <ProjectTreeItem key={child.project.id} node={child} drag={drag} />
       ))}
     </>
   );

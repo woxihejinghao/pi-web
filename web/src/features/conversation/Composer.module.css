@@ -11,36 +11,17 @@
  * its toolbar, and horizontal padding carried by the children rather than the
  * card so the text starts at the same offset as the toolbar icons.
  *
- * The edge is half a pixel of gradient, drawn as a real border with a
- * two-layer background rather than the elevation hairline. `--dsw-elevation-soft`
- * carries that hairline as its first layer; dsh's InputBar rebinds its colour to
- * border-l2, which against a white page still draws a line across the top edge —
- * exactly where the shadow cannot reach, because the soft lift blurs downward —
- * so the stroke is pointed at `transparent` (the same move dsh makes for its
- * workspace-trigger state) and the edge is painted instead: fully transparent at
- * the top, border-l3 by the bottom. The bottom is the edge that sits inside the
- * shadow and needs closing, the top is the one that only ever looked like a seam.
- *
- * It is a border because a masked `::after` ring cannot survive a 22px corner:
- * subtracting a content-box mask from a border-box one leaves gaps along the
- * arc, and the card looked cut off at all four corners. A border keeps the
- * browser's own rounded-corner rasterisation; `box-sizing: border-box` already
- * holds the outer size, so the half pixel costs no layout. The scrollbar pair
- * follows the same reasoning: an elevated surface uses the l2 thumb.
- *
- * The lift is not `--dsw-elevation-soft`. That token blurs almost evenly and at
- * 0.03 alpha it never separates a white card from a white page: with the top
- * edge unstroked, the card read as cut off rather than raised, because there
- * was nothing above it at all. Two shadow passes fix that — an all-round halo
- * that gives the top edge its separation back, and a downward cast that does
- * the lifting. Dark needs no counterpart: there the card is 850 on a 950 page,
- * so it is already off the surface.
- *
- * Neither pass may carry a spread or a `0 0 0 Npx` ring: a ring is a real line
- * all the way round, and the top edge is exactly where no line may appear. The
- * halo is therefore wide and weak (32px at 0.04), which is what keeps its
- * strongest point — the edge itself, where a blur is always at half strength —
- * a soft gradient rather than an outline. */
+ * Edge and lift are dsh's elevation pair, verbatim: `border: 0` with the
+ * half-pixel stroke drawn by `--dsw-elevation-soft`, whose first layer is a
+ * `0 0 0 0.5px` ring around the same 22px rounding, followed by two weak halo
+ * passes. The card rebinds `--dsw-elevation-stroke-color` to border-l2 — the
+ * light neutral one step above the menus' l1; the workspace-trigger state is
+ * the one that points it at `transparent`. That rebinding reaches this element
+ * because the derived `--dsw-elevation-*` values are declared per element in
+ * theme/gradient-shadow-text.css rather than inherited already-substituted
+ * from `body`, and `box-sizing: border-box` keeps the outer size unchanged.
+ * The scrollbar pair follows the same reasoning: an elevated surface uses the
+ * l2 thumb. */
 .composer {
   position: relative;
   box-sizing: border-box;
@@ -50,16 +31,13 @@
   flex-direction: column;
   gap: 12px;
   padding-top: 0;
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   border-radius: 22px;
-  border: 0.5px solid transparent;
-  background:
-    linear-gradient(var(--dsw-specific-input-major), var(--dsw-specific-input-major)) padding-box,
-    linear-gradient(180deg, transparent, var(--dsw-alias-border-l3)) border-box;
+  background: var(--dsw-specific-input-major);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-  box-shadow:
-    0 0 32px rgba(0, 0, 0, 0.04),
-    0 8px 20px rgba(0, 0, 0, 0.07);
+  box-shadow: var(--dsw-elevation-soft);
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }

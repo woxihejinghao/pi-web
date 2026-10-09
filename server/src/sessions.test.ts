@@ -1,8 +1,8 @@
 import { mkdtemp, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionInfo } from "@earendil-works/pi-coding-agent";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TITLE_MAX_BYTES } from "./config.ts";
 
 let home: string;
@@ -198,7 +198,7 @@ describe("listSessions", () => {
       timestamp: "2026-02-02T00:00:00.000Z",
     });
 
-    const list = await sessions.listSessions(projectCwd, { sessionDir });
+    const { sessions: list } = await sessions.listSessions(projectCwd, { sessionDir });
     expect(list.map((s) => s.title)).toEqual(["belongs here"]);
   });
 
@@ -216,7 +216,7 @@ describe("listSessions", () => {
       timestamp: "2026-03-01T00:00:00.000Z",
     });
 
-    const list = await sessions.listSessions(projectCwd, { sessionDir });
+    const { sessions: list } = await sessions.listSessions(projectCwd, { sessionDir });
     expect(list.map((s) => s.title)).toEqual(["newer", "older"]);
   });
 
@@ -229,10 +229,10 @@ describe("listSessions", () => {
     });
     await projects.setSessionOverride(path, { hidden: true });
 
-    expect(await sessions.listSessions(projectCwd, { sessionDir })).toHaveLength(0);
+    expect((await sessions.listSessions(projectCwd, { sessionDir })).sessions).toHaveLength(0);
     const all = await sessions.listSessions(projectCwd, { sessionDir, includeHidden: true });
-    expect(all).toHaveLength(1);
-    expect(all[0]?.hidden).toBe(true);
+    expect(all.sessions).toHaveLength(1);
+    expect(all.sessions[0]?.hidden).toBe(true);
   });
 
   /**
@@ -258,7 +258,7 @@ describe("listSessions", () => {
     );
     store.resetStoreCache();
 
-    const list = await sessions.listSessions(projectCwd, { sessionDir });
+    const { sessions: list } = await sessions.listSessions(projectCwd, { sessionDir });
     expect(list[0]?.title).toBe("original first message");
     expect(list[0]?.titleSource).toBe("firstMessage");
   });
@@ -274,12 +274,80 @@ describe("listSessions", () => {
 
     await titles.setSessionTitle(path, "Web renamed", undefined);
 
-    const list = await sessions.listSessions(projectCwd, { sessionDir });
+    const { sessions: list } = await sessions.listSessions(projectCwd, { sessionDir });
     expect(list[0]?.title).toBe("Web renamed");
     expect(list[0]?.titleSource).toBe("session");
   });
 
-  it("returns an empty list for a directory with no sessions", async () => {
-    expect(await sessions.listSessions(projectCwd, { sessionDir })).toEqual([]);
+  it("returns an empty page for a directory with no sessions", async () => {
+    expect(await sessions.listSessions(projectCwd, { sessionDir })).toEqual({
+      sessions: [],
+      total: 0,
+    });
+  });
+
+  it("returns one page and the total it was cut from", async () => {
+    const first = await writeSession("page-1.jsonl", {
+      id: "aaaaaaaa-1111-1111-1111-111111111111",
+      cwd: projectCwd,
+      message: "first",
+      timestamp: "2026-01-01T00:00:00.000Z",
+    });
+    await writeSession("page-2.jsonl", {
+      id: "bbbbbbbb-2222-2222-2222-222222222222",
+      cwd: projectCwd,
+      message: "second",
+      timestamp: "2026-02-01T00:00:00.000Z",
+    });
+    await writeSession("page-3.jsonl", {
+      id: "cccccccc-3333-3333-3333-333333333333",
+      cwd: projectCwd,
+      message: "third",
+      timestamp: "2026-03-01T00:00:00.000Z",
+    });
+
+    const page = await sessions.listSessions(projectCwd, { sessionDir, limit: 2 });
+    expect(page.total).toBe(3);
+    expect(page.sessions.map((s) => s.title)).toEqual(["third", "second"]);
+
+    // The session being read comes along even when it sorts past the cut, so a
+    // sidebar that only drew the first row still knows its title.
+    const focused = await sessions.listSessions(projectCwd, {
+      sessionDir,
+      limit: 2,
+      focus: first,
+    });
+    expect(focused.total).toBe(3);
+    expect(focused.sessions.map((s) => s.title)).toEqual(["third", "second", "first"]);
+  });
+
+  it("parses a directory once and re-reads it after a file moves", async () => {
+    const parsed = vi.spyOn(SessionManager, "list");
+    try {
+      await writeSession("cache-1.jsonl", {
+        id: "dddddddd-4444-4444-4444-444444444444",
+        cwd: projectCwd,
+        message: "cached",
+        timestamp: "2026-01-01T00:00:00.000Z",
+      });
+      parsed.mockClear();
+
+      await sessions.listSessions(projectCwd, { sessionDir });
+      const second = await sessions.listSessions(projectCwd, { sessionDir, limit: 1 });
+      expect(parsed).toHaveBeenCalledTimes(1);
+      expect(second.sessions.map((s) => s.title)).toEqual(["cached"]);
+
+      await writeSession("cache-2.jsonl", {
+        id: "eeeeeeee-5555-5555-5555-555555555555",
+        cwd: projectCwd,
+        message: "fresh",
+        timestamp: "2026-06-01T00:00:00.000Z",
+      });
+      const third = await sessions.listSessions(projectCwd, { sessionDir });
+      expect(parsed).toHaveBeenCalledTimes(2);
+      expect(third.sessions.map((s) => s.title)).toEqual(["fresh", "cached"]);
+    } finally {
+      parsed.mockRestore();
+    }
   });
 });

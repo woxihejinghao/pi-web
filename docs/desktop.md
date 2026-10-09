@@ -41,7 +41,7 @@ pi 的 RPC 客户端用的是裸命令 `node`（`@earendil-works/pi-coding-agent
   `xattr -dr com.apple.quarantine /Applications/pi-web-simple.app`。
 - Windows：SmartScreen 提示 →「更多信息」→「仍要运行」。
 
-装完之后启动就是一个原生窗口（系统标题栏，不是自绘的）。菜单 **File → Open in Browser**
+装完之后启动就是一个原生窗口。**macOS 用 `hiddenInset`：保留系统红绿灯，但把标题栏那条带子画成透明**，页面一直铺到窗口上缘、侧栏的半透明底色因此能跑进控制区；代价是原生标题栏不再是拖拽区，窗口改由页面里打了 `data-window-drag` 的行来拖（侧栏顶部条、品牌行，以及中间栏顶部——有会话时就是对话头部，新会话时是一条同高的空行），行里的控件再由一条全局 `no-drag` 规则自己退出拖拽——窗口另开一层 `sidebar` 毛玻璃（`vibrancy`），让那条半透明侧栏有东西可透，材质与 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 同一个。**Windows 与 Linux 不动**：不跟 dsh 在 Windows 上自绘顶部行，不重造原生窗口控件，就用平台自己的标题栏。菜单 **File → Open in Browser**
 可以在浏览器里打开同一个地址——它本来就是同一个服务。
 
 ## 它放在哪、跑在哪
@@ -78,7 +78,8 @@ pnpm package:desktop     # = 先 pnpm build（前后端），再打当前平台�
 ```sh
 pnpm dev:desktop                                  # 先构建，再用 Electron 窗口跑当前仓库
                                                   # （窗口加载的是 web/dist 构建产物，改完要重新跑）
-pnpm icons:desktop                                # 重新生成 desktop/resources/icon.png
+pnpm icons:desktop                                # 由 desktop/resources/icon-source.png 生成 icon.png
+                                                  # （缩放 + macOS squircle 裁形；换图标 = 替换源素材后重跑）
 pnpm --filter pi-web-simple-desktop run package:dir    # 只出解包目录，快很多，用来验证
 pnpm --filter pi-web-simple-desktop run package -- --no-build   # 跳过 pnpm build（产物已经构建过）
 ```
@@ -96,6 +97,12 @@ pnpm --filter pi-web-simple-desktop run package -- --no-build   # 跳过 pnpm bu
 **只能在目标平台上打包**：自带的运行时是宿主平台的，交叉打包没有意义（脚本会直接拒绝）。
 `electronDist` 指向本地 `node_modules/electron/dist`，用的是本地已安装的 Electron，
 不去网上重下一份——版本与开发模式完全一致，也不再受下载超时的影响。
+
+开发模式（`pnpm dev:desktop`）跑的是 `electron .`，住在 Electron 自己的 bundle 里，
+Dock 图标不会自动变成我们的：主进程会把 `desktop/resources/icon.png` 交给
+`app.dock.setIcon`（macOS）并作为 `BrowserWindow` 的 `icon`（Windows/Linux）。
+打包后这两处都不需要——图标已经在 bundle 的 `.icns` / `.ico` 里。所以换图标时
+除了 `pnpm icons:desktop`，不需要额外做“同步开发版图标”的动作。
 
 ## 环境变量与排错
 

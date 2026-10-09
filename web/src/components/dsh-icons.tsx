@@ -30,6 +30,12 @@ interface GlyphDef {
   viewBox: string;
   paths: readonly GlyphPath[];
   /**
+   * Circles dsh's artwork draws as `<circle>`. Kept as circles rather than
+   * flattened into arc paths so the shape stays byte-identical to upstream —
+   * `sliders` is the one glyph in this set that has them.
+   */
+  circles?: readonly { cx: number; cy: number; r: number }[];
+  /**
    * The stroke width of the glyph's stroked paths, and — for a glyph whose
    * paths carry no `stroke` of their own — the switch that makes every one of
    * them stroked. dsh's set is mostly fill; the stroked members and the mixed
@@ -37,6 +43,8 @@ interface GlyphDef {
    * own chrome marks).
    */
   strokeWidth?: number;
+  /** dsh's tree glyphs round their corners; the rest of its stroked set does not. */
+  strokeLinejoin?: "round";
   evenOdd?: boolean;
 }
 
@@ -333,6 +341,17 @@ const GLYPHS = {
   },
 
   /**
+   * `IconCloseFill16` — the search field's clear control. dsh's name says
+   * "fill", but it draws the cross as two 1px stroked paths like the outline
+   * marks around it, so the glyph's width carries them rather than a fill.
+   */
+  closeFill: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1,
+    paths: ["M3.5 3.5L12.5 12.5", "M12.5 3.5L3.5 12.5"],
+  },
+
+  /**
    * `IconEditOutline16` — rename. One of dsh's two half-and-half glyphs: the
    * sheet is filled, the pen stroke over it is not.
    */
@@ -377,6 +396,65 @@ const GLYPHS = {
       { d: "M5.5498 9.75V5H6.9502V9.75C6.9502 10.3299 7.4201 10.7998 8 10.7998C8.5799 10.7998 9.0498 10.3299 9.0498 9.75V4.5C9.0498 2.9536 7.7964 1.7002 6.25 1.7002C4.7036 1.7002 3.4502 2.9536 3.4502 4.5V9.75C3.4502 12.2629 5.4871 14.2998 8 14.2998C10.5129 14.2998 12.5498 12.2629 12.5498 9.75V4H13.9502V9.75C13.9502 13.0361 11.2861 15.7002 8 15.7002C4.71391 15.7002 2.0498 13.0361 2.0498 9.75V4.5C2.04981 2.1804 3.9304 0.299806 6.25 0.299805C8.5696 0.299805 10.4502 2.1804 10.4502 4.5V9.75C10.4502 11.1031 9.3531 12.2002 8 12.2002C6.6469 12.2002 5.5498 11.1031 5.5498 9.75Z" },
     ],
   },
+
+  /**
+   * `IconSlidersTwoOutline16` — the workspace browser's view-options trigger.
+   * Two rules, each with a knob, the knobs at opposite ends: the glyph reads as
+   * "what is shown" rather than as one switch.
+   */
+  sliders: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1,
+    paths: ["M2.3 5h5.85M12.05 5h1.65", "M2.3 11h1.65M7.85 11h5.85"],
+    circles: [
+      { cx: 9.95, cy: 5, r: 1.45 },
+      { cx: 5.75, cy: 11, r: 1.45 },
+    ],
+  },
+
+  /**
+   * `IconWorkspaceTreeOutline16` — the "by workspace tree" grouping: a folder
+   * with two trunks in it, which is exactly what that nesting draws.
+   */
+  workspaceTree: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1,
+    strokeLinejoin: "round",
+    paths: [
+      "M14 12.05c0 .8-.65 1.45-1.46 1.45H3.46C2.65 13.5 2 12.85 2 12.05v-8.1c0-.8.65-1.45 1.46-1.45h2.4c.49 0 .94.24 1.21.65l.5.73c.27.4.73.65 1.21.65h3.76c.8 0 1.46.65 1.46 1.45v6.02Z",
+      "M8.7 8.1v3M11.2 8.1v3",
+    ],
+  },
+
+  /**
+   * `IconFlatListOutline16` — the "one list" grouping: three rules with their
+   * bullets, which is every session with no workspace standing over it.
+   */
+  flatList: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1,
+    paths: ["M6 3.5h7.5M6 8h7.5M6 12.5h7.5", "M2.6 3.5h.01M2.6 8h.01M2.6 12.5h.01"],
+  },
+
+  /**
+   * `IconChevronsUpDownOutline16` — manual order: two carets facing away from
+   * each other, which is the drag gesture's own mark.
+   */
+  chevronsUpDown: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1,
+    strokeLinejoin: "round",
+    paths: ["m5.1 6 2.9-2.9L10.9 6", "m5.1 10 2.9 2.9 2.9-2.9"],
+  },
+
+  /**
+   * `IconCheckOutline16` — the view-options menu's trailing selection mark.
+   */
+  check: {
+    viewBox: "0 0 16 16",
+    strokeWidth: 1,
+    paths: ["M2.25 8.5L5.49732 11.7473C5.90519 12.1552 6.57263 12.1344 6.95426 11.7018L13.75 4"],
+  },
 } as const satisfies Record<string, GlyphDef>;
 
 export type GlyphName = keyof typeof GLYPHS;
@@ -419,6 +497,8 @@ export function Glyph({
   // outline into a solid blob, so the two modes are explicit per glyph rather
   // than inferred from the name.
   const glyphStrokeWidth = "strokeWidth" in glyph ? (glyph.strokeWidth as number) : null;
+  const strokeLinejoin = "strokeLinejoin" in glyph ? glyph.strokeLinejoin : undefined;
+  const circles = "circles" in glyph ? (glyph.circles ?? []) : [];
   const evenOdd = "evenOdd" in glyph && glyph.evenOdd === true;
   return (
     <svg
@@ -450,6 +530,7 @@ export function Glyph({
             stroke="currentColor"
             strokeWidth={glyphStrokeWidth ?? 1}
             strokeLinecap="round"
+            strokeLinejoin={strokeLinejoin}
           />
         ) : (
           <path
@@ -462,6 +543,17 @@ export function Glyph({
           />
         );
       })}
+      {circles.map((circle, index) => (
+        <circle
+          key={`circle-${String(index)}`}
+          cx={circle.cx}
+          cy={circle.cy}
+          r={circle.r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={glyphStrokeWidth ?? 1}
+        />
+      ))}
     </svg>
   );
 }

@@ -29,6 +29,16 @@ export interface SessionView {
 }
 
 /**
+ * One page of a workspace's session list, plus how many sessions the workspace
+ * has in total. The sidebar renders `sessions` and labels its "show more" with
+ * the difference, so it never has to hold a whole workspace's history.
+ */
+export interface SessionListPage {
+  sessions: SessionView[];
+  total: number;
+}
+
+/**
  * A command invocable by typing `/name`. pi expands skill commands
  * (`/skill:pdf-tools`) and prompt templates itself before delivering the
  * message, so the client only has to complete the text.
@@ -524,28 +534,6 @@ export interface MessageUsage {
   cacheWrite: number;
   totalTokens: number;
   cost?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
-}
-
-/** One node of a session's entry tree, as `/tree` shows it. */
-export interface SessionTreeNode {
-  entry: {
-    id: string;
-    parentId?: string | null;
-    type: string;
-    timestamp?: string;
-    message?: { role?: string; content?: unknown };
-    [key: string]: unknown;
-  };
-  children: SessionTreeNode[];
-  label?: string;
-}
-
-export interface SessionTreeView {
-  sessionId: string;
-  tree: SessionTreeNode[];
-  leafId: string | null;
-  /** Whether this came from a live pi process or straight off disk. */
-  source: "live" | "disk";
 }
 
 /** Result of forking: `cancelled` is true when an extension vetoed it. */
