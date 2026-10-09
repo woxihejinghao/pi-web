@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 修复
+
+- **浅色主题下终端是黑底白字**：配色和字体是从设计令牌里现读的（xterm 画在 canvas 上，继承不了 CSS），而令牌表住在 `body` 上、这两处读的是 `documentElement`，读到空字符串后落回硬编码的兜底值：背景落空，`.xterm-viewport` 于是留下 `xterm.css` 写死的那片黑。现在两处改读 `body`，视口背景也在样式里跟着 `--dsw-alias-bg-base` 走——xterm 6 的库里已经没有任何地方往视口的 style 上写字了，这一条只能由外面来。
+
 ## [0.8.0] - 2026-10-09
 
 ### 新增

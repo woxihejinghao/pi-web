@@ -13,6 +13,14 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* xterm.css paints the scroll container black, which is right for a dark
+ * terminal and wrong for a light one. In xterm 6 nothing in the library writes
+ * to the viewport's style anymore (the rows are drawn on the canvas), so the
+ * only thing that can follow the palette here is the token. */
+.host :global(.xterm-viewport) {
+  background-color: var(--dsw-alias-bg-base);
+}
+
 .screen {
   flex: 1;
   min-height: 0;

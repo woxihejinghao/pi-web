@@ -78,7 +78,11 @@ function readToken(style: CSSStyleDeclaration, name: string, fallback: string): 
  * is remounted on the next mount, which is also when the appearance is stable.
  */
 function terminalTheme(): ITheme {
-  const style = getComputedStyle(document.documentElement);
+  // The token sheet is painted on `body`, not on `:root` — reading it off
+  // `documentElement` returned empty strings, which silently fell back to the
+  // hard-coded pair below and left a light-theme terminal with a black
+  // background (xterm.css paints `.xterm-viewport` black of its own accord).
+  const style = getComputedStyle(document.body);
   const dark = document.documentElement.dataset.appearance === "dark";
   return {
     background: readToken(style, "--dsw-alias-bg-base", dark ? "#191919" : "#ffffff"),
@@ -91,7 +95,7 @@ function terminalTheme(): ITheme {
 
 function terminalFontFamily(): string {
   return readToken(
-    getComputedStyle(document.documentElement),
+    getComputedStyle(document.body),
     "--dsw-font-mono",
     "ui-monospace, SFMono-Regular, Menlo, monospace",
   );
