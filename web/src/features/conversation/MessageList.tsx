@@ -168,6 +168,7 @@ function TurnBody({
   streaming,
   compact,
   stepGrouping,
+  liveProcessDetail,
   processDurationMs,
   previewSettled,
   cwd,
@@ -187,6 +188,8 @@ function TurnBody({
   compact: boolean;
   /** dsh's `stepGrouping`: fold a turn's process runs, and for which turns. */
   stepGrouping: TranscriptPolicy["stepGrouping"];
+  /** dsh's `liveProcessDetail`: name the running tool's argument in a live group. */
+  liveProcessDetail: TranscriptPolicy["liveProcessDetail"];
   /** Wall-clock span of this turn, for the group's header. */
   processDurationMs: number | null;
   /** Whether settled reasoning rows may carry their one-line summary. */
@@ -222,10 +225,17 @@ function TurnBody({
     // rather than reporting it as finished while the turn is still in it.
     const open = streaming && index === segments.length - 1;
     const heading = processSegmentTitle(segmentSteps, t, open);
+    // dsh shows the running argument only in the modes that ask for detail, and
+    // only while the group is live: a finished group's title summarises what
+    // happened, it is not a snapshot of one call.
+    const detail =
+      liveProcessDetail && heading.running && heading.detail !== undefined
+        ? `${t("message.stepProcess.separator")}${heading.detail}`
+        : "";
     return (
       <StepProcessGroup
         key={`group-${String(index)}`}
-        title={heading.title}
+        title={`${heading.title}${detail}`}
         activity={heading.activity}
         running={heading.running}
       >
@@ -516,7 +526,7 @@ export function MessageList({
   onRetry?: (text: string, images: ImageBlock[]) => void;
 } & PathContext) {
   const t = useT();
-  const { foldCompletedTurns, stepGrouping, settledReasoningPreview } =
+  const { foldCompletedTurns, stepGrouping, liveProcessDetail, settledReasoningPreview } =
     transcriptPolicyFor(transcriptView);
   const scrollRef = useRef<HTMLDivElement>(null);
   // The message column, watched so that a fold or an image load — anything that
@@ -954,6 +964,7 @@ export function MessageList({
                   // row keeps its summary line, via `previewSettled` below.
                   compact={foldCompletedTurns && !isLiveTurn && failed === null}
                   stepGrouping={stepGrouping}
+                  liveProcessDetail={liveProcessDetail}
                   processDurationMs={turnMeta.get(group.turn)?.durationMs ?? null}
                   // dsh's `settledReasoningPreview`: the compact mode drops the
                   // line beside "思考" and leaves the text one click away; every
@@ -1028,6 +1039,7 @@ export function MessageList({
             // settled turn folds, in either display mode.
             compact={foldCompletedTurns && !view.isStreaming}
             stepGrouping={stepGrouping}
+            liveProcessDetail={liveProcessDetail}
             // Nothing to time: this path exists for a stream with no turn to
             // attach to, so there is no start or end stamp anywhere.
             processDurationMs={null}

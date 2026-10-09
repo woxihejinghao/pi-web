@@ -15,6 +15,7 @@ import type {
   ToolCallBlock,
 } from "../../lib/types.ts";
 import { projectTodos, type TodoItem } from "./todo-model.ts";
+import { parseStreamingJson } from "../../lib/streaming-json.ts";
 import {
   EMPTY_TIMING,
   sessionStats,
@@ -110,7 +111,15 @@ export interface RetryState {
 
 interface StreamSlot {
   content: ContentBlock[];
-  /** Raw `toolcall_delta` chunks, parsed when the call ends. */
+  /**
+   * Raw `toolcall_delta` chunks.
+   *
+   * The block's `arguments` are re-parsed from these on every delta (see
+   * `parseStreamingJson`), so a row and a live group header can name the
+   * argument while it is still being written. The buffers survive until
+   * `toolcall_end`, which replaces the block outright — and which is also the
+   * fallback path when pi sends no final call.
+   */
   rawArgs: Record<number, string>;
 }
 
@@ -226,9 +235,20 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
       };
       slot.rawArgs[index] = "";
       break;
-    case "toolcall_delta":
-      slot.rawArgs[index] = (slot.rawArgs[index] ?? "") + asString(delta.delta);
+    case "toolcall_delta": {
+      const raw = (slot.rawArgs[index] ?? "") + asString(delta.delta);
+      slot.rawArgs[index] = raw;
+      // Read the arguments as they arrive, not when the call ends. A row's
+      // summary and a live group's detail both come from `arguments`, and for a
+      // long one (a pasted file, a big patch) waiting for the end means the
+      // whole call shows nothing until it is over.
+      const existing = blocks[index];
+      if (existing?.type === "toolCall") {
+        const partial = parseStreamingJson(raw);
+        if (partial !== undefined) existing.arguments = partial;
+      }
       break;
+    }
     case "toolcall_end": {
       const call = delta.toolCall as ToolCallBlock | undefined;
       if (call) {

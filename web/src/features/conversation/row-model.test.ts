@@ -22,6 +22,7 @@ import {
   processTitle,
   processSegmentTitle,
   processActivityOf,
+  liveToolDetail,
   type ProcessActivity,
   type Variant,
 } from "./row-model.ts";
@@ -294,6 +295,31 @@ describe("processActivityOf", () => {
   });
 });
 
+describe("liveToolDetail", () => {
+  it("names the argument the row itself would show", () => {
+    expect(liveToolDetail("bash", { command: "npm test" })).toBe("npm test");
+    expect(liveToolDetail("bash", { description: "run tests", command: "npm test" })).toBe("run tests");
+    expect(liveToolDetail("read", { path: "/tmp/a.ts" })).toBe("/tmp/a.ts");
+  });
+
+  it("reads an argument that is still arriving", () => {
+    // What `parseStreamingJson` hands over mid-call: the value so far.
+    expect(liveToolDetail("bash", { command: "npm te" })).toBe("npm te");
+  });
+
+  it("returns nothing when there is nothing to name", () => {
+    expect(liveToolDetail("bash", {})).toBe("");
+    expect(liveToolDetail("todo", { todos: [] })).toBe("");
+    expect(liveToolDetail("bash", undefined)).toBe("");
+  });
+
+  it("caps a pasted argument so a title stays one line", () => {
+    const detail = liveToolDetail("bash", { command: "x".repeat(500) });
+    expect([...detail]).toHaveLength(160);
+    expect(detail.endsWith("…")).toBe(true);
+  });
+});
+
 describe("processTitle", () => {
   it("joins two categories without the shared prefix", () => {
     const counts = new Map<ProcessActivity, number>([["read", 1], ["search", 1]]);
@@ -311,7 +337,9 @@ describe("processTitle", () => {
 });
 
 describe("processSegmentTitle", () => {
-  const call = (name: string) => ({ block: { type: "toolCall", id: name, name, arguments: {} } });
+  const call = (name: string, args: Record<string, unknown> = {}) => ({
+    block: { type: "toolCall", id: name, name, arguments: args },
+  });
   const thinking = () => ({ block: { type: "thinking", thinking: "…" } });
 
   it("names a run by its tool categories, ranking by count", () => {
@@ -340,6 +368,42 @@ describe("processSegmentTitle", () => {
     expect(processSegmentTitle([{ ...call("todo"), live: true }], zh).title).toBe("准备更新计划");
     expect(processSegmentTitle([{ ...call("todo"), running: true }], zh).title).toBe("正在更新计划");
     expect(processSegmentTitle([call("todo")], zh).title).toBe("更新了计划");
+  });
+
+  it("carries the running tool's argument as a detail", () => {
+    const heading = processSegmentTitle(
+      [{ ...call("bash", { command: "npm test" }), running: true }],
+      zh,
+    );
+    expect(heading.title).toBe("正在运行命令");
+    expect(heading.detail).toBe("npm test");
+  });
+
+  it("names the argument while it is still being written", () => {
+    // The block streams its arguments, so by the time the header renders the
+    // buffer already holds part of the command.
+    const heading = processSegmentTitle(
+      [{ ...call("bash", { command: "npm te" }), live: true }],
+      zh,
+    );
+    expect(heading.title).toBe("准备运行命令");
+    expect(heading.preparing).toBe(true);
+    expect(heading.detail).toBe("npm te");
+  });
+
+  it("drops a stale detail once reasoning takes over", () => {
+    const heading = processSegmentTitle(
+      [{ ...call("bash", { command: "npm test" }), running: true }, { ...thinking(), live: true }],
+      zh,
+    );
+    expect(heading.title).toBe("正在分析请求");
+    expect(heading.detail).toBeUndefined();
+  });
+
+  it("has no detail once the stretch is a finished summary", () => {
+    const heading = processSegmentTitle([call("bash", { command: "npm test" })], zh);
+    expect(heading.running).toBe(false);
+    expect(heading.detail).toBeUndefined();
   });
 
   it("uses the live activity label while only reasoning is streaming", () => {

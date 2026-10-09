@@ -351,6 +351,27 @@ export function processTitle(counts: ReadonlyMap<ProcessActivity, number>, t: Tr
   return ranked.length > 3 ? t("message.stepProcess.more", { title }) : title;
 }
 
+/**
+ * dsh caps a live detail at 160 graphemes so a pasted file cannot turn a title
+ * into a paragraph; the same budget applies here, counted in code points.
+ */
+const LIVE_DETAIL_MAX_CHARS = 160;
+
+/**
+ * One line naming what a tool call is doing, for a live group's title.
+ *
+ * Reuses the row summary's own priority table: the argument that names a
+ * finished row ("npm test", a file path, a pattern) is the one worth showing
+ * while the call is still being written. dsh keeps a wider table
+ * (`LIVE_TOOL_DETAIL_KEYS`) because its tools are a different set.
+ */
+export function liveToolDetail(toolName: string, args: Record<string, unknown> | undefined): string {
+  const summary = deriveSummary(classify(toolName), args);
+  const characters = [...summary];
+  if (characters.length <= LIVE_DETAIL_MAX_CHARS) return summary;
+  return `${characters.slice(0, LIVE_DETAIL_MAX_CHARS - 1).join("").trimEnd()}…`;
+}
+
 /** A process segment's header: the running activity, or a closed summary. */
 export interface ProcessSegmentTitle {
   title: string;
@@ -358,6 +379,8 @@ export interface ProcessSegmentTitle {
   running: boolean;
   /** The live step is a tool call still writing its arguments; see `PREPARE_TITLE_KEYS`. */
   preparing?: boolean;
+  /** One-line argument summary of the live tool call, when it has one. */
+  detail?: string;
 }
 
 /**
@@ -374,21 +397,28 @@ export function processSegmentTitle<
   const counts = new Map<ProcessActivity, number>();
   let running: ProcessActivity | undefined;
   let preparing = false;
+  let detail: string | undefined;
   for (const step of steps) {
     const active = step.live === true || step.running === true;
     if (step.block.type === "toolCall") {
-      const activity = processActivityOf((step.block as { name?: string }).name ?? "");
+      const block = step.block as { name?: string; arguments?: Record<string, unknown> };
+      const activity = processActivityOf(block.name ?? "");
       counts.set(activity, (counts.get(activity) ?? 0) + 1);
       if (active) {
         running = activity;
         // Streaming but not yet executing: the arguments are still being written.
         preparing = step.live === true && step.running !== true;
+        const named = liveToolDetail(block.name ?? "", block.arguments);
+        detail = named.length > 0 ? named : undefined;
       }
     } else if (active && step.block.type === "thinking") {
       // A reasoning tail with no tool call running is still work in progress; the
       // latest live step wins, so this overwrites an earlier tool's category.
       running = "thinking";
       preparing = false;
+      // Reasoning names no argument, and a detail left over from an earlier tool
+      // in this stretch would describe work that has already moved on.
+      detail = undefined;
     }
   }
   // The live label names the activity the stretch is on: the streaming (or
@@ -396,10 +426,11 @@ export function processSegmentTitle<
   // stretch with only settled work behind it is still on that work.
   const activity = running ?? [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "thinking";
   if (running !== undefined || open) {
+    const live = { activity, running: true as const, ...(detail === undefined ? {} : { detail }) };
     if (preparing) {
-      return { title: t(prepareTitleKey(activity)), activity, running: true, preparing: true };
+      return { ...live, title: t(prepareTitleKey(activity)), preparing: true };
     }
-    return { title: t(LIVE_TITLE_KEYS[activity]), activity, running: true };
+    return { ...live, title: t(LIVE_TITLE_KEYS[activity]) };
   }
   return { title: processTitle(counts, t), activity, running: false };
 }

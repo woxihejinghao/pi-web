@@ -133,6 +133,9 @@ export const zhCN = {
   "message.stepProcess.comma": "，",
   "message.stepProcess.sharedPrefix": "已",
   "message.stepProcess.more": "{title}等",
+  // dsh's `message.turnProcess.separator`: what joins a live title to the
+  // running tool's argument ("正在运行命令 · npm test").
+  "message.stepProcess.separator": " · ",
   "turn.navigator": "轮次导航",
   "turn.jumpTo": "跳转到第 {turn} 轮",
   "turn.label": "第 {turn} 轮",
@@ -814,6 +817,7 @@ export const en: Record<MessageKey, string> = {
   "message.stepProcess.comma": ", ",
   "message.stepProcess.sharedPrefix": "",
   "message.stepProcess.more": "{title}, and more",
+  "message.stepProcess.separator": " · ",
   "turn.navigator": "Turn navigation",
   "turn.jumpTo": "Jump to turn {turn}",
   "turn.label": "Turn {turn}",

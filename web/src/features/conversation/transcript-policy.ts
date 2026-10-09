@@ -20,6 +20,11 @@ export interface TranscriptPolicy {
    */
   stepGrouping: "collapsed" | "history" | "none";
   /**
+   * Whether a live group's title carries the running tool's argument (a
+   * command, a path, a query) — dsh's `liveProcessDetail`.
+   */
+  liveProcessDetail: boolean;
+  /**
    * Whether a settled reasoning row previews its first line beside the Think
    * title (dsh's `settledReasoningPreview`).
    */
@@ -27,10 +32,30 @@ export interface TranscriptPolicy {
 }
 
 const POLICIES: Readonly<Record<TranscriptDisplay, TranscriptPolicy>> = {
-  compact: { foldCompletedTurns: true, stepGrouping: "collapsed", settledReasoningPreview: false },
-  standard: { foldCompletedTurns: true, stepGrouping: "collapsed", settledReasoningPreview: true },
-  detailed: { foldCompletedTurns: true, stepGrouping: "history", settledReasoningPreview: true },
-  verbose: { foldCompletedTurns: false, stepGrouping: "none", settledReasoningPreview: true },
+  compact: {
+    foldCompletedTurns: true,
+    stepGrouping: "collapsed",
+    liveProcessDetail: false,
+    settledReasoningPreview: false,
+  },
+  standard: {
+    foldCompletedTurns: true,
+    stepGrouping: "collapsed",
+    liveProcessDetail: true,
+    settledReasoningPreview: true,
+  },
+  detailed: {
+    foldCompletedTurns: true,
+    stepGrouping: "history",
+    liveProcessDetail: true,
+    settledReasoningPreview: true,
+  },
+  verbose: {
+    foldCompletedTurns: false,
+    stepGrouping: "none",
+    liveProcessDetail: false,
+    settledReasoningPreview: true,
+  },
 };
 
 /**

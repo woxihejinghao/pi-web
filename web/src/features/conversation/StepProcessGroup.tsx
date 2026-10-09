@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Glyph, type GlyphName } from "../../components/dsh-icons.tsx";
 import type { ProcessActivity } from "./row-model.ts";
 import styles from "./StepProcessGroup.module.css";
@@ -25,6 +25,51 @@ const ACTIVITY_GLYPHS: Record<ProcessActivity, GlyphName> = {
   tools: "sparkle",
 };
 
+/**
+ * dsh's floor on how long a live title stays on screen (its
+ * `PROCESS_TITLE_MINIMUM_MS`).
+ *
+ * Tool calls arrive in bursts — read, grep, read inside a few hundred
+ * milliseconds — and with the running argument streaming in a character at a
+ * time, an unthrottled header reads as flicker rather than as progress. Holding
+ * each value for at least this long is what makes it legible.
+ */
+const TITLE_MINIMUM_MS = 150;
+
+/**
+ * Show `title`, but never for less than `TITLE_MINIMUM_MS`.
+ *
+ * Once the stretch stops being live this returns the desired value directly:
+ * the final wording must not be held back by a throttle that exists for the
+ * in-between states. Same shape as dsh's `useStableLiveProcessTitle`.
+ */
+function useStableTitle(desired: string, active: boolean): string {
+  const [displayed, setDisplayed] = useState(desired);
+  const displayedRef = useRef(displayed);
+  const desiredRef = useRef(desired);
+  const displayedAtRef = useRef(Date.now());
+  useEffect(() => {
+    desiredRef.current = desired;
+    if (!active || displayedRef.current === desired) return;
+    const remaining = TITLE_MINIMUM_MS - (Date.now() - displayedAtRef.current);
+    const commit = (): void => {
+      const next = desiredRef.current;
+      displayedRef.current = next;
+      displayedAtRef.current = Date.now();
+      setDisplayed(next);
+    };
+    if (remaining <= 0) {
+      commit();
+      return;
+    }
+    const timer = setTimeout(commit, remaining);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [active, desired]);
+  return active ? displayed : desired;
+}
+
 export function StepProcessGroup({
   title,
   activity,
@@ -40,6 +85,7 @@ export function StepProcessGroup({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const label = useStableTitle(title, running);
   return (
     <div className={styles.root} data-open={open || undefined} data-running={running || undefined}>
       <button
@@ -54,7 +100,7 @@ export function StepProcessGroup({
           <Glyph name={ACTIVITY_GLYPHS[activity]} className={styles.activityIcon} />
           <Glyph name="chevronDown" className={styles.chevron} />
         </span>
-        <span className={styles.label}>{title}</span>
+        <span className={styles.label}>{label}</span>
       </button>
       {/* Kept out of the DOM while closed, the way every other fold here is:
           the rows are what the group stands in for. */}
