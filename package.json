@@ -60,6 +60,6 @@
     "prepublishOnly": "pnpm typecheck && pnpm build && pnpm test && node scripts/verify-dist.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.86.1"
+    "@earendil-works/pi-coding-agent": "^1.1.0"
   }
 }
