@@ -99,6 +99,17 @@ export const FONT_SIZE_MAX = 17;
 export const FONT_SIZE_DEFAULT = 15;
 
 /**
+ * The provider/model pair that writes automatic session titles.
+ *
+ * Exactly the two strings a request needs; the credential lives in
+ * `models.json` / `auth.json` and is read at call time, never stored here.
+ */
+export interface TitleModelChoice {
+  provider: string;
+  model: string;
+}
+
+/**
  * Preferences this Web UI owns end to end. Anything pi itself persists
  * (steering/follow-up mode, auto-retry, auto-compaction) is deliberately absent
  * here — those live in pi's own global settings and are read back over RPC, so
@@ -120,6 +131,16 @@ export interface WebSettings {
    * turning this on is what asks for it — a page load never does.
    */
   browserNotifications: boolean;
+  /**
+   * Which model writes an automatic title for a session that has none, or
+   * `null` for "nobody" — the default.
+   *
+   * Off by default because this is the only preference on this page that
+   * spends money: every session it names is one extra request. Whoever turns
+   * it on should also pick the model that pays for it, which is why the choice
+   * is a pair rather than "use whatever the session uses".
+   */
+  titleModel: TitleModelChoice | null;
 }
 
 export function defaultSettings(): WebSettings {
@@ -137,6 +158,8 @@ export function defaultSettings(): WebSettings {
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
     browserNotifications: false,
+    // Titles stay deterministic until someone opts in and names a model.
+    titleModel: null,
   };
 }
 
@@ -225,6 +248,11 @@ function normalizeSettings(raw: unknown): WebSettings {
   }
   if (typeof raw.browserNotifications === "boolean") {
     settings.browserNotifications = raw.browserNotifications;
+  }
+  if (isRecord(raw.titleModel)
+    && typeof raw.titleModel.provider === "string" && raw.titleModel.provider.length > 0
+    && typeof raw.titleModel.model === "string" && raw.titleModel.model.length > 0) {
+    settings.titleModel = { provider: raw.titleModel.provider, model: raw.titleModel.model };
   }
   return settings;
 }

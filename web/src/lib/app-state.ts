@@ -35,6 +35,8 @@ const DEFAULT_SETTINGS: WebSettings = {
   transcriptDisplay: "detailed",
   busySendBehavior: "queue",
   browserNotifications: false,
+  // Titles stay deterministic until someone opts in and names a model.
+  titleModel: null,
 };
 
 /** A blocking extension dialog waiting on the user. */

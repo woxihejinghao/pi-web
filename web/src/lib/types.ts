@@ -419,6 +419,12 @@ export type BusySendBehavior = "queue" | "steer";
  * Preferences this UI owns end to end. Persisted in the server's store file,
  * never in pi's own config — none of them has a pi-side counterpart.
  */
+/** The provider/model pair that writes automatic session titles. */
+export interface TitleModelChoice {
+  provider: string;
+  model: string;
+}
+
 export interface WebSettings {
   appearance: AppearancePreference;
   /** English or Chinese for the interface itself; `system` follows the host. */
@@ -432,6 +438,12 @@ export interface WebSettings {
    * default; turning it on is what requests the browser permission.
    */
   browserNotifications: boolean;
+  /**
+   * Which model writes an automatic title for a session that has none, or
+   * `null` for "nobody" — the default. This is the one preference here that
+   * spends money, so it is opt-in and carries its own model choice.
+   */
+  titleModel: TitleModelChoice | null;
 }
 
 /**

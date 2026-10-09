@@ -7,6 +7,7 @@ import { createRequestHandler } from "./routes.ts";
 import { createStaticHandler } from "./static.ts";
 import { TerminalManager } from "./terminal.ts";
 import { migrateLegacySessionTitles } from "./title-migration.ts";
+import { SessionTitleService } from "./title-service.ts";
 import { SessionWatcher } from "./watch.ts";
 import { WorkspaceWatcher } from "./workspace-watch.ts";
 import { pendingUiRequests } from "./ui-requests.ts";
@@ -17,6 +18,21 @@ import { pendingUiRequests } from "./ui-requests.ts";
 // 53 `setTitle` requests. Those are noise for a browser client, so only the
 // events a web UI can act on are forwarded.
 const UI_METHODS_FOR_WEB = new Set(["notify", "confirm", "select", "input", "editor"]);
+
+/**
+ * Optional model-written titles. It owns no timer and no process: it reacts to
+ * the first human message of a session, asks the configured model once, and
+ * stays out of the way when the user has not opted in.
+ */
+const titleService = new SessionTitleService({
+  liveWriter: (sessionPath) => {
+    const handle = registry.get(sessionPath);
+    return handle === undefined || handle.dead ? undefined : handle.client;
+  },
+  publish: (projectPath) => {
+    bus.publish({ type: "sessions_changed", projectPath });
+  },
+});
 
 registry.onEvent((handle, event) => {
   // `extension_ui_request` is part of pi's UI sub-protocol and is not in the
@@ -31,11 +47,13 @@ registry.onEvent((handle, event) => {
       pendingUiRequests.add(handle, raw as unknown as { id: string; method: string });
     }
   }
+  titleService.noteEvent(handle, event);
   bus.publish({ type: "session_event", sessionPath: handle.sessionPath, event });
 });
 
 registry.onClosed((handle, reason) => {
   pendingUiRequests.dropFor(handle);
+  titleService.forget(handle.sessionPath);
   bus.publish({ type: "session_closed", sessionPath: handle.sessionPath, reason });
 });
 
@@ -106,6 +124,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   stopSweeper();
   watcher.stop();
   workspaceWatcher.stop();
+  titleService.stop();
   terminals.stop();
   server.close();
   await registry.closeAll(`shutdown:${signal}`);

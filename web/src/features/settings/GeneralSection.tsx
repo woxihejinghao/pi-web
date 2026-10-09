@@ -13,6 +13,8 @@ import {
   type AppearancePreference,
   type BusySendBehavior,
   type LanguagePreference,
+  type ModelProvider,
+  type TitleModelChoice,
   type TranscriptDisplay,
 } from "../../lib/types.ts";
 import {
@@ -88,6 +90,33 @@ function autoCompactionOptions(t: Translate): readonly { value: "on" | "off"; la
   ];
 }
 
+/** The value that means "no model writes titles". */
+const NO_TITLE_MODEL = "";
+
+/**
+ * One flat list of every configured model, provider qualified.
+ *
+ * Two selects (provider, then its models) would be the obvious shape, but this
+ * row is not about providers — a user with one provider should not have to
+ * answer a question that has one answer. The pair is still what gets stored, so
+ * the delimiter is the encoding rather than part of the value.
+ */
+function titleModelOptions(
+  t: Translate,
+  providers: readonly ModelProvider[],
+): { value: string; label: string }[] {
+  const options = [{ value: NO_TITLE_MODEL, label: t("settings.titleModel.off") }];
+  for (const provider of providers) {
+    for (const model of provider.models) {
+      options.push({
+        value: `${provider.id}::${model.id}`,
+        label: `${provider.name} · ${model.name ?? model.id}`,
+      });
+    }
+  }
+  return options;
+}
+
 /**
  * Preferences owned by this UI, plus the two agent settings that belong to pi.
  * Split from the models section because everything here is a scalar the store
@@ -114,6 +143,24 @@ export function GeneralSection({ className }: { className?: string }) {
     // start. Every other row is already interactive from the store.
     if (projectPath !== null) void actions.loadAgentSettings(projectPath);
   }, [projectPath]);
+
+  useEffect(() => {
+    // The title row lists every configured model, so this page needs the
+    // provider list even when the models section was never opened.
+    if (state.models === null) void actions.loadModels();
+  }, [state.models]);
+
+  const titleModel = state.settings.titleModel;
+  const titleModelValue = titleModel === null
+    ? NO_TITLE_MODEL
+    : `${titleModel.provider}::${titleModel.model}`;
+  const titleChoices = titleModelOptions(t, state.models?.providers ?? []);
+  // A model that was configured when this was chosen may be gone from
+  // `models.json` since. Showing it keeps the setting legible instead of
+  // silently reading as "off", and re-picking is one click away.
+  if (titleModel !== null && !titleChoices.some((choice) => choice.value === titleModelValue)) {
+    titleChoices.push({ value: titleModelValue, label: `${titleModel.provider} · ${titleModel.model}` });
+  }
 
   return (
     <div className={className}>
@@ -229,6 +276,32 @@ export function GeneralSection({ className }: { className?: string }) {
                 }
                 void actions.updateSettings({ browserNotifications: true });
               });
+            }}
+          />
+        </SettingsRow>
+
+        {/*
+          The one row here that spends money: every session it names is an
+          extra model call, which is why it is off by default and carries its
+          own (usually cheap) model rather than following the session's.
+        */}
+        <SettingsRow
+          title={t("settings.titleModel.title")}
+          description={t("settings.titleModel.description")}
+        >
+          <SettingsSelect
+            label={t("settings.titleModel.title")}
+            value={titleModelValue}
+            options={titleChoices}
+            onChange={(next) => {
+              if (next === NO_TITLE_MODEL) {
+                void actions.updateSettings({ titleModel: null });
+                return;
+              }
+              const [provider, model] = next.split("::");
+              if (provider === undefined || model === undefined) return;
+              const choice: TitleModelChoice = { provider, model };
+              void actions.updateSettings({ titleModel: choice });
             }}
           />
         </SettingsRow>

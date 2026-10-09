@@ -27,6 +27,7 @@
 - **上下文环的数字依赖 `models.json` 里写了 `contextWindow`**：pi 内置 provider 的默认窗口不在依赖树里拿不到，所以没写这个字段的模型只显示空环（面板写「未知」），而不是去猜一个窗口。
 - **上下文环在每轮结束后刷新**，不在流式过程中逐 token 更新——这个数字本来就只在模型回复完成后才有（它来自最后一条回复的 usage）。因此环不会因为一次超长回复而提前预警。
 - **模型切换会启动会话进程**（如果它还没驻留）：切模型是 pi 的会话级状态，没有进程就没有对象可切。实测一次 1.7s。
+- **自动命名只认两种线上协议**（`openai-completions` 与 `anthropic-messages`）。其它协议（`google-generative-ai`、`amazon-bedrock`、`openai-responses` …）会在调用时直接拒绝——按另一种 API 拼一份请求只会换来一条看不懂的 provider 报错，而这个调用没有地方能把那条报错讲清楚。要自动命名，就先挑一个 OpenAI 兼容或 Anthropic 的端点。
 - 设置页有「通用设置」「模型」「插件」和「MCP」四节；Agent 预设还没有。
 - **MCP 一节需要 `pi-mcp-adapter` 扩展**：pi 本身没有 MCP，所以没装那个包时这一节显示安装提示，并提供一键安装（等同 `pi install npm:pi-mcp-adapter`）。安装会跑真实的 npm 下载，可能要一分钟；加载失败不入缓存，装完刷新即可。
 - **MCP 的「停用」是工作区级别的**，与 pi 自己的 `/mcp disable` 一致：没有用户级开关，没选工作区时那个按钮是禁用的。启用/停用写 `<工作区>/.pi/mcp.json`。

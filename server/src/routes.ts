@@ -94,6 +94,7 @@ import {
   type AppearancePreference,
   type BusySendBehavior,
   type LanguagePreference,
+  type TitleModelChoice,
   type TranscriptDisplay,
 } from "./store.ts";
 import { SSE_MAX_BUFFERED_BYTES } from "./config.ts";
@@ -205,6 +206,26 @@ function requireFontSize(value: unknown): number {
     );
   }
   return value;
+}
+
+/**
+ * The title model is either `null` — nobody writes titles — or a provider/model
+ * pair. Only the shape is checked here: whether that provider still exists is a
+ * question for the call itself, which answers it by leaving the deterministic
+ * title in place.
+ */
+function requireTitleModel(value: unknown): TitleModelChoice | null {
+  if (value === null) return null;
+  const candidate = value as { provider?: unknown; model?: unknown } | null;
+  if (typeof candidate !== "object" || candidate === null) {
+    throw badRequest("titleModel must be null or { provider, model }");
+  }
+  const { provider, model } = candidate;
+  if (typeof provider !== "string" || provider.length === 0
+    || typeof model !== "string" || model.length === 0) {
+    throw badRequest("titleModel must be null or { provider, model }");
+  }
+  return { provider, model };
 }
 
 function requireString(body: Record<string, unknown>, key: string): string {
@@ -663,6 +684,9 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
           throw badRequest("browserNotifications must be a boolean");
         }
         next.browserNotifications = patch.browserNotifications;
+      }
+      if (patch.titleModel !== undefined) {
+        next.titleModel = requireTitleModel(patch.titleModel);
       }
       return next;
     });

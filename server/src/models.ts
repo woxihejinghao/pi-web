@@ -326,7 +326,7 @@ function modelsEndpoint(baseUrl: string, api: string | null): string {
  * mirrors only the documented form is common enough that sending the canonical
  * one is the safer default.
  */
-function authHeaders(api: string | null, apiKey: string | undefined): Record<string, string> {
+export function authHeaders(api: string | null, apiKey: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { accept: "application/json" };
   if (apiKey === undefined || apiKey.length === 0) return headers;
   if (api === "anthropic-messages") {
@@ -414,6 +414,45 @@ async function resolveApiKey(input: FetchModelsInput): Promise<string | undefine
   const provider = providers[input.id];
   if (isRecord(provider) && typeof provider.apiKey === "string") return provider.apiKey;
   return undefined;
+}
+
+/**
+ * One provider's address, protocol, credential and model list: everything a
+ * side call needs, and nothing about a session.
+ */
+export interface ProviderConnection {
+  id: string;
+  /** Base URL with any trailing slashes removed. */
+  baseUrl: string;
+  /** Wire protocol from `models.json`; `null` means an OpenAI-shaped endpoint. */
+  api: string | null;
+  /** Resolved credential, if one is configured. Never logged or returned to the browser. */
+  apiKey: string | undefined;
+  models: ProviderModelEntry[];
+}
+
+/**
+ * Read one provider's connection facts, for a caller that is not the settings
+ * page — `composer.ts` and the title service both need to call a provider
+ * without a pi process.
+ *
+ * @param id - provider key from `models.json`.
+ * @returns the connection, or `undefined` when the id is unknown or has no URL.
+ */
+export async function readProviderConnection(id: string): Promise<ProviderConnection | undefined> {
+  const models = await readJsonFile(modelsPath());
+  const providers = isRecord(models.providers) ? models.providers : {};
+  const provider = providers[id];
+  if (!isRecord(provider)) return undefined;
+  const baseUrl = typeof provider.baseUrl === "string" ? provider.baseUrl.replace(/\/+$/, "") : "";
+  if (baseUrl.length === 0) return undefined;
+  return {
+    id,
+    baseUrl,
+    api: typeof provider.api === "string" && provider.api.length > 0 ? provider.api : null,
+    apiKey: await resolveApiKey({ id, baseUrl }),
+    models: readModels(provider),
+  };
 }
 
 /**

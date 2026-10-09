@@ -69,6 +69,20 @@ export const TITLE_MAX_BYTES = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_BYTES
 export const TITLE_FALLBACK_WORDS = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_WORDS, 8);
 
 /**
+ * Budgets for the optional model-written title. All three exist because the
+ * feature is charged per call and must stay small on every axis: a short
+ * deadline (a title is not worth waiting on), a small input (a first message
+ * can be a pasted file), and a tiny output cap.
+ */
+export const TITLE_TIMEOUT_MS = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_TIMEOUT_MS, 10_000);
+
+/** Bytes of the first message sent to the title model. */
+export const TITLE_INPUT_MAX_BYTES = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_INPUT_BYTES, 2_000);
+
+/** Output-token cap for one title. A title is one short line; 32 is generous. */
+export const TITLE_OUTPUT_TOKENS = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_OUTPUT_TOKENS, 32);
+
+/**
  * Set to skip the one-time move of names an older build kept in `store.json`
  * into the sessions' own files.
  *

@@ -48,6 +48,10 @@ export const zhCN = {
   "settings.browserNotifications.denied":
     "浏览器已拒绝通知权限，请在浏览器设置里允许后重试",
   "settings.browserNotifications.unsupported": "当前浏览器不支持系统通知",
+  "settings.titleModel.title": "自动命名",
+  "settings.titleModel.description":
+    "新会话发出第一条消息时，交给这个模型起一个名字；关闭时用消息本身的前几个词",
+  "settings.titleModel.off": "关闭",
 
   // --- notifications --------------------------------------------------------
   "notification.taskFinished": "会话任务已完成",
@@ -703,6 +707,10 @@ export const en: Record<MessageKey, string> = {
     "The browser has denied notification permission. Allow it in the browser's settings and try again.",
   "settings.browserNotifications.unsupported":
     "This browser does not support system notifications.",
+  "settings.titleModel.title": "Automatic titles",
+  "settings.titleModel.description":
+    "Name a new session with this model when its first message arrives; off uses the leading words of that message instead",
+  "settings.titleModel.off": "Off",
 
   "notification.taskFinished": "The session task has finished",
 

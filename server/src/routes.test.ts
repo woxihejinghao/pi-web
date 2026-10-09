@@ -486,7 +486,7 @@ describe("sessions api", () => {
     const hidden = await post(`/api/sessions/${encodeURIComponent(sessionFile)}/hidden`, {
       hidden: true,
     });
-    expect(renamed.status).toBe(200);
+    expect(hidden.status).toBe(200);
 
     const events: string[] = [];
     bus.subscribe((event) => events.push(event.type));
@@ -1226,6 +1226,7 @@ describe("settings", () => {
       transcriptDisplay: "detailed",
       busySendBehavior: "queue",
       browserNotifications: false,
+      titleModel: null,
     });
   });
 
@@ -1264,6 +1265,7 @@ describe("settings", () => {
       transcriptDisplay: "detailed",
       busySendBehavior: "queue",
       browserNotifications: false,
+      titleModel: null,
     });
 
     const reread = await api("/api/settings");
@@ -1292,6 +1294,35 @@ describe("settings", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("browserNotifications");
     expect((await api("/api/settings")).body.browserNotifications).toBe(false);
+  });
+
+  it("round-trips the title model and refuses a malformed one", async () => {
+    const chosen = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ titleModel: { provider: "local", model: "cheap" } }),
+    });
+
+    expect(chosen.status).toBe(200);
+    expect(chosen.body.titleModel).toEqual({ provider: "local", model: "cheap" });
+    expect((await api("/api/settings")).body.titleModel).toEqual({
+      provider: "local",
+      model: "cheap",
+    });
+
+    const off = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ titleModel: null }),
+    });
+    expect(off.body.titleModel).toBeNull();
+
+    // A pair missing half of itself is rejected, and the stored value stands.
+    const bad = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ titleModel: { provider: "local" } }),
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain("titleModel");
+    expect((await api("/api/settings")).body.titleModel).toBeNull();
   });
 
   it("round-trips the interface language", async () => {
