@@ -12,7 +12,7 @@ export interface ProjectView {
   exists: boolean;
 }
 
-export type TitleSource = "override" | "session" | "firstMessage" | "fallback";
+export type TitleSource = "session" | "firstMessage" | "fallback";
 
 export interface SessionView {
   path: string;

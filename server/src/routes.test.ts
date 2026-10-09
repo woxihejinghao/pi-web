@@ -375,11 +375,45 @@ describe("sessions api", () => {
     expect(res.status).toBe(404);
   });
 
-  it("stores a UI rename as an override without opening the session", async () => {
-    const target = join(sessionRoot, "--rename--", "s.jsonl");
-    const res = await post(`/api/sessions/${encodeURIComponent(target)}/rename`, { name: "My name" });
+  /**
+   * A rename is an append to pi's own log, so the CLI and this UI cannot
+   * disagree — and nothing is left in `store.json` to keep them in sync.
+   */
+  it("writes a rename into pi's own session file", async () => {
+    const project = await createProject("renaming");
+    const sessionDir = sessionDirFor(project.path, sessionRoot);
+    const sessionFile = join(sessionDir, "rename-me.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(
+      sessionFile,
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "dddd1111-2222-3333-4444-555555555555",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: project.path,
+      })}\n`,
+      "utf8",
+    );
+
+    const res = await post(`/api/sessions/${encodeURIComponent(sessionFile)}/rename`, {
+      name: "My name",
+    });
     expect(res.status).toBe(200);
-    expect(res.body.override).toEqual({ name: "My name" });
+    expect(res.body.name).toBe("My name");
+
+    const raw = await readFile(sessionFile, "utf8");
+    expect(raw).toContain('"type":"session_info"');
+    expect(raw).toContain('"name":"My name"');
+
+    const { readStore } = await import("./store.ts");
+    expect(Object.keys((await readStore()).sessionOverrides)).toHaveLength(0);
+  });
+
+  it("404s a rename when the session file is not on disk", async () => {
+    const target = join(sessionRoot, "--rename--", "missing.jsonl");
+    const res = await post(`/api/sessions/${encodeURIComponent(target)}/rename`, { name: "My name" });
+    expect(res.status).toBe(404);
   });
 
   it("prewarms a session so the next create is instant", async () => {
@@ -448,9 +482,9 @@ describe("sessions api", () => {
       })}\n`,
       "utf8",
     );
-    // A Web-side rename lives in our store; the delete has to take it along.
-    const renamed = await post(`/api/sessions/${encodeURIComponent(sessionFile)}/rename`, {
-      name: "Doomed",
+    // A Web-side hide lives in our store; the delete has to take it along.
+    const hidden = await post(`/api/sessions/${encodeURIComponent(sessionFile)}/hidden`, {
+      hidden: true,
     });
     expect(renamed.status).toBe(200);
 

@@ -1,8 +1,10 @@
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
+import { TITLE_FALLBACK_WORDS, TITLE_MAX_BYTES } from "./config.ts";
 import { getSessionOverrides } from "./projects.ts";
 import type { SessionOverride } from "./store.ts";
+import { clipPreview, clipTitle, fallbackTitle } from "./title-text.ts";
 
-export type TitleSource = "override" | "session" | "firstMessage" | "fallback";
+export type TitleSource = "session" | "firstMessage" | "fallback";
 
 export interface SessionView {
   /** Absolute path of pi's JSONL session file. Serves as the session identity. */
@@ -20,26 +22,16 @@ export interface SessionView {
   hidden: boolean;
 }
 
-const TITLE_MAX = 80;
-const PREVIEW_MAX = 200;
-
-function collapse(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-function clip(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 1).trimEnd()}…`;
-}
+const PREVIEW_MAX_CHARACTERS = 200;
 
 /**
  * A skill command, before and after pi clipped it.
  *
  * pi resolves `/skill:<name> [args]` before the message is stored, so a session
  * opened with a skill command has the skill's entire SKILL.md as its first
- * message — and would be titled with 80 characters of someone's markdown. dsh
- * stores the literal command and shows `/git-commit`; folding pi's expansion
- * back to the same command is what keeps the list readable.
+ * message — and would be titled with a page of someone's markdown. dsh stores
+ * the literal command and shows `/git-commit`; folding pi's expansion back to
+ * the same command is what keeps the list readable.
  */
 const SKILL_BLOCK =
   /^<skill name="([^"]+)" location="[^"]+">\n[\s\S]*?\n<\/skill>(?:\n\n([\s\S]+))?$/;
@@ -55,21 +47,28 @@ function foldSkillCommand(text: string): string {
 }
 
 /**
- * Title precedence: an explicit UI rename, then pi's own `/name`, then the
- * first user message. The fallback keeps unnamed empty sessions addressable.
+ * Title precedence: the session's own name, then its first user message. The
+ * name is a `session_info` entry in pi's own JSONL — written by pi's `/name`,
+ * by this UI (see `session-title.ts`), or by automatic titling — so the CLI
+ * and the Web UI read the same fact. The fallback keeps unnamed empty sessions
+ * addressable.
+ *
+ * The skill fold runs first and on the raw text: its pattern reads the block's
+ * own line structure, which cleaning would have collapsed away.
  */
-function deriveTitle(info: SessionInfo, override: SessionOverride | undefined): {
+function deriveTitle(info: SessionInfo): {
   title: string;
   titleSource: TitleSource;
 } {
-  const overrideName = override?.name?.trim();
-  if (overrideName) return { title: clip(overrideName, TITLE_MAX), titleSource: "override" };
-
   const sessionName = info.name?.trim();
-  if (sessionName) return { title: clip(sessionName, TITLE_MAX), titleSource: "session" };
+  if (sessionName) return { title: clipTitle(sessionName, TITLE_MAX_BYTES), titleSource: "session" };
 
-  const first = collapse(foldSkillCommand(info.firstMessage));
-  if (first) return { title: clip(first, TITLE_MAX), titleSource: "firstMessage" };
+  const first = fallbackTitle(
+    foldSkillCommand(info.firstMessage),
+    TITLE_FALLBACK_WORDS,
+    TITLE_MAX_BYTES,
+  );
+  if (first) return { title: first, titleSource: "firstMessage" };
 
   return { title: `Session ${info.id.slice(0, 8)}`, titleSource: "fallback" };
 }
@@ -78,14 +77,14 @@ export function toSessionView(
   info: SessionInfo,
   override: SessionOverride | undefined,
 ): SessionView {
-  const { title, titleSource } = deriveTitle(info, override);
+  const { title, titleSource } = deriveTitle(info);
   return {
     path: info.path,
     id: info.id,
     cwd: info.cwd,
     title,
     titleSource,
-    preview: clip(collapse(foldSkillCommand(info.firstMessage)), PREVIEW_MAX),
+    preview: clipPreview(foldSkillCommand(info.firstMessage), PREVIEW_MAX_CHARACTERS),
     parentSessionPath: info.parentSessionPath,
     created: info.created.toISOString(),
     modified: info.modified.toISOString(),

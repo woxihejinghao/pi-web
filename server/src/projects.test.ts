@@ -143,14 +143,9 @@ describe("mutations", () => {
 });
 
 describe("session overrides", () => {
-  it("merges, clears fields, and drops the entry when empty", async () => {
+  it("keeps the hide flag and drops the entry when cleared", async () => {
     const key = join(workspace, "sessions", "s1.jsonl");
-    await projects.setSessionOverride(key, { name: "Renamed" });
     await projects.setSessionOverride(key, { hidden: true });
-    expect(await projects.getSessionOverrides()).toEqual({ [key]: { name: "Renamed", hidden: true } });
-
-    // Renaming to blank clears just the name and keeps the hide flag.
-    await projects.setSessionOverride(key, { name: "  " });
     expect(await projects.getSessionOverrides()).toEqual({ [key]: { hidden: true } });
 
     await projects.setSessionOverride(key, { hidden: false });

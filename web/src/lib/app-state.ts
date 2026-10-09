@@ -783,7 +783,7 @@ export const actions = {
     });
   },
 
-  /** Renames via a UI override; pi's own JSONL is never rewritten. */
+  /** Renames by writing pi's own `session_info` entry, so the CLI agrees. */
   async renameSession(sessionPath: string, name: string): Promise<void> {
     try {
       await api.renameSession(sessionPath, name);

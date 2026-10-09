@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { TITLE_MAX_BYTES } from "./config.ts";
 
 let home: string;
 let projectCwd: string;
@@ -11,6 +12,7 @@ let sessionDir: string;
 let sessions: typeof import("./sessions.ts");
 let projects: typeof import("./projects.ts");
 let store: typeof import("./store.ts");
+let titles: typeof import("./session-title.ts");
 
 beforeAll(async () => {
   home = await realpath(process.env.PI_WEB_SIMPLE_HOME!);
@@ -20,6 +22,7 @@ beforeAll(async () => {
   store = await import("./store.ts");
   projects = await import("./projects.ts");
   sessions = await import("./sessions.ts");
+  titles = await import("./session-title.ts");
 });
 
 afterAll(async () => {
@@ -107,13 +110,7 @@ function makeInfo(overrides: Partial<SessionInfo> = {}): SessionInfo {
 }
 
 describe("toSessionView title precedence", () => {
-  it("prefers a UI override over pi's own session name", () => {
-    const view = sessions.toSessionView(makeInfo({ name: "pi name" }), { name: "UI name" });
-    expect(view.title).toBe("UI name");
-    expect(view.titleSource).toBe("override");
-  });
-
-  it("falls back to pi's /name", () => {
+  it("prefers pi's own session name", () => {
     const view = sessions.toSessionView(makeInfo({ name: "pi name" }), undefined);
     expect(view.title).toBe("pi name");
     expect(view.titleSource).toBe("session");
@@ -131,15 +128,18 @@ describe("toSessionView title precedence", () => {
     expect(view.titleSource).toBe("fallback");
   });
 
-  it("clips an over-long title", () => {
+  it("clips an over-long title within the byte budget", () => {
     const view = sessions.toSessionView(makeInfo({ firstMessage: "x".repeat(200) }), undefined);
-    expect(view.title.length).toBeLessThanOrEqual(80);
+    expect(Buffer.byteLength(view.title, "utf8")).toBeLessThanOrEqual(TITLE_MAX_BYTES);
     expect(view.title.endsWith("…")).toBe(true);
   });
 
-  it("ignores a blank override and falls through", () => {
-    const view = sessions.toSessionView(makeInfo({ name: "pi name" }), { name: "   " });
-    expect(view.titleSource).toBe("session");
+  it("keeps only the leading words of a long first message", () => {
+    const view = sessions.toSessionView(
+      makeInfo({ firstMessage: "one two three four five six seven eight nine ten" }),
+      undefined,
+    );
+    expect(view.title).toBe("one two three four five six seven eight…");
   });
 
   it("marks the session hidden from the override flag", () => {
@@ -235,25 +235,48 @@ describe("listSessions", () => {
     expect(all[0]?.hidden).toBe(true);
   });
 
-  it("applies a UI rename without touching pi's file", async () => {
-    const path = await writeSession("rename-me.jsonl", {
+  /**
+   * A rename now goes into pi's own file (see `session-title.test.ts`). A name
+   * left in `store.json` by an older build is still parsed, so the one-time
+   * migration can find it — but it must not decide the title any more.
+   */
+  it("ignores a legacy override name", async () => {
+    const path = await writeSession("legacy-rename.jsonl", {
       id: "66666666-6666-6666-6666-666666666666",
       cwd: projectCwd,
       message: "original first message",
-      name: "pi given name",
       timestamp: "2026-02-01T00:00:00.000Z",
     });
-    await projects.setSessionOverride(path, { name: "Web renamed" });
+    await writeFile(
+      join(home, "store.json"),
+      JSON.stringify({
+        version: 1,
+        projects: [],
+        sessionOverrides: { [path]: { name: "Web renamed" } },
+      }),
+      "utf8",
+    );
+    store.resetStoreCache();
+
+    const list = await sessions.listSessions(projectCwd, { sessionDir });
+    expect(list[0]?.title).toBe("original first message");
+    expect(list[0]?.titleSource).toBe("firstMessage");
+  });
+
+  /** The whole point of writing into pi's file: pi itself reads it back. */
+  it("reads back a name written through the rename path", async () => {
+    const path = await writeSession("renamed.jsonl", {
+      id: "77777777-7777-7777-7777-777777777777",
+      cwd: projectCwd,
+      message: "original first message",
+      timestamp: "2026-02-01T00:00:00.000Z",
+    });
+
+    await titles.setSessionTitle(path, "Web renamed", undefined);
 
     const list = await sessions.listSessions(projectCwd, { sessionDir });
     expect(list[0]?.title).toBe("Web renamed");
-    expect(list[0]?.titleSource).toBe("override");
-
-    // pi's own name is still authoritative underneath the override.
-    const { readFile } = await import("node:fs/promises");
-    const raw = await readFile(path, "utf8");
-    expect(raw).toContain("pi given name");
-    expect(raw).not.toContain("Web renamed");
+    expect(list[0]?.titleSource).toBe("session");
   });
 
   it("returns an empty list for a directory with no sessions", async () => {

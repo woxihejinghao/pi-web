@@ -7,6 +7,7 @@ import {
   readStore,
   type ProjectRecord,
   type SessionOverride,
+  type SessionOverrideInput,
 } from "./store.ts";
 
 export type ProjectErrorCode = "ENOENT" | "ENOTDIR" | "EEXIST" | "ENOTFOUND" | "EINVALID";
@@ -162,17 +163,17 @@ export async function getSessionOverrides(): Promise<Record<string, SessionOverr
 }
 
 /**
- * Merge an override for one session. Passing an empty object clears it, which
- * lets "rename back to automatic" be expressed without a separate endpoint.
+ * Merge an override for one session. Passing an empty object clears it. A
+ * legacy `name` is carried through untouched rather than dropped here: it is
+ * not ours to lose, and the migration still has to read it.
  */
 export async function setSessionOverride(
   sessionPath: string,
-  override: SessionOverride,
+  override: SessionOverrideInput,
 ): Promise<SessionOverride | null> {
   const key = resolve(expandHome(sessionPath));
   return mutateStore((draft) => {
     const merged: SessionOverride = { ...draft.sessionOverrides[key], ...override };
-    if (merged.name !== undefined && merged.name.trim().length === 0) delete merged.name;
     if (merged.hidden === false) delete merged.hidden;
     if (Object.keys(merged).length === 0) {
       delete draft.sessionOverrides[key];
@@ -194,5 +195,23 @@ export async function removeSessionOverride(sessionPath: string): Promise<void> 
   const key = resolve(expandHome(sessionPath));
   await mutateStore((draft) => {
     delete draft.sessionOverrides[key];
+  });
+}
+
+/**
+ * Drop the legacy `name` half of one session's override, keeping `hidden`.
+ *
+ * Called by the one-time title migration: once the name lives in pi's own
+ * file, the copy here is exactly the "second answer" this project stopped
+ * keeping. A path with nothing but a name loses its entry entirely, so the
+ * store does not accumulate empty objects.
+ */
+export async function clearSessionOverrideName(sessionPath: string): Promise<void> {
+  const key = resolve(expandHome(sessionPath));
+  await mutateStore((draft) => {
+    const override = draft.sessionOverrides[key];
+    if (override === undefined) return;
+    delete override.name;
+    if (Object.keys(override).length === 0) delete draft.sessionOverrides[key];
   });
 }

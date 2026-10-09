@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { bus } from "./bus.ts";
-import { OPEN_BROWSER, PORT, STATIC_DIR } from "./config.ts";
+import { OPEN_BROWSER, PORT, SKIP_TITLE_MIGRATION, STATIC_DIR } from "./config.ts";
 import { registry } from "./registry.ts";
 import { createRequestHandler } from "./routes.ts";
 import { createStaticHandler } from "./static.ts";
 import { TerminalManager } from "./terminal.ts";
+import { migrateLegacySessionTitles } from "./title-migration.ts";
 import { SessionWatcher } from "./watch.ts";
 import { WorkspaceWatcher } from "./workspace-watch.ts";
 import { pendingUiRequests } from "./ui-requests.ts";
@@ -51,6 +52,20 @@ const server = createServer((req, res) => {
 });
 
 const stopSweeper = registry.startSweeper();
+
+// A rename used to live in `store.json`, and is ignored on read now that a
+// session's own name is the only title — so hand those names back before
+// anything can show a list without them. Runs before the watcher starts, so
+// the migration's own appends are not read as another process editing a
+// session. Failure is already logged per entry and never blocks startup.
+if (!SKIP_TITLE_MIGRATION) {
+  const migration = await migrateLegacySessionTitles();
+  if (migration.migrated > 0) {
+    console.log(
+      `[pi-web-simple] moved ${migration.migrated} stored session name(s) into their session files`,
+    );
+  }
+}
 
 // Notices sessions created or updated by the `pi` CLI in any project directory.
 const watcher = new SessionWatcher({ registry, bus });

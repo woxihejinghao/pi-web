@@ -47,6 +47,37 @@ export const SSE_MAX_BUFFERED_BYTES = Number(
 export const SESSION_DIR_OVERRIDE = process.env.PI_WEB_SIMPLE_SESSION_DIR ?? null;
 
 /**
+ * A positive integer from the environment, or the default.
+ *
+ * Unlike the ports and timeouts above, a bad value here would not fail loudly:
+ * a NaN byte budget would clip every title to nothing. Falling back is what
+ * keeps a typo from emptying the sidebar.
+ */
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * UTF-8 byte budget for one session title. dsh ships no default (its config is
+ * required), so this is ours: long enough for a sentence, short enough that the
+ * sidebar's single line is the constraint rather than the number.
+ */
+export const TITLE_MAX_BYTES = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_BYTES, 120);
+
+/** Words kept when a title is derived from a first message. */
+export const TITLE_FALLBACK_WORDS = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_WORDS, 8);
+
+/**
+ * Set to skip the one-time move of names an older build kept in `store.json`
+ * into the sessions' own files.
+ *
+ * An escape hatch, not a feature: without the migration those names are simply
+ * no longer shown, because a session's own name is the only title now.
+ */
+export const SKIP_TITLE_MIGRATION = process.env.PI_WEB_SIMPLE_SKIP_TITLE_MIGRATION === "1";
+
+/**
  * A cwd that resolves to an empty project scope.
  *
  * Settings pages can be opened before a workspace is selected, but pi hangs the

@@ -61,9 +61,9 @@ describe("deleteSession", () => {
     await expect(realpath(path)).rejects.toThrow();
   });
 
-  it("forgets the session's rename and hidden overrides", async () => {
+  it("forgets the session's hidden override", async () => {
     const path = await writeSession("overridden.jsonl");
-    await projects.setSessionOverride(path, { name: "Web name", hidden: true });
+    await projects.setSessionOverride(path, { hidden: true });
     expect(Object.keys(await projects.getSessionOverrides())).toContain(path);
 
     await sessionDelete.deleteSession(path, NO_TRASH);
@@ -79,8 +79,8 @@ describe("deleteSession", () => {
   });
 
   it("leaves the override alone when nothing was deleted", async () => {
-    const path = join(dir, "missing-but-renamed.jsonl");
-    await projects.setSessionOverride(path, { name: "Still here" });
+    const path = join(dir, "missing-but-hidden.jsonl");
+    await projects.setSessionOverride(path, { hidden: true });
 
     await sessionDelete.deleteSession(path, NO_TRASH);
 

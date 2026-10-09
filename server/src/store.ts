@@ -21,13 +21,22 @@ export interface ProjectRecord {
 }
 
 /**
- * UI-only preferences for a session, keyed by absolute session file path.
- * Never written into pi's own JSONL, so the CLI stays the source of truth.
+ * UI-only state for a session, keyed by absolute session file path.
+ *
+ * `hidden` is the only field still written. A rename goes into pi's own JSONL
+ * instead (see `session-title.ts`), so the CLI and this UI agree about a
+ * session's name. A `name` left behind by an older store is still parsed — the
+ * one-time migration reads it to move the name into the session file — but it
+ * no longer decides any title.
  */
 export interface SessionOverride {
+  /** Legacy: read only, and only so a pre-migration rename can be moved out. */
   name?: string;
   hidden?: boolean;
 }
+
+/** What a caller may still write; the rename half moved into pi's own file. */
+export type SessionOverrideInput = Omit<SessionOverride, "name">;
 
 export interface StoreData {
   version: 1;

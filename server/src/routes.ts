@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { pipeline } from "node:stream/promises";
@@ -84,6 +84,7 @@ import { type SessionHandle, type SessionRegistry, type SlashCommand } from "./r
 import { deleteSession } from "./session-delete.ts";
 import { assertAllowedSessionPath, getSessionRoot, sessionDirFor } from "./session-path.ts";
 import { readSessionSnapshot, readSessionTree } from "./session-reader.ts";
+import { setSessionTitle } from "./session-title.ts";
 import { listSessions } from "./sessions.ts";
 import {
   FONT_SIZE_MAX,
@@ -1460,13 +1461,22 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(res, 200, { ok: true, message });
   });
 
+  /**
+   * Rename a session by writing pi's own `session_info` entry, so the Web UI
+   * and the CLI cannot disagree about what a session is called. An empty name
+   * clears it, which is how "back to automatic" is spelled without a second
+   * endpoint. See `session-title.ts` for the two writers.
+   */
   route("POST", "/api/sessions/:id/rename", async ({ res, params, body }) => {
     const sessionPath = allowedPath(params.id!);
     const { name } = asObject(body);
     if (typeof name !== "string") throw badRequest("name is required");
-    const override = await setSessionOverride(sessionPath, { name });
+    if (!existsSync(sessionPath)) throw notFound("会话文件不存在");
+    const live = registry.get(sessionPath);
+    const trimmed = name.trim();
+    await setSessionTitle(sessionPath, trimmed, live && !live.dead ? live.client : undefined);
     bus.publish({ type: "sessions_changed", projectPath: "" });
-    json(res, 200, { ok: true, override });
+    json(res, 200, { ok: true, name: trimmed });
   });
 
   route("POST", "/api/sessions/:id/hidden", async ({ res, params, body }) => {
