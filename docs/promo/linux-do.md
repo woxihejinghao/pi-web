@@ -8,7 +8,7 @@ pi 的终端界面我一直用着挺舒服，但有几件事在终端里做起�
 
 所以就动手写了这个：**pi-web-simple**，一个本地 Web UI，pi 还是那个 pi，只是在外面套了一层壳。
 
-![主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.png)
+![主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.png)
 
 ## 它是什么
 
