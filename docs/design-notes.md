@@ -2,6 +2,25 @@
 
 内部结构与设计取舍——**为什么**是这样，而不只是**是什么**。面向想读源码、改动行为或评估移植成本的读者；只想装来用，看 [README](./README.zh-CN.md) 就够了。
 
+## 架构
+
+浏览器不与 pi 直接说话，中间只有一个 Node 进程：上行命令走 `POST /api/*`，下行事件走一条 SSE。会话列表每次都从 pi 自己的存储实时派生，进程池按需拉起 `pi --mode rpc` 子进程、空闲回收。
+
+```
+浏览器 (React + Vite)
+   │  POST /api/*            上行命令
+   │  GET  /api/events (SSE) 下行事件
+   ▼
+Node 服务端 (单进程)
+   ├─ 项目记录   ~/.pi-web-simple/store.json
+   ├─ 界面偏好   同一份 store.json（外观 / 字号 / 对话显示 / 发送行为）
+   ├─ 模型提供方 ~/.pi/agent/models.json + auth.json（pi 没有对应 RPC）
+   ├─ 会话列表   从 pi 自己的存储实时派生
+   └─ 进程注册表 每个会话一个 pi RPC 子进程（懒启动 + 空闲回收）
+   ▼
+node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = 项目目录)
+```
+
 ## 目录结构
 
 ```

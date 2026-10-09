@@ -2,72 +2,29 @@
 
 [English](https://github.com/woxihejinghao/pi-web/blob/main/README.md) · **简体中文**
 
-一个基于 [pi](https://github.com/earendil-works/pi-coding-agent) 的本地 Web UI —— **一个本地目录 = 一个项目**，项目下挂该目录的会话。agent 内核是 pi 本身，通过 `pi --mode rpc` 子进程接入。项目管理模型与界面风格参考 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。
+一个基于 [pi](https://github.com/earendil-works/pi-coding-agent) 的本地 Web UI：**一个本地目录 = 一个项目**，项目下挂该目录的会话，agent 内核是 pi 本身，通过 `pi --mode rpc` 子进程接入。项目管理模型与界面风格参考 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。
 
-```sh
-npx pi-web-simple    # 在 http://127.0.0.1:5319 同时提供前端与 API
-```
-
-需要 Node.js `>= 22.19`。只监听 `127.0.0.1`。
-
-**功能概览** — 服务端目录选择器 · 多会话，每个会话一个空闲回收的 pi 进程 · SSE 流式对话（Markdown + shiki 高亮）· 图片输入 · 会话 fork 与重命名 · 模型选择 · 左侧栏的视图选项（分组 / 排序，可拖拽换位）与就地搜索 · 右侧栏（文件树、预览、Git 变更、终端、内嵌浏览器，可分成左右两格，标签也能拖出成浮动面板，并带快捷键）· 完整 Git 面板（暂存、提交、推送、还原、切分支）· 模型 / 插件 / MCP 设置。
-
-右侧栏的**终端**需要一个可选的本地依赖。它是原生模块，所以按平台分发预编译二进制：
-
-```sh
-npm install node-pty        # 可选；已随本包声明为 optionalDependencies
-```
-
-装不上（平台没有预编译包，或者本机没有编译工具链）时只有这一个标签页受影响——「+」菜单里的「终端」会置灰，鼠标悬停写明原因，其余功能照常。
-
-右侧栏的常用动作有全局快捷键（绑定取自 dsh，好让两个应用之间的肌肉记忆通用）：
-
-| 动作 | 桌面版 | 浏览器 |
-| :-- | :-- | :-- |
-| 收起 / 展开右栏 | `⌥⌘B` | `⇧⌘B` |
-| 面板全屏 | `⌥⌘↵` | `⌥⌘↵` |
-| 打开文件标签页 | `⌘P` | `⌥⌘P` |
-| 新开终端 | `` ⌃` `` | `` ⌃` `` |
-| 新开浏览器标签页 | `⌘T` | `⌥⌘T` |
-| 分栏（当前格） | `⌘\` | `⌘\` |
-
-表里按 macOS 的写法记（`⌃` Control · `⌥` Option · `⇧` Shift · `⌘` Command）；Windows 与 Linux 依次换成 `Ctrl` / `Alt` / `Shift` / `Ctrl`，例如收起右栏是 `Ctrl+Alt+B`。浏览器那几列多一个 `⌥`，是因为 `⌘P`（打印）、`⌘T`（新标签页）、`⌘⇧B`（书签栏）已经归浏览器，抢不过来；`⌘\` 是例外，没有浏览器占着它，所以两边一样。按钮和菜单项的悬停提示里写着它对应的键，不用回来查表。
-
-停靠区也能直接用鼠标摆：把标签拖到某一格的左/右边缘就是分栏，拖到另一格中间的投放卡上就是换格，拖到标签条上会有一条竖线标出落点，拖到栏外松手就成了浮动面板（可以拖动、从右下角缩放，按头部那枚按钮收回栏内）。两格中间的缝本身也能拖，用来调两格的宽度。
-
+`npx pi-web-simple` 就能跑起来 —— 需要 Node.js `>= 22.19`，只监听 `127.0.0.1`；其它装法见[快速开始](#快速开始)。
 
 | 深色主题 | 浅色主题 |
 | :---: | :---: |
 | ![深色主题下的主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-dark.png) | ![浅色主题下的主界面](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/overview-light.png) |
 
-*左：深色主题，右：浅色主题（默认跟随系统，也可在设置里固定）。两图是同一份会话：左栏工作区与会话，中间对话与折叠起来的思考 / 工具步骤，右栏文件变更可直接暂存、提交、推送。*
+*深浅两套主题默认跟随系统，也可在设置里固定。两图是同一份会话：左栏工作区与会话，中间对话与折叠起来的思考 / 工具步骤，右栏文件变更可直接暂存、提交、推送。*
 
----
+**功能概览** — 服务端目录选择器 · 每个会话一个空闲回收的 pi 进程 · SSE 流式对话（Markdown + shiki 高亮）· 图片输入 · 会话 fork 与重命名 · 模型选择 · 左侧栏的视图选项（分组 / 排序，可拖拽换位）与就地搜索 · 右侧栏（文件树、预览、Git 变更、终端、内嵌浏览器），可分成左右两格、标签也能拖出成浮动面板 · 完整 Git 面板（暂存、提交、推送、还原、切分支）· 模型 / 插件 / MCP 设置。
 
-一个基于 [pi](https://github.com/earendil-works/pi-coding-agent) 的本地项目管理 / 对话 Web UI。
+右侧栏的**终端**需要一个可选的原生依赖：`npm install node-pty`（已声明为 `optionalDependencies`）。装不上时只有这一个标签页置灰、悬停写明原因，其余功能照常。
 
-项目管理模型与界面风格参考 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)：**一个本地目录 = 一个项目**，项目下挂该目录的会话。agent 内核是 pi 本身，通过 `pi --mode rpc` 子进程接入。
-
-```
-浏览器 (React + Vite)
-   │  POST /api/*            上行命令
-   │  GET  /api/events (SSE) 下行事件
-   ▼
-Node 服务端 (单进程)
-   ├─ 项目记录   ~/.pi-web-simple/store.json
-   ├─ 界面偏好   同一份 store.json（外观 / 字号 / 对话显示 / 发送行为）
-   ├─ 模型提供方 ~/.pi/agent/models.json + auth.json（pi 没有对应 RPC）
-   ├─ 会话列表   从 pi 自己的存储实时派生
-   └─ 进程注册表 每个会话一个 pi RPC 子进程（懒启动 + 空闲回收）
-   ▼
-node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = 项目目录)
-```
+右栏快捷键：`⌥⌘B` 收起 / 展开 · `⌥⌘↵` 全屏 · `⌘P` 打开文件 · `` ⌃` `` 新终端 · `⌘T` 新浏览器标签 · `⌘\` 分栏；浏览器里带 `⌘` 的那几个换成 `⌥⌘`，因为 `⌘P` / `⌘T` 归浏览器。更细的说明与拖拽停靠见[设计说明](./design-notes.md)。
 
 ## 快速开始
 
-需要 Node.js `>= 22.19`。服务只监听 `127.0.0.1`。
+```sh
+npx pi-web-simple    # 在 http://127.0.0.1:5319 同时提供前端与 API
+```
 
-不管怎么装，起的都是同一个东西：一个进程在 <http://127.0.0.1:5319> 同时提供前端与 API，并自动打开浏览器。按你打算怎么用挑一行：
+三种装法起的是同一个东西：一个进程同时提供前端与 API，并自动打开浏览器。按你打算怎么用挑一行：
 
 | 安装方式 | 这样启动 | 适合 |
 | :-- | :-- | :-- |
@@ -75,7 +32,7 @@ node <pi>/dist/cli.js --mode rpc --session <file>   (cwd = 项目目录)
 | `npm install -g pi-web-simple` | `pi-web-simple` | 想在任意目录直接敲一条命令 |
 | `pi install npm:pi-web-simple` | 在 pi 里 `/web` | 你本来就泡在 pi 会话里——见下 |
 
-端口和浏览器是仅有的两个开关，三种方式读的是同一组：
+端口和浏览器是仅有的两个开关：
 
 ```sh
 PI_WEB_SIMPLE_PORT=5400    # 换个端口（默认 5319）
@@ -89,10 +46,11 @@ PI_WEB_SIMPLE_OPEN=0 nohup pi-web-simple >/tmp/piws.log 2>&1 &
 pkill -f 'pi-web-simple/bin/pi-web-simple.js'   # 停掉
 ```
 
+首次使用：点击左侧栏的 **+**，在弹出的目录选择器里逐级进入目标目录（顶部快捷位置可直达主目录 / 桌面 / 文稿 / 下载 / 根目录，地址栏也可直接粘贴路径），点 **选择此目录**；再点项目下的 **+** 新建会话开始对话。分组头右侧是搜索、视图选项与 **+** 三枚按钮：视图选项里可以切换分组方式（按工作区 / 按工作区树 / 单列表）与排序方式（手动排序 / 最近更新），选「手动排序」后工作区与会话行都能直接拖拽换位。全部变量及默认值见[环境变量](./configuration.md)。
+
 ### 桌面版
 
-`desktop/` 把**同一个**服务端和**同一份**前端装进 Electron 壳里，mac / Windows / Linux 安装包见
-[Releases](https://github.com/woxihejinghao/pi-web/releases)：
+`desktop/` 把**同一个**服务端和**同一份**前端装进 Electron 壳里，mac / Windows / Linux 安装包见 [Releases](https://github.com/woxihejinghao/pi-web/releases)：
 
 | 平台 | 产物 |
 | :-- | :-- |
@@ -100,21 +58,9 @@ pkill -f 'pi-web-simple/bin/pi-web-simple.js'   # 停掉
 | Windows x64 | `pi-web-simple-<版本>-win-x64-setup.exe`（另有 `.zip`） |
 | Linux x64 | `pi-web-simple-<版本>-linux-x64.AppImage` / `.deb` |
 
-**自带 Node.js 运行时**，所以什么都不用预装（pi 的 RPC 客户端用的是裸命令 `node`，
-Windows 上 `.cmd` 垫片满足不了它）。目前**没有代码签名**：macOS 首次打开要右键→打开，
-Windows 会有一次 SmartScreen 提示。自己打：`pnpm package:desktop`（仅限当前平台）。
-安装、排错与取舍见[桌面版](./desktop.md)。
+**自带 Node.js 运行时**，所以什么都不用预装——pi 的 RPC 客户端用的是裸命令 `node`，Windows 上 `.cmd` 垫片满足不了它。目前**没有代码签名**：macOS 首次打开要右键→打开，Windows 会有一次 SmartScreen 提示。自己打：`pnpm package:desktop`（仅限当前平台）；安装与排错见[桌面版](./desktop.md)。
 
-桌面版与 CLI 共用 `~/.pi-web-simple` 和 `~/.pi`，看到的是同一批项目与会话；
-端口优先用 5319（被占则退到随机端口），所以两者可以同时开着。macOS 上窗口是 `hiddenInset`：
-侧栏一路铺到窗口顶边、透出系统的 vibrancy 材质，红绿灯直接浮在它上面；Windows 与 Linux
-仍用平台自己的标题栏。
-
-地址和下面的开发模式一致，所以不必记两个端口；全部变量及默认值见[环境变量](./configuration.md)。
-
-首次使用：点击左侧栏的 **+**，在弹出的目录选择器里逐级进入目标目录（顶部快捷位置可直达主目录 / 桌面 / 文稿 / 下载 / 根目录，地址栏也可直接粘贴路径），点 **选择此目录** 添加项目；再点项目下的 **+** 新建会话开始对话。
-
-分组头右侧是搜索、视图选项与 **+** 三枚按钮。视图选项里可以切换**分组方式**（按工作区 / 按工作区树 / 单列表）和**排序方式**（手动排序 / 最近更新）；选「手动排序」后工作区与会话行都能直接拖拽换位，插入线画在落点的那条边上。工作区的顺序存到服务端，会话的手动顺序存在这个浏览器里，两种拖拽都只在同级之间生效（见[已知限制](./known-limitations.md)）。
+它与 CLI 共用 `~/.pi-web-simple` 和 `~/.pi`，看到的是同一批项目与会话；端口优先用 5319（被占则退到随机端口），所以两者可以同时开着。macOS 上窗口是 `hiddenInset`：侧栏一路铺到窗口顶边、透出系统的 vibrancy 材质，红绿灯直接浮在它上面；Windows 与 Linux 仍用平台自己的标题栏。
 
 ### 作为 pi 包使用
 
@@ -134,7 +80,7 @@ pi install npm:pi-web-simple
 /web stop       # 关掉
 ```
 
-`/web` 起的子进程由当前 pi 会话托管，pi 退出时一并结束（不会留下占着端口的孤儿进程）；端口被占用等启动失败会把服务端最后几行日志报回 pi 界面。想在 pi 之外常驻，用上面那条 `nohup` 命令。
+`/web` 起的子进程由当前 pi 会话托管，pi 退出时一并结束（不会留下占着端口的孤儿进程）；端口被占用等启动失败会把服务端最后几行日志报回 pi 界面。
 
 ### 从源码开发
 
@@ -143,14 +89,7 @@ pnpm install
 pnpm dev
 ```
 
-开发模式分成两个进程，改代码即时生效：
-
-- 前端 dev server：`127.0.0.1:5319`（Vite，`/api` 反向代理到后端）
-- 后端 API：`127.0.0.1:4319`
-
-浏览器里打开的仍然是 5319，所以两种模式在地址栏没有区别。
-
-其他命令：
+开发模式分成两个进程，改代码即时生效：前端 dev server 在 `127.0.0.1:5319`（Vite，`/api` 反向代理到后端），后端 API 在 `127.0.0.1:4319`。浏览器里打开的仍然是 5319。
 
 ```sh
 pnpm build       # 构建前端 + 编译后端到 server/build
@@ -160,16 +99,15 @@ pnpm test        # 前后端测试（vitest）
 pnpm dev:desktop # 用 Electron 壳跑当前仓库（先 pnpm build）
 ```
 
-## 更多文档
+## 文档
 
-- [设计说明](./design-notes.md)——为什么是这样：架构、与 pi CLI 并存、每个面板的实现取舍与踩过的坑。
-- [桌面版](./desktop.md)——Electron 壳：安装包、自带的 Node 运行时、打包流程，以及它现在还做不到什么。
-- [已知限制](./known-limitations.md)——目前做不到什么，以及那些行为背后的取舍；装之前值得扫一遍。
+- [设计说明](./design-notes.md)——架构、与 pi CLI 并存，以及每个面板背后的取舍。
+- [桌面版](./desktop.md)——Electron 壳：打包、自带的 Node 运行时，以及它现在还做不到什么。
+- [已知限制](./known-limitations.md)——目前做不到什么；装之前值得扫一遍。
 - [环境变量](./configuration.md)——全部可选，含默认值。
 - [网络与隐私](./network-and-privacy.md)——它连不连网、数据放在哪、为什么不能暴露到公网。
 - [安全策略](../SECURITY.md)——报告漏洞的渠道，以及按设计存在、不算漏洞的行为。
-
-欢迎贡献，见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+- [贡献指南](../CONTRIBUTING.md)——环境要求、CI 跑的四步、代码约定。
 
 ## 友链
 
