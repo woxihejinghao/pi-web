@@ -40,35 +40,11 @@ Git 那一格是完整的：看每个文件的 diff、暂存、提交、推送�
 
 右栏常用的几个动作有全局快捷键，绑定是直接从 dsh 抄的（`⌥⌘B` 收起右栏、`⌘P` 打开文件、`` ⌃` `` 新开终端……），两个应用之间的肌肉记忆能通用。
 
-## 侧栏可以按自己的想法排
-
-分组方式和排序方式都能选：分组有「按工作区 / 按工作区树 / 单列表」，排序有「手动排序 / 最近更新」。
-
-选手动排序之后，工作区行和会话行都能直接拖着换位，插入线画在落点的那条边上。工作区的顺序存服务端（换台机器打开还是这个顺序），会话的手动顺序存在当前浏览器里。
-
-![视图选项](https://cdn.jsdelivr.net/gh/woxihejinghao/pi-web@main/docs/images/promo/sidebar.png)
-
-搜索框也从独立一行改成了在「工作区」分组头里就地展开，点一下就出来，Escape 收起。
-
 ## 设置页写的是 pi 自己的文件
 
 模型、插件、MCP 三节改的都是 pi 自己读的那几个文件（`models.json` / `auth.json` / `mcp.json`），不是这里的私有配置，所以页面里配好之后终端里的 pi 直接就能用。
 
 MCP 那节现在是直接按 pi 的合并规则读写两份 `mcp.json`（全局一份、工作区一份）。以前这里依赖 `pi-mcp-adapter`，pi 内置 MCP 支持之后就去掉了——留着那个扩展反而会替换掉内置的这套，页面上的「补一个依赖」实际变成了「换一个配置来源」。
-
-## 怎么跑
-
-```sh
-npx pi-web-simple
-```
-
-默认在 `127.0.0.1:5319` 提供前端和 API，并自动打开浏览器。另外几种：
-
-- `npm install -g pi-web-simple`，然后任意目录敲 `pi-web-simple`
-- 已经泡在 pi 里的话：`pi install npm:pi-web-simple`，之后用 `/web` 起（`/web status` 看状态、`/web stop` 关掉，pi 退出时子进程也跟着结束，不会留下占着端口的孤儿进程）
-- 桌面版在 [Releases](https://github.com/woxihejinghao/pi-web/releases) 里，mac / Windows / Linux 都有。它**自带 Node.js 运行时**，不用先装什么
-
-桌面版和 CLI 共用 `~/.pi-web-simple` 与 `~/.pi`，看到的是同一批项目与会话，可以同时开着。
 
 ## 已知的坑
 
