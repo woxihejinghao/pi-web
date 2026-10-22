@@ -141,9 +141,10 @@ describe("Rightbar", () => {
     expect(html.match(/data-rb-pane="/gu)).toHaveLength(2);
     expect(html.match(/data-rb-strip="/gu)).toHaveLength(2);
     expect(html).toContain("data-rb-divider");
-    // The half the split made holds nothing, and says so rather than drawing a
-    // blank box.
-    expect(html).toContain("空面板");
+    // The half the split made holds nothing, and offers the thing it can open
+    // rather than drawing a blank box.
+    expect(html).toContain('data-rb-empty="true"');
+    expect(html).toContain("新建终端");
   });
 
   it("puts the seam between the two panes, not after them", () => {

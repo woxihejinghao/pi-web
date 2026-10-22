@@ -1,0 +1,60 @@
+/* A stack of closes that have not finished, sitting at the panel's foot. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.action {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 7px;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dismiss {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}

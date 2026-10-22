@@ -11,7 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^1.1.0"
+    "@earendil-works/pi-coding-agent": "^1.1.0",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0"
   },
   "optionalDependencies": {
     "node-pty": "^1.1.0"

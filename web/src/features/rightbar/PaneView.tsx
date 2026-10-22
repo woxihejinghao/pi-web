@@ -19,6 +19,7 @@ import {
   type RightbarTabKind,
 } from "./rightbar-state.ts";
 import { TabBody } from "./TabBody.tsx";
+import { TerminalGuide } from "./TerminalGuide.tsx";
 import { shortcutTitle } from "./shortcuts.ts";
 import { terminalActions, terminalStore } from "./terminal-state.ts";
 // Named `paneCss` rather than `pane`: this component's own prop is called
@@ -199,6 +200,7 @@ export function PaneView({
   const paneRef = useRef<HTMLElement | null>(null);
   const tabs = paneTabs(surface, pane);
   const active = tabs.find((tab) => tab.id === pane.activeTabId) ?? tabs[0] ?? null;
+  const support = useStore(terminalStore).support;
 
   // The room rule reads pixels, which the model does not carry: the pane
   // measures itself and the split control says why it is disabled. A reading
@@ -302,9 +304,14 @@ export function PaneView({
       </div>
       <div className={styles.paneBody}>
         {active === null ? (
-          <p className={paneCss.note} data-rb-empty>
-            {t("rightbar.emptyPane")}
-          </p>
+          <div className={paneCss.guideHost} data-rb-empty>
+            <TerminalGuide
+              sessionPath={sessionPath}
+              paneId={pane.id}
+              disabled={support !== null && !support.available}
+              reason={support?.reason}
+            />
+          </div>
         ) : (
           <TabBody
             key={active.id}
@@ -342,6 +349,32 @@ function Chip({
   onClose: () => void;
 }) {
   const t = useT();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const cancelled = useRef(false);
+  const canEdit = tab.kind === "terminal" || tab.kind === "preview";
+
+  const commit = (): void => {
+    setEditing(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(title);
+      return;
+    }
+    const next = draft.trim();
+    if (next.length === 0 || next === title) {
+      setDraft(title);
+      return;
+    }
+    // The host owns a terminal's name, so another window sees the rename; the
+    // local layout has to be told too, or this window keeps the old label until
+    // the next state frame arrives.
+    if (tab.kind === "terminal" && tab.target.length > 0) {
+      void terminalActions.rename(tab.target, next).catch(() => {});
+    }
+    rightbarActions.setTabTitle(sessionPath, tab.id, next);
+  };
+
   return (
     <div
       className={clsx(styles.chip, selected && styles.chipActive, dragging && styles.chipDragging)}
@@ -376,10 +409,54 @@ function Chip({
         );
       }}
     >
-      <button type="button" className={styles.chipBody} title={title}>
-        <TabIcon kind={tab.kind} />
-        <span className={styles.chipTitle}>{title}</span>
-      </button>
+      {editing ? (
+        <input
+          className={styles.chipInput}
+          value={draft}
+          maxLength={120}
+          autoFocus
+          aria-label={t("rightbar.renameTab")}
+          onFocus={(event) => {
+            event.currentTarget.select();
+          }}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+          onBlur={commit}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Escape") {
+              cancelled.current = true;
+              event.currentTarget.blur();
+              return;
+            }
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className={styles.chipBody}
+          title={title}
+          onDoubleClick={(event) => {
+            if (!canEdit) return;
+            event.stopPropagation();
+            setDraft(title);
+            setEditing(true);
+          }}
+        >
+          <TabIcon kind={tab.kind} />
+          <span className={styles.chipTitle}>{title}</span>
+        </button>
+      )}
       <button
         type="button"
         className={styles.chipClose}
@@ -404,8 +481,13 @@ function Chip({
 function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [shellsOpen, setShellsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const support = useStore(terminalStore).support;
+  const state = useStore(terminalStore);
+  const support = state.support;
+  const shells = state.shells;
 
   useEffect(() => {
     if (!open) return;
@@ -413,6 +495,7 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
       const root = rootRef.current;
       if (root !== null && event.target instanceof Node && root.contains(event.target)) return;
       setOpen(false);
+      setShellsOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => {
@@ -431,12 +514,31 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
   // case — the tab itself knows how to report a host that cannot open a shell.
   const terminalOff = support !== null && !support.available;
 
-  const pick = (kind: "files" | "changes" | "browser" | "terminal"): void => {
+  const pick = (kind: "files" | "changes" | "browser"): void => {
     setOpen(false);
     if (kind === "files") rightbarActions.openFilesTab(sessionPath, paneId);
     else if (kind === "changes") rightbarActions.openChangesTab(sessionPath, paneId);
-    else if (kind === "terminal") rightbarActions.openTerminalTab(sessionPath, paneId);
     else rightbarActions.openBrowserTab(sessionPath, "", paneId);
+  };
+
+  const openShells = (): void => {
+    setShellsOpen(true);
+    setLoading(true);
+    setError(null);
+    void terminalActions
+      .loadShells()
+      .catch((err: unknown) => {
+        setError((err as Error).message);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  const openShell = (shellPath?: string): void => {
+    setOpen(false);
+    setShellsOpen(false);
+    rightbarActions.openTerminalTab(sessionPath, paneId, shellPath);
   };
 
   return (
@@ -454,67 +556,103 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
         onClick={(event) => {
           event.stopPropagation();
           setOpen((value) => !value);
+          setShellsOpen(false);
         }}
       >
         <PlusIcon width={13} height={13} />
       </button>
       {open ? (
         <div className={styles.menu} role="menu">
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            title={shortcutTitle(t, t("tab.files"), "rightbar.files")}
-            onClick={() => {
-              pick("files");
-            }}
-          >
-            <Glyph name="checklist" size={13} />
-            {t("tab.files")}
-          </button>
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            onClick={() => {
-              pick("changes");
-            }}
-          >
-            <DiffIcon width={13} height={13} />
-            {t("tab.changes")}
-          </button>
-          {/* Offered but disabled rather than hidden: a machine without a
-              prebuilt node-pty still wants to know the tab exists and why it
-              is not there, and the reason is one hover away. */}
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            disabled={terminalOff}
-            title={
-              terminalOff
-                ? support?.reason
-                : shortcutTitle(t, t("tab.terminal"), "rightbar.terminal")
-            }
-            onClick={() => {
-              pick("terminal");
-            }}
-          >
-            <Glyph name="terminal" size={13} />
-            {t("tab.terminal")}
-          </button>
-          <button
-            type="button"
-            className={styles.menuItem}
-            role="menuitem"
-            title={shortcutTitle(t, t("tab.browser"), "rightbar.browser")}
-            onClick={() => {
-              pick("browser");
-            }}
-          >
-            <Glyph name="browse" size={13} />
-            {t("tab.browser")}
-          </button>
+          {shellsOpen ? (
+            <>
+              <div className={styles.menuLabel}>{t("terminal.shellMenu")}</div>
+              {loading ? <div className={styles.menuNote}>{t("terminal.shellsLoading")}</div> : null}
+              {error !== null ? <div className={styles.menuNote}>{error}</div> : null}
+              {!loading ? (
+                <button
+                  type="button"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  onClick={() => {
+                    openShell();
+                  }}
+                >
+                  {t("terminal.defaultShell")}
+                </button>
+              ) : null}
+              {!loading
+                ? shells.map((shell) => (
+                    <button
+                      key={shell.path}
+                      type="button"
+                      className={styles.menuItem}
+                      role="menuitem"
+                      onClick={() => {
+                        openShell(shell.path);
+                      }}
+                    >
+                      {shell.name}
+                    </button>
+                  ))
+                : null}
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={styles.menuItem}
+                role="menuitem"
+                title={shortcutTitle(t, t("tab.files"), "rightbar.files")}
+                onClick={() => {
+                  pick("files");
+                }}
+              >
+                <Glyph name="checklist" size={13} />
+                {t("tab.files")}
+              </button>
+              <button
+                type="button"
+                className={styles.menuItem}
+                role="menuitem"
+                onClick={() => {
+                  pick("changes");
+                }}
+              >
+                <DiffIcon width={13} height={13} />
+                {t("tab.changes")}
+              </button>
+              {/* Offered but disabled rather than hidden: a machine without a
+                  prebuilt node-pty still wants to know the tab exists and why it
+                  is not there, and the reason is one hover away. */}
+              <button
+                type="button"
+                className={styles.menuItem}
+                role="menuitem"
+                disabled={terminalOff}
+                title={
+                  terminalOff
+                    ? support?.reason
+                    : shortcutTitle(t, t("tab.terminal"), "rightbar.terminal")
+                }
+                onClick={openShells}
+              >
+                <Glyph name="terminal" size={13} />
+                {t("tab.terminal")}
+              </button>
+              <button
+                type="button"
+                className={styles.menuItem}
+                role="menuitem"
+                title={shortcutTitle(t, t("tab.browser"), "rightbar.browser")}
+                onClick={() => {
+                  pick("browser");
+                }}
+              >
+                <Glyph name="browse" size={13} />
+                {t("tab.browser")}
+              </button>
+            </>
+          )}
         </div>
       ) : null}
     </div>

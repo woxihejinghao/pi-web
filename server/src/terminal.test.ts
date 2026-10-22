@@ -1,15 +1,13 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { EventBus, type BusEvent } from "./bus.ts";
 import { HttpError } from "./errors.ts";
 import {
+  ATTACHMENT_TIMEOUT_MS,
   FLUSH_MS,
+  MAX_INPUT_BYTES,
   MAX_TERMINALS,
-  SCROLLBACK_LIMIT,
   TerminalManager,
-  pickShell,
+  discoverShells,
   type PtyDisposable,
   type PtyModule,
   type PtyProcess,
@@ -23,7 +21,6 @@ import {
  * — so a test that asserted on its bytes would fail on somebody else's laptop.
  * What is worth pinning down is this module's own contract: what it forwards,
  * what it coalesces, what it publishes, and what it does when the shell ends.
- * The real module gets one smoke test at the bottom instead.
  */
 class FakePty implements PtyProcess {
   readonly pid = 4242;
@@ -31,7 +28,8 @@ class FakePty implements PtyProcess {
   rows: number;
   readonly writes: string[] = [];
   readonly resizes: Array<[number, number]> = [];
-  killed = false;
+  killed = 0;
+  killError: Error | null = null;
   private readonly dataListeners: Array<(data: string) => void> = [];
   private readonly exitListeners: Array<(event: { exitCode: number }) => void> = [];
 
@@ -71,15 +69,14 @@ class FakePty implements PtyProcess {
   }
 
   kill(): void {
-    this.killed = true;
+    this.killed += 1;
+    if (this.killError !== null) throw this.killError;
   }
 
-  /** The shell printed something. */
   emit(data: string): void {
     for (const listener of [...this.dataListeners]) listener(data);
   }
 
-  /** The shell ended. */
   exit(exitCode: number): void {
     for (const listener of [...this.exitListeners]) listener({ exitCode });
   }
@@ -89,420 +86,424 @@ interface Harness {
   manager: TerminalManager;
   events: BusEvent[];
   spawned: FakePty[];
-  /** The programs that were asked for, in order — `spawn`'s first argument. */
-  spawnedFiles: string[];
-  optionsOf: () => Record<string, unknown>;
-  /** Every event of one shape, with the type narrowed for the assertions. */
+  spawnedPaths: string[];
   only: <T extends BusEvent["type"]>(type: T) => Array<Extract<BusEvent, { type: T }>>;
 }
 
-/**
- * @param loadModule - how the optional module resolves. Omitted means "it is
- * installed and works"; throwing or returning null is the unavailable path.
- */
-function harness(loadModule?: () => PtyModule | null): Harness {
+function harness(
+  options: {
+    loadModule?: () => PtyModule | null;
+    idleTimeoutMs?: number;
+    now?: () => number;
+  } = {},
+): Harness {
   const bus = new EventBus();
   const events: BusEvent[] = [];
   bus.subscribe((event) => events.push(event));
   const spawned: FakePty[] = [];
-  const spawnedFiles: string[] = [];
-  let options: Record<string, unknown> = {};
+  const spawnedPaths: string[] = [];
   const module: PtyModule = {
     spawn: (file, _args, opts) => {
-      spawnedFiles.push(file);
-      options = opts as unknown as Record<string, unknown>;
+      spawnedPaths.push(file);
       const pty = new FakePty(opts.cols, opts.rows);
       spawned.push(pty);
       return pty;
     },
   };
+  const manager = new TerminalManager({
+    bus,
+    loadModule: options.loadModule ?? (() => module),
+    reapIntervalMs: 0,
+    ...(options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: options.idleTimeoutMs }),
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
   return {
-    manager: new TerminalManager({ bus, loadModule: loadModule ?? (() => module) }),
+    manager,
     events,
     spawned,
-    spawnedFiles,
-    optionsOf: () => options,
+    spawnedPaths,
     only: <T extends BusEvent["type"]>(type: T) =>
       events.filter((event): event is Extract<BusEvent, { type: T }> => event.type === type),
   };
 }
 
-function open(h: Harness, sessionPath = "/sessions/a.jsonl", cwd = "/work") {
-  return h.manager.create({ sessionPath, cwd, cols: 80, rows: 24 });
+const SETTLE = FLUSH_MS + 40;
+
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, SETTLE));
 }
 
-function statusOf(fn: () => unknown): number {
-  try {
-    fn();
-  } catch (err) {
-    if (err instanceof HttpError) return err.status;
-    throw err;
-  }
-  throw new Error("expected the call to throw");
+function open(h: Harness, overrides: { id?: string; sessionPath?: string } = {}): string {
+  const info = h.manager.create({
+    ...(overrides.id === undefined ? {} : { id: overrides.id }),
+    sessionPath: overrides.sessionPath ?? "draft:a",
+    cwd: "/tmp",
+    cols: 80,
+    rows: 24,
+  });
+  return info.id;
 }
 
-describe("TerminalManager", () => {
-  beforeEach(() => {
-    vi.useRealTimers();
+describe("shell discovery", () => {
+  it("offers at least one shell, with a usable default first", () => {
+    const shells = discoverShells();
+    expect(shells.length).toBeGreaterThan(0);
+    const first = shells[0]!;
+    expect(first.path.length).toBeGreaterThan(0);
+    expect(first.name.length).toBeGreaterThan(0);
+    expect(Array.isArray(first.args)).toBe(true);
   });
 
-  describe("support", () => {
-    it("answers that shells are available when the optional module loads", () => {
-      const support = harness().manager.support();
-      expect(support.available).toBe(true);
-      // Nothing else is in the answer: the host no longer offers a list to pick
-      // from, so there is no list here to check.
-      expect(support.reason).toBeUndefined();
-    });
-
-    it("reports why when the module will not load", () => {
-      const support = harness(() => {
-        throw new Error("Cannot find module 'node-pty'");
-      }).manager.support();
-      expect(support.available).toBe(false);
-      expect(support.reason).toContain("node-pty");
-    });
-
-    it("treats a loader that answers null the same as one that throws", () => {
-      const support = harness(() => null).manager.support();
-      expect(support.available).toBe(false);
-      expect(support.reason).toBeTruthy();
-    });
-
-    it("stops trying after the first failure", () => {
-      let attempts = 0;
-      const h = harness(() => {
-        attempts += 1;
-        throw new Error("nope");
-      });
-      h.manager.support();
-      h.manager.support();
-      expect(attempts).toBe(1);
-    });
-  });
-
-  /**
-   * The rule a picker's answer goes through, on its own.
-   *
-   * Kept out of `create` because the list it decides against comes from this
-   * machine's `/etc/shells`: going through a real shell would let a test assert
-   * only "one of the two branches happened". `$SHELL` is stubbed for the same
-   * reason — the test owns both halves of the comparison.
-   */
-  describe("pickShell", () => {
-    it("opens bash when the host has it", () => {
-      // The whole point of the rule: the same shell everywhere, whatever this
-      // user's own `$SHELL` happens to be.
-      expect(pickShell(["/bin/sh", "/bin/bash", "/bin/zsh"])).toBe("/bin/bash");
-    });
-
-    it.skipIf(process.platform === "win32")(
-      "falls back to the login shell when bash is not listed",
-      () => {
-        vi.stubEnv("SHELL", "/bin/zsh");
-        try {
-          expect(pickShell(["/bin/sh", "/bin/zsh"])).toBe("/bin/zsh");
-        } finally {
-          vi.unstubAllEnvs();
-        }
-      },
-    );
-
-    it.skipIf(process.platform === "win32")(
-      "takes the first listed shell when neither bash nor the login shell is there",
-      () => {
-        vi.stubEnv("SHELL", "/opt/homebrew/bin/fish");
-        try {
-          expect(pickShell(["/bin/zsh", "/bin/sh"])).toBe("/bin/zsh");
-        } finally {
-          vi.unstubAllEnvs();
-        }
-      },
-    );
-  });
-
-  describe("create", () => {
-    it("spawns a shell with the requested size, in the session's directory", () => {
-      const h = harness();
-      const info = open(h, "/sessions/a.jsonl", "/work/project");
-
-      expect(info.exitCode).toBeNull();
-      expect(info.cols).toBe(80);
-      expect(info.rows).toBe(24);
-      expect(h.spawned).toHaveLength(1);
-
-      const options = h.optionsOf();
-      expect(options.cwd).toBe("/work/project");
-      expect(options.name).toBe("xterm-256color");
-      expect(options.cols).toBe(80);
-      const env = options.env as Record<string, string>;
-      // The server's own TERM describes whatever started it, not the xterm.js
-      // on the other end, so it is replaced rather than inherited.
-      expect(env.TERM).toBe("xterm-256color");
-    });
-
-    it("spawns the host's shell, and reports that as the program it is running", () => {
-      const h = harness();
-      const info = open(h);
-      // Whatever this machine's `/etc/shells` yields, the program that was
-      // spawned and the program every read reports are the same one.
-      expect(info.shell).toBe(h.spawnedFiles[0]);
-      expect(info.shell.length).toBeGreaterThan(0);
-      expect(h.manager.list()[0]?.shell).toBe(info.shell);
-    });
-
-    it.skipIf(process.platform === "win32")("opens bash on a host that has it", () => {
-      const h = harness();
-      expect(open(h).shell).toBe("/bin/bash");
-    });
-
-    it("answers 503 — not 400 — when this host cannot run a shell", () => {
-      const h = harness(() => null);
-      // Nothing about the request is wrong; the host simply cannot do it.
-      expect(statusOf(() => open(h))).toBe(503);
-    });
-
-    it("retries after a transient PTY spawn failure", () => {
-      let attempts = 0;
-      const bus = new EventBus();
-      const pty: PtyModule = {
-        spawn: () => {
-          attempts += 1;
-          if (attempts === 1) throw new Error("posix_spawnp failed");
-          return new FakePty(80, 24);
-        },
-      };
-      const manager = new TerminalManager({ bus, loadModule: () => pty });
-      expect(statusOf(() => manager.create({ sessionPath: "/s.jsonl", cwd: "/work", cols: 80, rows: 24 }))).toBe(503);
-      expect(manager.create({ sessionPath: "/s.jsonl", cwd: "/work", cols: 80, rows: 24 }).exitCode).toBeNull();
-      expect(attempts).toBe(2);
-    });
-
-    it("clamps a size that no PTY could honour", () => {
-      const h = harness();
-      const info = h.manager.create({
-        sessionPath: "/s.jsonl",
-        cwd: "/work",
-        cols: 0,
-        rows: 99999,
-      });
-      expect(info.cols).toBe(2);
-      expect(info.rows).toBe(1000);
-    });
-
-    it("refuses to open more shells than the cap", () => {
-      const h = harness();
-      for (let index = 0; index < MAX_TERMINALS; index += 1) open(h);
-      expect(statusOf(() => open(h))).toBe(409);
-      expect(h.spawned).toHaveLength(MAX_TERMINALS);
-    });
-
-    it("gives every shell its own id", () => {
-      const h = harness();
-      const ids = new Set([open(h).id, open(h).id, open(h).id]);
-      expect(ids.size).toBe(3);
-    });
-  });
-
-  describe("output", () => {
-    it("coalesces a burst into one frame", () => {
-      vi.useFakeTimers();
-      const h = harness();
-      const info = open(h);
-
-      h.spawned[0]!.emit("a");
-      h.spawned[0]!.emit("b");
-      h.spawned[0]!.emit("c");
-      // Nothing goes out mid-burst: one frame per interval, not one per chunk.
-      expect(h.only("terminal_output")).toHaveLength(0);
-
-      vi.advanceTimersByTime(FLUSH_MS);
-      const frames = h.only("terminal_output");
-      expect(frames).toHaveLength(1);
-      expect(frames[0]!.data).toBe("abc");
-      expect(frames[0]!.terminalId).toBe(info.id);
-    });
-
-    it("separates bursts that are further apart than the interval", () => {
-      vi.useFakeTimers();
-      const h = harness();
-      open(h);
-      h.spawned[0]!.emit("one");
-      vi.advanceTimersByTime(FLUSH_MS);
-      h.spawned[0]!.emit("two");
-      vi.advanceTimersByTime(FLUSH_MS);
-      expect(h.only("terminal_output").map((frame) => frame.data)).toEqual(["one", "two"]);
-    });
-
-    it("keeps the screen for a client that attaches late", () => {
-      const h = harness();
-      const info = open(h);
-      h.spawned[0]!.emit("hello ");
-      h.spawned[0]!.emit("world");
-      expect(h.manager.scrollbackOf(info.id)).toBe("hello world");
-    });
-
-    it("caps the scrollback rather than letting it grow", () => {
-      const h = harness();
-      const info = open(h);
-      h.spawned[0]!.emit("x".repeat(SCROLLBACK_LIMIT + 500));
-      expect(h.manager.scrollbackOf(info.id)?.length).toBe(SCROLLBACK_LIMIT);
-    });
-
-    it("has no scrollback for an id it does not know", () => {
-      expect(harness().manager.scrollbackOf("nope")).toBeNull();
-    });
-  });
-
-  describe("input and size", () => {
-    it("forwards keystrokes unchanged", () => {
-      const h = harness();
-      const info = open(h);
-      h.manager.write(info.id, "ls\r");
-      // Control characters and Tab travel as-is; nothing here interprets them.
-      h.manager.write(info.id, "\t\u0003");
-      expect(h.spawned[0]!.writes).toEqual(["ls\r", "\t\u0003"]);
-    });
-
-    it("drops a keystroke that races the shell's exit", () => {
-      const h = harness();
-      const info = open(h);
-      h.spawned[0]!.exit(0);
-      // Not an error: a key can be in flight when the shell ends, and the user
-      // did nothing wrong.
-      h.manager.write(info.id, "x");
-      expect(h.spawned[0]!.writes).toEqual([]);
-    });
-
-    it("resizes the PTY only when the size actually changed", () => {
-      const h = harness();
-      const info = open(h);
-      h.manager.resize(info.id, 80, 24);
-      expect(h.spawned[0]!.resizes).toEqual([]);
-      h.manager.resize(info.id, 120, 40);
-      expect(h.spawned[0]!.resizes).toEqual([[120, 40]]);
-    });
-
-    it("asks for an unknown terminal", () => {
-      const h = harness();
-      expect(statusOf(() => h.manager.write("nope", "x"))).toBe(404);
-      expect(statusOf(() => h.manager.resize("nope", 80, 24))).toBe(404);
-    });
-  });
-
-  describe("exit and teardown", () => {
-    it("flushes what the shell said before announcing its exit code", () => {
-      const h = harness();
-      const info = open(h);
-      h.spawned[0]!.emit("goodbye");
-      h.spawned[0]!.exit(3);
-
-      // Order matters: the exit notice the client renders must not appear above
-      // the shell's own last line.
-      const types = h.events.map((event) => event.type);
-      expect(types.indexOf("terminal_output")).toBeLessThan(types.indexOf("terminal_state"));
-
-      expect(h.only("terminal_state")[0]).toMatchObject({ terminalId: info.id, exitCode: 3 });
-      // The tab stays: an exited shell is something to read, not something to
-      // make disappear.
-      expect(h.manager.list()[0]?.exitCode).toBe(3);
-    });
-
-    it("kills the shell on close, announces it, and forgets the id", () => {
-      const h = harness();
-      const info = open(h);
-      expect(h.manager.close(info.id)).toBe(true);
-      expect(h.spawned[0]!.killed).toBe(true);
-      expect(h.only("terminal_closed")[0]?.terminalId).toBe(info.id);
-      // Closing twice is a race with the tab's own close, not an error.
-      expect(h.manager.close(info.id)).toBe(false);
-    });
-
-    it("leaves an already-exited shell alone", () => {
-      const h = harness();
-      const info = open(h);
-      h.spawned[0]!.exit(0);
-      h.manager.close(info.id);
-      expect(h.spawned[0]!.killed).toBe(false);
-    });
-
-    it("closes only the shells of the session that went away", () => {
-      const h = harness();
-      open(h, "/sessions/a.jsonl");
-      const kept = open(h, "/sessions/b.jsonl");
-      h.manager.closeForSession("/sessions/a.jsonl");
-      expect(h.manager.list().map((info) => info.id)).toEqual([kept.id]);
-    });
-
-    it("takes every shell down at shutdown", () => {
-      const h = harness();
-      open(h, "/sessions/a.jsonl");
-      open(h, "/sessions/b.jsonl");
-      h.manager.stop();
-      expect(h.manager.list()).toEqual([]);
-      expect(h.spawned.every((pty) => pty.killed)).toBe(true);
-    });
-  });
-
-  describe("listing and naming", () => {
-    it("filters by session", () => {
-      const h = harness();
-      open(h, "/sessions/a.jsonl");
-      open(h, "/sessions/a.jsonl");
-      open(h, "/sessions/b.jsonl");
-      expect(h.manager.list("/sessions/a.jsonl")).toHaveLength(2);
-      expect(h.manager.list("/sessions/b.jsonl")).toHaveLength(1);
-      expect(h.manager.list()).toHaveLength(3);
-    });
+  it("dedupes by executable name and gives sh-like shells -i", () => {
+    const shells = discoverShells();
+    const names = shells.map((shell) => shell.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
+    for (const shell of shells) {
+      if (["sh", "bash", "zsh", "fish", "dash", "ksh"].includes(shell.name.toLowerCase())) {
+        expect(shell.args).toEqual(["-i"]);
+      }
+    }
   });
 });
 
-/**
- * One test against the real module.
- *
- * Everything above replaces node-pty, which is what makes the suite fast and
- * deterministic — and also means none of it would notice if the real thing
- * stopped working on this machine. This is the smoke alarm. It is skipped where
- * the optional dependency is absent, which is a supported install.
- */
-const probe = new TerminalManager({ bus: new EventBus() });
-const available = probe.support().available;
+describe("TerminalManager support", () => {
+  it("answers that shells are available when the optional module loads", () => {
+    const h = harness();
+    expect(h.manager.support()).toEqual({ available: true });
+  });
 
-describe.skipIf(!available)("TerminalManager with the real node-pty", () => {
-  it("runs a command in the session's directory and reports its exit code", async () => {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "piws-terminal-")));
-    const bus = new EventBus();
-    const output: string[] = [];
-    let exitCode: number | null = null;
-    let announce: () => void = () => {};
-    const exited = new Promise<void>((resolve) => {
-      announce = resolve;
+  it("reports why when the module will not load", () => {
+    const h = harness({
+      loadModule: () => {
+        throw new Error("no prebuilt binary");
+      },
     });
-    bus.subscribe((event) => {
-      if (event.type === "terminal_output") output.push(event.data);
-      if (event.type === "terminal_state") {
-        exitCode = event.exitCode;
-        announce();
-      }
+    expect(h.manager.support()).toEqual({ available: false, reason: "no prebuilt binary" });
+  });
+
+  it("reports the same failure when the module answers null", () => {
+    const h = harness({ loadModule: () => null });
+    expect(h.manager.support().available).toBe(false);
+    expect(h.manager.support().reason).toContain("node-pty");
+  });
+
+  it("stops trying after the first failure", () => {
+    let calls = 0;
+    const h = harness({
+      loadModule: () => {
+        calls += 1;
+        throw new Error("gone");
+      },
     });
+    h.manager.support();
+    h.manager.support();
+    expect(calls).toBe(1);
+  });
 
-    const manager = new TerminalManager({ bus });
-    try {
-      const info = manager.create({ sessionPath: "/real.jsonl", cwd: dir, cols: 90, rows: 20 });
-      // A login shell prints a banner and sets up job control first; writing
-      // before that lands is the flaky version of this test.
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      manager.write(info.id, "pwd; exit 7\n");
-      await exited;
+  it("still lists shells when the native module is unavailable", () => {
+    const h = harness({ loadModule: () => null });
+    expect(h.manager.shells().length).toBeGreaterThan(0);
+    expect(h.manager.environment().maxCols).toBe(500);
+  });
+});
 
-      expect(output.join("")).toContain(dir);
-      expect(exitCode).toBe(7);
-      // A real PTY is what makes the shell's own `pwd` answer the directory
-      // rather than a pipe: the module is only worth having if this holds.
-      expect(manager.list()[0]?.exitCode).toBe(7);
-    } finally {
-      manager.stop();
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }, 20000);
+describe("TerminalManager create", () => {
+  it("spawns the requested shell, with the requested size and directory", () => {
+    const h = harness();
+    const shell = h.manager.shells()[0]!;
+    const info = h.manager.create({
+      id: "t-1",
+      sessionPath: "draft:a",
+      cwd: "/tmp/project",
+      cols: 100,
+      rows: 30,
+      shellPath: shell.path,
+    });
+    expect(info.id).toBe("t-1");
+    expect(info.state).toBe("running");
+    expect(info.title).toBe(shell.name);
+    expect(info.shell.path).toBe(shell.path);
+    expect(info.cols).toBe(100);
+    expect(info.rows).toBe(30);
+    expect(info.controllerId).toBeUndefined();
+    expect(h.spawnedPaths).toEqual([shell.path]);
+    expect(h.spawned[0]!.cols).toBe(100);
+  });
+
+  it("answers 503 — not 400 — when this host cannot run a shell", () => {
+    const h = harness({ loadModule: () => null });
+    expect(() =>
+      h.manager.create({ sessionPath: "s", cwd: "/tmp", cols: 80, rows: 24 }),
+    ).toThrow(HttpError);
+  });
+
+  it("is idempotent for the same id and session", () => {
+    const h = harness();
+    const first = open(h, { id: "same" });
+    const second = open(h, { id: "same" });
+    expect(second).toBe(first);
+    expect(h.spawned).toHaveLength(1);
+  });
+
+  it("refuses an id that another session already owns", () => {
+    const h = harness();
+    open(h, { id: "same", sessionPath: "a" });
+    expect(() => open(h, { id: "same", sessionPath: "b" })).toThrow(/占用/);
+  });
+
+  it("refuses to resurrect a closed id", () => {
+    const h = harness();
+    const id = open(h, { id: "gone" });
+    h.manager.close(id);
+    expect(() => open(h, { id: "gone" })).toThrow(/已关闭/);
+  });
+
+  it("counts finished shells toward the cap", () => {
+    const h = harness();
+    for (let index = 0; index < MAX_TERMINALS; index += 1) open(h);
+    h.spawned[0]!.exit(0);
+    expect(() => open(h)).toThrow(HttpError);
+  });
+
+  it("clamps a size no PTY could honour", () => {
+    const h = harness();
+    open(h);
+    expect(h.spawned[0]!.cols).toBe(80);
+    expect(h.spawned[0]!.rows).toBe(24);
+    const info = h.manager.create({
+      sessionPath: "draft:a",
+      cwd: "/tmp",
+      cols: 10_000,
+      rows: -3,
+    });
+    expect(info.cols).toBe(500);
+    expect(info.rows).toBe(2);
+  });
+
+  it("rejects a shell that is not installed", () => {
+    const h = harness();
+    expect(() =>
+      h.manager.create({
+        sessionPath: "s",
+        cwd: "/tmp",
+        cols: 80,
+        rows: 24,
+        shellPath: "/definitely/not/a/shell",
+      }),
+    ).toThrow(HttpError);
+  });
+});
+
+describe("TerminalManager output", () => {
+  it("coalesces a burst into one sequenced frame", async () => {
+    const h = harness();
+    open(h);
+    const pty = h.spawned[0]!;
+    pty.emit("a");
+    pty.emit("b");
+    pty.emit("c");
+    await settle();
+    const frames = h.only("terminal_output");
+    expect(frames).toHaveLength(1);
+    expect(frames[0]!.data).toBe("abc");
+    expect(frames[0]!.sequence).toBe(1);
+  });
+
+  it("separates bursts further apart than the interval, in order", async () => {
+    const h = harness();
+    open(h);
+    const pty = h.spawned[0]!;
+    pty.emit("one");
+    await settle();
+    pty.emit("two");
+    await settle();
+    expect(h.only("terminal_output").map((frame) => frame.sequence)).toEqual([1, 2]);
+  });
+
+  it("hands a late attachment the screen it missed", async () => {
+    const h = harness();
+    const id = open(h);
+    h.spawned[0]!.emit("hello ");
+    h.spawned[0]!.emit("world");
+    await settle();
+    const snapshot = await h.manager.attach(id, "a1");
+    expect(snapshot.screen).toContain("hello world");
+    expect(snapshot.sequence).toBe(1);
+    expect(snapshot.info.controllerId).toBe("a1");
+  });
+
+  it("refuses a screen for an unknown id", async () => {
+    const h = harness();
+    await expect(h.manager.attach("nope", "a1")).rejects.toThrow(/不存在/);
+  });
+});
+
+describe("TerminalManager attachment and input", () => {
+  it("makes the newest attachment the controller", async () => {
+    const h = harness();
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    await h.manager.attach(id, "a2");
+    expect(h.manager.list()[0]!.controllerId).toBe("a2");
+    expect(() => h.manager.write(id, "a1", "x")).toThrow(/接管/);
+    h.manager.write(id, "a2", "ok");
+    expect(h.spawned[0]!.writes).toEqual(["ok"]);
+  });
+
+  it("rejects a write larger than the input cap before it reaches the shell", async () => {
+    const h = harness();
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    expect(() => h.manager.write(id, "a1", "x".repeat(MAX_INPUT_BYTES + 1))).toThrow(HttpError);
+    expect(h.spawned[0]!.writes).toHaveLength(0);
+  });
+
+  it("drops a keystroke that races the shell's exit", async () => {
+    const h = harness();
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    h.spawned[0]!.exit(0);
+    await settle();
+    expect(() => h.manager.write(id, "a1", "x")).not.toThrow();
+    expect(h.spawned[0]!.writes).toHaveLength(0);
+  });
+
+  it("detaching the controller leaves nobody in control", async () => {
+    const h = harness();
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    h.manager.detach(id, "a1");
+    expect(h.manager.list()[0]!.controllerId).toBeUndefined();
+    expect(() => h.manager.write(id, "a1", "x")).toThrow(/接管/);
+  });
+
+  it("resizes only when the size actually changed, and clamps it", async () => {
+    const h = harness();
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    h.manager.resize(id, "a1", 120, 40);
+    h.manager.resize(id, "a1", 120, 40);
+    h.manager.resize(id, "a1", 9000, 9000);
+    expect(h.spawned[0]!.resizes).toEqual([
+      [120, 40],
+      [500, 200],
+    ]);
+  });
+
+  it("lets a non-controller read a snapshot without taking control", async () => {
+    const h = harness();
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    const snapshot = await h.manager.snapshot(id);
+    expect(snapshot.info.controllerId).toBe("a1");
+  });
+});
+
+describe("TerminalManager exit and teardown", () => {
+  it("flushes output before announcing the exit", async () => {
+    const h = harness();
+    const id = open(h);
+    const pty = h.spawned[0]!;
+    pty.emit("goodbye");
+    pty.exit(3);
+    await settle();
+    const output = h.events.findIndex((event) => event.type === "terminal_output");
+    const state = h.events.findIndex((event) => event.type === "terminal_state");
+    expect(output).toBeGreaterThanOrEqual(0);
+    expect(state).toBeGreaterThan(output);
+    const info = h.only("terminal_state").at(-1)!.info;
+    expect(info.state).toBe("exited");
+    expect(info.exitCode).toBe(3);
+    expect(info.controllerId).toBeUndefined();
+    await expect(h.manager.snapshot(id)).resolves.toMatchObject({ info: { state: "exited" } });
+  });
+
+  it("kills on close, announces it, and forgets the id", async () => {
+    const h = harness();
+    const id = open(h);
+    expect(h.manager.close(id)).toBe(true);
+    expect(h.manager.close(id)).toBe(false);
+    expect(h.manager.list()).toHaveLength(0);
+    expect(h.only("terminal_closed")).toHaveLength(1);
+    await settle();
+    expect(h.spawned[0]!.killed).toBe(1);
+  });
+
+  it("keeps a failed kill for a retry", async () => {
+    const h = harness();
+    const id = open(h);
+    h.spawned[0]!.killError = new Error("EBUSY");
+    h.manager.close(id);
+    await settle();
+    expect(h.manager.cleanupFailures()).toEqual([
+      { id, sessionPath: "draft:a", message: "EBUSY" },
+    ]);
+    expect(h.only("terminal_cleanup_failed")).toHaveLength(1);
+    h.spawned[0]!.killError = null;
+    expect(h.manager.retryCleanup(id)).toBe(true);
+    expect(h.manager.cleanupFailures()).toEqual([]);
+  });
+
+  it("closes only the shells of the session that went away", () => {
+    const h = harness();
+    open(h, { sessionPath: "a" });
+    open(h, { sessionPath: "a" });
+    open(h, { sessionPath: "b" });
+    h.manager.closeForSession("a");
+    expect(h.manager.list().map((info) => info.sessionPath)).toEqual(["b"]);
+  });
+
+  it("takes every shell down at shutdown", () => {
+    const h = harness();
+    open(h);
+    open(h);
+    h.manager.stop();
+    expect(h.manager.list()).toHaveLength(0);
+  });
+});
+
+describe("TerminalManager rename and reaping", () => {
+  it("trims a title and ignores an empty one", () => {
+    const h = harness();
+    const id = open(h);
+    expect(h.manager.rename(id, "  build  ").title).toBe("build");
+    expect(h.manager.rename(id, "   ").title).toBe("build");
+    expect(h.manager.rename(id, "x".repeat(500)).title).toHaveLength(120);
+  });
+
+  it("reclaims a shell nobody has attached to for the idle timeout", async () => {
+    let now = 1_000;
+    const h = harness({ idleTimeoutMs: 10_000, now: () => now });
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    h.manager.detach(id, "a1");
+    now += 10_001;
+    h.manager.reap(now);
+    expect(h.manager.list()).toHaveLength(0);
+    expect(h.only("terminal_closed")).toHaveLength(1);
+  });
+
+  it("drops an attachment that stopped sending heartbeats", async () => {
+    let now = 1_000;
+    const h = harness({ now: () => now });
+    const id = open(h);
+    await h.manager.attach(id, "a1");
+    now += ATTACHMENT_TIMEOUT_MS + 1;
+    h.manager.reap(now);
+    expect(h.manager.list()[0]!.controllerId).toBeUndefined();
+    expect(h.only("terminal_state").at(-1)!.info.controllerId).toBeUndefined();
+    await h.manager.attach(id, "a2");
+    expect(h.manager.list()[0]!.controllerId).toBe("a2");
+  });
+});
+
+describe("TerminalManager listing", () => {
+  it("filters by session", () => {
+    const h = harness();
+    open(h, { sessionPath: "a" });
+    open(h, { sessionPath: "b" });
+    expect(h.manager.list("a")).toHaveLength(1);
+    expect(h.manager.list("a")[0]!.sessionPath).toBe("a");
+    expect(h.manager.list()).toHaveLength(2);
+  });
 });

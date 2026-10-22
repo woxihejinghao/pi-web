@@ -26,7 +26,11 @@ import type {
   SessionListPage,
   SlashCommandList,
   StartLocation,
+  TerminalCleanupFailure,
+  TerminalEnvironment,
   TerminalInfo,
+  TerminalSnapshot,
+  TerminalShell,
   TerminalSupport,
   UpdatesView,
   WebSettings,
@@ -194,32 +198,76 @@ export const api = {
    * An empty `sessionPath` asks only about the host.
    */
   terminalState: (sessionPath: string) =>
-    request<{ support: TerminalSupport; terminals: TerminalInfo[] }>(
-      `/api/terminal?sessionPath=${encodeURIComponent(sessionPath)}`,
-    ),
+    request<{
+      support: TerminalSupport;
+      environment: TerminalEnvironment;
+      terminals: TerminalInfo[];
+    }>(`/api/terminal?sessionPath=${encodeURIComponent(sessionPath)}`),
+
+  /** The picker's choices: installed shells, the execution default first. */
+  terminalShells: () =>
+    request<{ shells: TerminalShell[]; default: TerminalShell | null }>("/api/terminal/shells"),
+
+  /** Closes whose process outlived the request, and can still be retried. */
+  terminalCleanup: () =>
+    request<{ failures: TerminalCleanupFailure[] }>("/api/terminal/cleanup"),
+
+  retryTerminalCleanup: (id: string) =>
+    request<{ retried: boolean }>(`/api/terminal/${encodeURIComponent(id)}/cleanup/retry`, {
+      method: "POST",
+    }),
 
   openTerminal: (body: {
+    /** Client-minted so a retried create cannot open a second shell. */
+    id?: string;
     sessionPath: string;
     /** The workspace to start in; the server checks it is a registered one. */
     cwd?: string;
     cols: number;
     rows: number;
+    /** A path from `terminalShells`; omitted means the host's default. */
+    shellPath?: string;
   }) => request<TerminalInfo>("/api/terminal", { method: "POST", body: JSON.stringify(body) }),
 
-  /** The screen so far, for a tab mounting onto a shell that kept running. */
-  terminalScrollback: (id: string) =>
-    request<{ scrollback: string }>(`/api/terminal/${encodeURIComponent(id)}`),
-
-  writeTerminal: (id: string, data: string) =>
-    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/input`, {
+  /** Take input control and answer with the screen as of `sequence`. */
+  attachTerminal: (id: string, attachmentId: string) =>
+    request<TerminalSnapshot>(`/api/terminal/${encodeURIComponent(id)}/attach`, {
       method: "POST",
-      body: JSON.stringify({ data }),
+      body: JSON.stringify({ attachmentId }),
     }),
 
-  resizeTerminal: (id: string, cols: number, rows: number) =>
+  detachTerminal: (id: string, attachmentId: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/detach`, {
+      method: "POST",
+      body: JSON.stringify({ attachmentId }),
+    }),
+
+  /** The screen without taking control — used to repair a sequence gap. */
+  terminalSnapshot: (id: string) =>
+    request<TerminalSnapshot>(`/api/terminal/${encodeURIComponent(id)}/snapshot`),
+
+  writeTerminal: (id: string, attachmentId: string, data: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/input`, {
+      method: "POST",
+      body: JSON.stringify({ attachmentId, data }),
+    }),
+
+  resizeTerminal: (id: string, attachmentId: string, cols: number, rows: number) =>
     request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/resize`, {
       method: "POST",
-      body: JSON.stringify({ cols, rows }),
+      body: JSON.stringify({ attachmentId, cols, rows }),
+    }),
+
+  renameTerminal: (id: string, title: string) =>
+    request<TerminalInfo>(`/api/terminal/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+
+  heartbeatTerminal: (id: string, attachmentId: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/heartbeat`, {
+      method: "POST",
+      body: JSON.stringify({ attachmentId }),
     }),
 
   closeTerminal: (id: string) =>

@@ -3,6 +3,23 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 新增
+
+- **终端按 dsh 的侧栏模型重做：服务端会话 + 客户端附件**。空面板现在是一张引导卡（不再是一句「空面板」），「+ → 终端」也先选 shell：默认跟主机登录 shell（macOS 上通常是 zsh），列出 `/etc/shells` 与 zsh / bash / fish / pwsh 等候选，选择记在标签上。同一时刻只有一个窗口能输入，其余窗口只读并显示「接管」；`write` / `resize` 由服务端校验 `attachmentId`，不是 controller 就回 409。
+- **屏幕快照与单调序号**：每个 shell 在服务端挂一棵 headless xterm（新增 `@xterm/headless`、`@xterm/addon-serialize` 依赖）。`attach` / `snapshot` 返回整屏加序号，`terminal_output` 帧带同一序号；客户端只接受更大的序号，断档时自动重拉快照，刷新、重连、两个窗口看同一个 shell 都不再回放字符流、不会花屏。
+- **标签名归服务端**（`TerminalInfo.title`，默认是实际启动的程序名）：双击标签就地改名，右键菜单同一项，改名走 `PATCH /api/terminal/:id`；`RightbarTab.shellPath` 让同一标签重挂载还开同一种 shell。
+- **退出/失败/丢失分得开**：已退出的 shell 保留屏幕与退出码，给「新建终端」；服务端重启后标签记住的 id 不存在时明说「进程已经不在了」，不再偷偷拿新 shell 顶替。关闭标签立刻移出界面并在后台 kill，失败在面板底部留可重试提示（`terminal_cleanup_failed`），不再 fire-and-forget。
+- **配额、校验与回收**：8 个上限含启动失败/已退出；列数行数夹到 500×200，输入上限 64 KiB（413）；无附件空闲 2 小时回收，附件 90 秒无心跳让出输入权；输入/尺寸变化只在真实变化时发给主机。
+
+### 变更
+
+- 终端主题即时跟随明暗切换（`MutationObserver`），xterm 设 `minimumContrastRatio: 4.5`。
+- 终端标签的「重新启动」改成「新建终端」：先释放旧 id 再开，不再复用同一个 shell。
+- `GET /api/terminal` 多返回 `environment`；新增 `GET /api/terminal/shells`、`GET /api/terminal/cleanup`、`POST /api/terminal/:id/attach|detach|heartbeat|cleanup/:id/retry`、`GET /api/terminal/:id/snapshot`、`PATCH /api/terminal/:id`。
+- 终端不再只开 bash；`docs/known-limitations.md` 与 `docs/design-notes.md` 的终端段落已重写。agent 侧仍只有 `bash`，没有 dsh 的六个 `terminal_*` 工具。
+
 ## [0.12.0] - 2026-10-16
 
 ### 新增

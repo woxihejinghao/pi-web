@@ -549,15 +549,62 @@ export interface TerminalSupport {
   reason?: string;
 }
 
+/** One shell the host found installed, with the arguments it starts it with. */
+export interface TerminalShell {
+  path: string;
+  /** The program's own name, for menus and tab labels. */
+  name: string;
+  args: string[];
+}
+
+/** The states a shell can be in, as the client draws them. */
+export type TerminalLifecycle = "starting" | "running" | "exited" | "failed";
+
 export interface TerminalInfo {
   id: string;
   sessionPath: string;
+  /** The user's name for it; empty until renamed. */
+  title: string;
+  /** The program actually started, after the host resolved the request. */
+  shell: TerminalShell;
+  cwd: string;
   cols: number;
   rows: number;
-  /** The program actually started, after the host resolved the request. */
-  shell: string;
+  state: TerminalLifecycle;
   /** null while the shell is alive; the code it left with afterwards. */
   exitCode: number | null;
+  /** Set when the shell failed to start or died without an exit code. */
+  error?: string;
+  /**
+   * The attachment allowed to type into it. Absent when nobody is attached or
+   * when the shell is finished; another window seeing its own id absent knows
+   * it is read-only and can ask to take control.
+   */
+  controllerId?: string;
+}
+
+/** The host's limits, as the client needs them for sizing and validation. */
+export interface TerminalEnvironment {
+  cwd: string;
+  maxCols: number;
+  maxRows: number;
+  maxInputBytes: number;
+  /** Rows the client may keep in xterm's own scrollback. */
+  scrollback: number;
+}
+
+/** The opening screen of a shell, plus the sequence it is current as of. */
+export interface TerminalSnapshot {
+  info: TerminalInfo;
+  screen: string;
+  sequence: number;
+}
+
+/** A close whose process outlived the tab; the host retries it. */
+export interface TerminalCleanupFailure {
+  id: string;
+  sessionPath: string;
+  message: string;
 }
 
 /**
@@ -611,9 +658,21 @@ export type BusEvent =
   | { type: "session_event"; sessionPath: string; event: SessionEvent }
   | { type: "session_closed"; sessionPath: string; reason: string }
   | { type: "session_external_changed"; sessionPath: string; modifiedAt: string }
-  | { type: "terminal_output"; terminalId: string; sessionPath: string; data: string }
-  | { type: "terminal_state"; terminalId: string; sessionPath: string; exitCode: number }
+  | {
+      type: "terminal_output";
+      terminalId: string;
+      sessionPath: string;
+      sequence: number;
+      data: string;
+    }
+  | { type: "terminal_state"; terminalId: string; sessionPath: string; info: TerminalInfo }
   | { type: "terminal_closed"; terminalId: string; sessionPath: string }
+  | {
+      type: "terminal_cleanup_failed";
+      terminalId: string;
+      sessionPath: string;
+      message: string;
+    }
   | {
       type: "workspace_changed";
       projectPath: string;

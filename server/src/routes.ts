@@ -2200,21 +2200,43 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   };
 
   /**
-   * What this host can offer, and what is already open for a session.
+   * What this host can offer, what is already open for a session, and the
+   * bounds the browser has to respect.
    *
-   * One request rather than two because the panel asks both questions at the
-   * same moment — the instant a terminal tab mounts — and the second is
-   * meaningless when the answer to the first is "no shells here". The support
-   * half is cheap: it reports whether the optional module loads, not whether a
-   * shell can start.
+   * One request rather than three because the panel asks them at the same
+   * moment, and the last two are meaningless when the answer to the first is
+   * "no shells here". Support is cheap: it reports whether the optional native
+   * module loads, not whether a shell can start.
    */
   route("GET", "/api/terminal", ({ res, query }) => {
     const requested = query.get("sessionPath");
     const sessionPath = requested === null || requested.length === 0 ? undefined : requested;
     json(res, 200, {
       support: terminals.support(),
+      environment: terminals.environment(),
       terminals: terminals.list(sessionPath),
     });
+  });
+
+  /**
+   * The shell picker's choices: installed shells, execution default first.
+   *
+   * Registered before `/:id` so "shells" is a path, not a terminal id. The
+   * default is repeated as a field rather than left implicit, because "the
+   * first one" is the server's rule and the browser must not have to guess it.
+   */
+  route("GET", "/api/terminal/shells", ({ res }) => {
+    const shells = terminals.shells();
+    json(res, 200, { shells, default: shells[0] ?? null });
+  });
+
+  /** Terminals whose process outlived a failed close, and can be retried. */
+  route("GET", "/api/terminal/cleanup", ({ res }) => {
+    json(res, 200, { failures: terminals.cleanupFailures() });
+  });
+
+  route("POST", "/api/terminal/cleanup/:id/retry", ({ res, params }) => {
+    json(res, 200, { retried: terminals.retryCleanup(params.id!) });
   });
 
   /** Open a shell. The response is the tab's handle, so it is a 201. */
@@ -2227,19 +2249,50 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       sessionPath,
       requested: optionalString(payload, "cwd"),
     });
+    const id = optionalString(payload, "id");
+    const shellPath = optionalString(payload, "shellPath");
     json(
       res,
       201,
-      terminals.create({ sessionPath, cwd, cols, rows }),
+      terminals.create({
+        ...(id === undefined ? {} : { id }),
+        ...(shellPath === undefined ? {} : { shellPath }),
+        sessionPath,
+        cwd,
+        cols,
+        rows,
+      }),
     );
   });
 
   /**
-   * The screen so far.
+   * Attach a page to a shell: take input control and answer with the screen.
    *
-   * Fetched by a tab that is mounting onto a shell that has been running
-   * without it — a sidebar toggle, a page reload, a session switch — so what it
-   * draws first is everything that happened, not everything from now on.
+   * The snapshot is what makes reconnecting cheap and correct: a headless
+   * xterm serialized the screen up to `sequence`, so the client resets its own
+   * xterm, writes this, and then applies live frames from `sequence + 1`.
+   */
+  route("POST", "/api/terminal/:id/attach", async ({ res, params, body }) => {
+    const attachmentId = requireString(asObject(body), "attachmentId");
+    json(res, 200, await terminals.attach(params.id!, attachmentId));
+  });
+
+  /** Let go of the shell without ending it. */
+  route("POST", "/api/terminal/:id/detach", ({ res, params, body }) => {
+    terminals.detach(params.id!, requireString(asObject(body), "attachmentId"));
+    json(res, 200, { ok: true });
+  });
+
+  /** The screen without taking control — used to repair a sequence gap. */
+  route("GET", "/api/terminal/:id/snapshot", async ({ res, params }) => {
+    json(res, 200, await terminals.snapshot(params.id!));
+  });
+
+  /**
+   * The screen so far, in the pre-snapshot shape.
+   *
+   * Kept for one release so a page served from an older build can still mount;
+   * new clients use `/:id/snapshot`, which also carries the sequence.
    */
   route("GET", "/api/terminal/:id", ({ res, params }) => {
     const scrollback = terminals.scrollbackOf(params.id!);
@@ -2248,7 +2301,8 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   });
 
   route("POST", "/api/terminal/:id/input", ({ res, params, body }) => {
-    terminals.write(params.id!, requireString(asObject(body), "data"));
+    const payload = asObject(body);
+    terminals.write(params.id!, requireString(payload, "attachmentId"), requireString(payload, "data"));
     json(res, 200, { ok: true });
   });
 
@@ -2256,9 +2310,21 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     const payload = asObject(body);
     terminals.resize(
       params.id!,
+      requireString(payload, "attachmentId"),
       requireNumber(payload, "cols"),
       requireNumber(payload, "rows"),
     );
+    json(res, 200, { ok: true });
+  });
+
+  /** Rename a shell. The title belongs to the session, not to one tab strip. */
+  route("PATCH", "/api/terminal/:id", ({ res, params, body }) => {
+    json(res, 200, terminals.rename(params.id!, optionalString(asObject(body), "title") ?? ""));
+  });
+
+  /** A mounted page says it is still looking; this is what keeps it from being reaped. */
+  route("POST", "/api/terminal/:id/heartbeat", ({ res, params, body }) => {
+    terminals.heartbeat(params.id!, requireString(asObject(body), "attachmentId"));
     json(res, 200, { ok: true });
   });
 

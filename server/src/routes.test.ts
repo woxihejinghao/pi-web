@@ -14,7 +14,7 @@ import { MINIMAL_SYSTEM_PROMPT } from "./presets.ts";
 import { SessionRegistry } from "./registry.ts";
 import { createRequestHandler } from "./routes.ts";
 import { sessionDirFor } from "./session-path.ts";
-import type { CreateTerminalInput, TerminalHost } from "./terminal.ts";
+import type { CreateTerminalInput, TerminalHost, TerminalInfo } from "./terminal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB_CLI = join(HERE, "testing", "stub-pi.mjs");
@@ -2515,26 +2515,50 @@ describe("terminal api", () => {
    * `terminal.test.ts`.
    */
   const opened: CreateTerminalInput[] = [];
+  const shell = { path: "/bin/sh", name: "sh", args: ["-i"] };
+  const infoFor = (id: string, input: CreateTerminalInput): TerminalInfo => ({
+    id,
+    sessionPath: input.sessionPath,
+    title: shell.name,
+    // The host decides this; the route does not carry a choice in.
+    shell,
+    cwd: input.cwd,
+    cols: input.cols,
+    rows: input.rows,
+    state: "running",
+    exitCode: null,
+  });
   const host: TerminalHost = {
     support: () => ({ available: true }),
+    shells: () => [shell],
+    environment: () => ({
+      cwd: "",
+      maxCols: 500,
+      maxRows: 200,
+      maxInputBytes: 64 * 1024,
+      scrollback: 1000,
+    }),
     list: () => [],
     scrollbackOf: () => null,
     create: (input) => {
       opened.push(input);
-      return {
-        id: `t-${String(opened.length)}`,
-        sessionPath: input.sessionPath,
-        cols: input.cols,
-        rows: input.rows,
-        // The host decides this; the route does not carry a choice in.
-        shell: "/bin/sh",
-        exitCode: null,
-      };
+      return infoFor(`t-${String(opened.length)}`, input);
     },
+    attach: async (id) => ({
+      info: infoFor(id, opened.at(-1)!),
+      screen: "",
+      sequence: 0,
+    }),
+    detach: () => undefined,
+    snapshot: async (id) => ({ info: infoFor(id, opened.at(-1)!), screen: "", sequence: 0 }),
     write: () => undefined,
     resize: () => undefined,
+    rename: (id, title) => ({ ...infoFor(id, opened.at(-1)!), title }),
+    heartbeat: () => undefined,
     close: () => true,
     closeForSession: () => undefined,
+    cleanupFailures: () => [],
+    retryCleanup: () => false,
   };
 
   let terminalServer: Server;
@@ -2568,10 +2592,40 @@ describe("terminal api", () => {
     const res = await fetch(`${terminalUrl}/api/terminal?sessionPath=`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      // Nothing but availability: there is no list to pick from any more.
       support: { available: true },
+      environment: {
+        cwd: "",
+        maxCols: 500,
+        maxRows: 200,
+        maxInputBytes: 64 * 1024,
+        scrollback: 1000,
+      },
       terminals: [],
     });
+  });
+
+  it("lists installed shells with the execution default called out", async () => {
+    const res = await fetch(`${terminalUrl}/api/terminal/shells`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      shells: [{ path: "/bin/sh", name: "sh", args: ["-i"] }],
+      default: { path: "/bin/sh", name: "sh", args: ["-i"] },
+    });
+  });
+
+  it("passes a client-minted id and shell choice through to the host", async () => {
+    const project = await createProject("terminal-choice");
+    const res = await openTerminal({
+      id: "tab-1",
+      sessionPath: "draft:abc",
+      cwd: project.path,
+      cols: 90,
+      rows: 28,
+      shellPath: "/bin/sh",
+    });
+    expect(res.status).toBe(201);
+    expect(opened[0]?.id).toBe("tab-1");
+    expect(opened[0]?.shellPath).toBe("/bin/sh");
   });
 
   it("runs a draft session's shell in the workspace it was given", async () => {

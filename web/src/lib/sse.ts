@@ -166,7 +166,7 @@ export function connectEvents(): () => void {
   // deliberately does not touch React state — see `terminal-state.ts`.
   source.addEventListener("terminal_output", (raw) => {
     const data = parse<Extract<BusEvent, { type: "terminal_output" }>>(raw);
-    if (data) emitTerminalOutput(data.terminalId, data.data);
+    if (data) emitTerminalOutput(data.terminalId, { sequence: data.sequence, data: data.data });
   });
 
   // Exit after output, always: the server flushes buffered frames before it
@@ -174,7 +174,12 @@ export function connectEvents(): () => void {
   // line on screen when the notice appears.
   source.addEventListener("terminal_state", (raw) => {
     const data = parse<Extract<BusEvent, { type: "terminal_state" }>>(raw);
-    if (data) terminalActions.noteExit(data.terminalId, data.exitCode);
+    if (data) terminalActions.noteState(data.info);
+  });
+
+  source.addEventListener("terminal_cleanup_failed", (raw) => {
+    const data = parse<Extract<BusEvent, { type: "terminal_cleanup_failed" }>>(raw);
+    if (data) void terminalActions.refreshCleanup().catch(() => {});
   });
 
   source.addEventListener("terminal_closed", (raw) => {

@@ -131,6 +131,27 @@
   white-space: nowrap;
 }
 
+/* The inline rename editor: the chip's own width, so the strip does not jump
+ * when a name is being changed. */
+.chipInput {
+  min-width: 0;
+  width: 12ch;
+  max-width: 22ch;
+  height: 20px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base);
+  padding: 0 4px;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.chipInput:focus {
+  border-color: var(--dsw-alias-border-l4, var(--dsw-alias-border-l3));
+}
+
 /* The close control appears on the active chip and on hover: a strip of many
  * tabs otherwise reads as a row of ✕ buttons. */
 .chipClose {
@@ -250,6 +271,18 @@
 
 .menuItem:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.menuLabel {
+  padding: 5px 8px 3px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.menuNote {
+  padding: 6px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
 }
 
 /* A host without a prebuilt node-pty still lists the terminal, greyed rather

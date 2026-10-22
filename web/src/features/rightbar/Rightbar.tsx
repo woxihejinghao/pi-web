@@ -31,6 +31,8 @@ import {
   type RightbarTab,
 } from "./rightbar-state.ts";
 import { TabMenu } from "./TabMenu.tsx";
+import { TerminalCleanup } from "./TerminalCleanup.tsx";
+import { terminalActions } from "./terminal-state.ts";
 import { closeTabs } from "./close-tabs.ts";
 import { shortcutTitle } from "./shortcuts.ts";
 import { useGesture } from "./pointer.ts";
@@ -62,6 +64,11 @@ function renameTab(key: string, tab: RightbarTab, label: string, prompt: string)
   if (next === null) return;
   const name = next.trim();
   if (name.length === 0) return;
+  // A terminal's label is host state, so it has to be renamed there too;
+  // otherwise the next state frame puts the old name back.
+  if (tab.kind === "terminal" && tab.target.length > 0) {
+    void terminalActions.rename(tab.target, name).catch(() => {});
+  }
   rightbarActions.setTabTitle(key, tab.id, name);
 }
 
@@ -365,6 +372,7 @@ function Panel({
           </Fragment>
         ))}
       </div>
+      <TerminalCleanup sessionPath={sessionPath} />
 
       {menu === null || menuTab === null ? null : (
         <TabMenu
