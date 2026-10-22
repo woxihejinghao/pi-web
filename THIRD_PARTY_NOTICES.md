@@ -24,6 +24,7 @@
 | 本仓库位置 | 与 dsh 的关系 |
 |---|---|
 | `web/src/components/dsh-icons.tsx` | Figma glyph 路径数据**逐字节相同**（仅外层 React 包装是本项目的） |
+| `web/src/features/rightbar/file-type-icon.tsx`、`code-file-icon-artwork.ts`、`FileTypeIcon.module.css`、`file-type.ts` | 文件类型图标（28px 纸张家族 + 48 个彩色方形图）逐字节移植 dsh 的 `ui-primitives` `FileTypeIcon` 及其图标表 |
 | `web/src/components/icons.tsx` | 部分 glyph 取自 dsh（如 `GaugeIcon` = dsh 的 `IconGaugeOutline16`），各 glyph 处已标注 |
 | `server/src/open-with.ts`、`web/src/features/rightbar/open-with.ts`、`OpenWithButton.tsx`、`OpenWithButton.module.css` | 预览里的「打开方式 / 显示文件位置」：分体按钮几何与菜单结构移植 dsh `ui-open-in-app` 的 `OpenTargetButton`，macOS 关联查询（JXA + LaunchServices、同名副本合并规则）与打开/显示语义移植 `native-command`；Windows/Linux 只保留打开与显示两个动作，主按钮永远是「打开」（有意不同，见[设计说明](./docs/design-notes.md)） |
 | `web/src/theme/design-platform.css` | `--dsw-*` / `--dsh-*` 设计 token 表逐字移植，含四个深色主题块 |

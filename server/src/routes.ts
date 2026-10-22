@@ -126,7 +126,7 @@ import {
   type TitleModelChoice,
   type TranscriptDisplay,
 } from "./store.ts";
-import { SSE_MAX_BUFFERED_BYTES } from "./config.ts";
+import { REQUEST_BODY_MAX_BYTES, SSE_MAX_BUFFERED_BYTES } from "./config.ts";
 
 export interface RequestContext {
   req: IncomingMessage;
@@ -190,6 +190,8 @@ export interface RouteDeps {
    * `SSE_MAX_BUFFERED_BYTES`; tests lower it to reach the limit in a few writes.
    */
   sseMaxBufferedBytes?: number;
+  /** Maximum JSON request body size. Tests lower it to exercise 413 handling. */
+  requestBodyMaxBytes?: number;
   /**
    * The shells behind `/api/terminal`. Defaults to a manager owned by this
    * handler, which is what the server and every test want: one handler means
@@ -233,7 +235,7 @@ function sendImage(res: ServerResponse, image: SessionImage): void {
   res.end(bytes);
 }
 
-async function readJsonBody(req: IncomingMessage, limit = 32 * 1024 * 1024): Promise<unknown> {
+async function readJsonBody(req: IncomingMessage, limit = REQUEST_BODY_MAX_BYTES): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -678,6 +680,13 @@ function toHttpError(err: unknown): HttpError {
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function declaredBodyTooLarge(req: IncomingMessage, limit: number): boolean {
+  const contentLength = req.headers["content-length"];
+  if (typeof contentLength !== "string") return false;
+  const size = Number(contentLength);
+  return Number.isFinite(size) && size > limit;
+}
+
 const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 /**
@@ -716,8 +725,13 @@ function assertLocalRequest(req: IncomingMessage): void {
  * tests can drive a stub pi process and a private storage root.
  */
 export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { registry, bus, staticHandler = null, sseMaxBufferedBytes = SSE_MAX_BUFFERED_BYTES } =
-    deps;
+  const {
+    registry,
+    bus,
+    staticHandler = null,
+    sseMaxBufferedBytes = SSE_MAX_BUFFERED_BYTES,
+    requestBodyMaxBytes = REQUEST_BODY_MAX_BYTES,
+  } = deps;
   const sessionRoot = deps.sessionRoot ?? getSessionRoot();
   const uiRequests = deps.uiRequests ?? pendingUiRequests;
   const terminals = deps.terminals ?? new TerminalManager({ bus });
@@ -2460,7 +2474,11 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
         json(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
         return;
       }
-      const body = BODY_METHODS.has(req.method ?? "GET") ? await readJsonBody(req) : undefined;
+      const hasBody = BODY_METHODS.has(req.method ?? "GET");
+      if (hasBody && declaredBodyTooLarge(req, requestBodyMaxBytes)) {
+        throw new HttpError(413, "request body too large");
+      }
+      const body = hasBody ? await readJsonBody(req, requestBodyMaxBytes) : undefined;
       await match.handler({ req, res, params: match.params, query: url.searchParams, body });
     } catch (err) {
       const httpError = toHttpError(err);

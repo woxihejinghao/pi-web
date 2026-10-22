@@ -1,5 +1,37 @@
+/* The Files pane's tree. The row metrics are dsh's (`ui-sidebar-files`
+ * FilesBody.module.css): rows inset from the pane edge, levels nested one under
+ * the other with their own 18px indent, and the file's type glyph at the folder
+ * glyph's 16px. */
+
 .tree {
-  padding: 6px 6px 12px;
+  /* The workspace list's 2px scrollbar offset: the bar sits 2px clear of the
+   * pane's edge, and the stable gutter stands in for the right padding so the
+   * rows keep their inset whether or not the tree overflows. */
+  margin-right: 2px;
+  padding: 8px 0 8px 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+}
+
+.tree::-webkit-scrollbar-track {
+  margin: 2px;
+}
+
+/* One level per nesting, as dsh indents them: the padding lives on the list, so
+ * a row's own box still spans the full width for its hover fill. */
+.level {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.level .level {
+  padding-left: 18px;
+}
+
+.item {
+  margin: 0;
+  padding: 0;
 }
 
 .row {
@@ -7,17 +39,17 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  height: 24px;
-  padding: 0 6px;
+  min-width: 0;
+  /* Rows abut, so the hover fill is the whole row; the tree's air is this
+   * inset, not a gap between rows. */
+  padding: 5px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-md);
   background: none;
+  color: inherit;
   font: inherit;
-  font-size: 12.5px;
-  color: var(--dsw-alias-label-primary);
   text-align: left;
   cursor: pointer;
-  white-space: nowrap;
 }
 
 .row:hover {
@@ -28,46 +60,27 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
-  padding: 0 6px;
-  font-size: 12.5px;
-  color: var(--dsw-alias-label-dimmed);
+  min-width: 0;
+  padding: 5px 10px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rowNote {
-  height: 22px;
-  display: flex;
-  align-items: center;
-  padding-right: 6px;
+  padding: 3px 10px;
   font-size: 11.5px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-/* The disclosure slot keeps its width whether or not an arrow is drawn, so a
- * file row lines up with its siblings in the same directory. */
-.chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  height: 12px;
+/* The folder sheet rides the tertiary ink, as the workspace tree's slot does;
+ * the file-type mark carries its own colour and must not inherit this. */
+.folderIcon {
   flex: 0 0 auto;
   color: var(--dsw-alias-label-tertiary);
-  transition: transform 0.12s ease;
-}
-
-.chevronOpen {
-  transform: rotate(90deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chevron {
-    transition: none;
-  }
 }

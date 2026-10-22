@@ -296,6 +296,18 @@ function trace(event: string): void {
   }
 }
 
+function killWindowsTree(child: ChildProcess): void {
+  if (process.platform !== "win32" || child.pid === undefined) return;
+  // `ChildProcess.kill()` only targets the direct node process on Windows;
+  // pi may have already spawned RPC/tool descendants. taskkill /T reaps the
+  // whole tree without adding a native dependency.
+  const result = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  result.once("error", (error) => recordLine(`[desktop] taskkill failed: ${error.message}`));
+}
+
 async function stopServer(child: ChildProcess, exited: Promise<number | null>): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
     trace("stop: already exited");
@@ -304,8 +316,11 @@ async function stopServer(child: ChildProcess, exited: Promise<number | null>): 
   trace("stop: SIGTERM");
   child.kill("SIGTERM");
   const finished = await Promise.race([exited, sleep(5_000).then(() => "timeout" as const)]);
-  trace(`stop: ${finished === "timeout" ? "timeout, SIGKILL" : "exited"}`);
-  if (finished === "timeout") child.kill("SIGKILL");
+  trace(`stop: ${finished === "timeout" ? "timeout, force tree kill" : "exited"}`);
+  if (finished === "timeout") {
+    if (process.platform === "win32") killWindowsTree(child);
+    else child.kill("SIGKILL");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -639,8 +654,16 @@ function quitGracefully(): void {
 
 /** Stops the server whether or not it got as far as being ready. */
 async function stopServerProcess(): Promise<void> {
-  if (handle !== null) await handle.stop();
-  else starting?.kill("SIGTERM");
+  if (handle !== null) {
+    await handle.stop();
+    return;
+  }
+  if (starting !== null) {
+    starting.kill("SIGTERM");
+    // Startup can also have spawned descendants before health became ready.
+    if (process.platform === "win32") killWindowsTree(starting);
+    starting = null;
+  }
 }
 
 async function main(): Promise<void> {

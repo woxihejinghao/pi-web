@@ -542,6 +542,8 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   /** Whether pi is compacting right now; see `ConversationView.compacting`. */
   const compactingRef = useRef(false);
   const loadingRef = useRef(true);
+  /** Monotonically invalidates history loads whose session is no longer current. */
+  const loadGenerationRef = useRef(0);
   const errorRef = useRef<string | null>(null);
   const retryRef = useRef<RetryState | null>(null);
   /**
@@ -902,11 +904,13 @@ export function useConversation(sessionPath: string | null): ConversationApi {
 
   const load = useCallback(
     async (path: string) => {
+      const generation = ++loadGenerationRef.current;
       loadingRef.current = true;
       errorRef.current = null;
       publish();
       try {
         const { messages, forkPoints } = await api.getMessages(path);
+        if (generation !== loadGenerationRef.current) return;
         // System messages replay the entire prompt and tool loadout; the UI
         // never shows them and they would dwarf the real conversation.
         const visible = messages.filter((message) => message.role !== "system");
@@ -921,6 +925,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         persistedNotifiedRef.current = visible.some((message) => message.role === "assistant");
         loadingRef.current = false;
       } catch (err) {
+        if (generation !== loadGenerationRef.current) return;
         errorRef.current = (err as Error).message;
         loadingRef.current = false;
       }
@@ -934,6 +939,8 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   );
 
   useEffect(() => {
+    // Invalidate any history request from the session that just became stale.
+    loadGenerationRef.current += 1;
     messagesRef.current = [];
     deliveredUsersRef.current = 0;
     queueRef.current = [];
@@ -1000,10 +1007,13 @@ export function useConversation(sessionPath: string | null): ConversationApi {
 
       // Show the user's turn immediately; `message_end` for user messages is
       // deliberately ignored above, so this stays the single source.
-      messagesRef.current = [
-        ...messagesRef.current,
-        { role: "user", content: userContent(message, images), timestamp: Date.now() },
-      ];
+      const sendGeneration = loadGenerationRef.current;
+      const optimisticMessage: AgentMessage = {
+        role: "user",
+        content: userContent(message, images),
+        timestamp: Date.now(),
+      };
+      messagesRef.current = [...messagesRef.current, optimisticMessage];
       if (mode === "prompt") streamingRef.current = true;
       // A prompt is sent as a prompt, so pi has taken it up the moment the call
       // returns; counting it here keeps the turn before it from looking live for
@@ -1033,8 +1043,15 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         else await api.prompt(sessionPath, message, images);
         return true;
       } catch (err) {
-        // Roll the optimistic turn back so the failure is visible, not implied.
-        messagesRef.current = messagesRef.current.slice(0, -1);
+        // A late response from a previous session must not mutate the current
+        // session's transcript or counters.
+        if (sendGeneration !== loadGenerationRef.current) return false;
+        // Roll back this send only. Another concurrent send or stream event may
+        // have appended after it, so removing the last row is not safe.
+        const optimisticIndex = messagesRef.current.indexOf(optimisticMessage);
+        if (optimisticIndex >= 0) {
+          messagesRef.current = messagesRef.current.filter((_, index) => index !== optimisticIndex);
+        }
         if (mode === "prompt") deliveredUsersRef.current -= 1;
         if (queueEntry) {
           queueRef.current = queueRef.current.filter((entry) => entry.id !== queueEntry.id);

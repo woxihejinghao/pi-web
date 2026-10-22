@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -39,8 +40,11 @@ interface Shown {
 export function ImageLightboxProvider({ children }: { children: ReactNode }) {
   const t = useT();
   const [shown, setShown] = useState<Shown | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const open = useCallback((image: ImageBlock, alt: string): void => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setShown({ image, alt });
   }, []);
   const close = useCallback((): void => {
@@ -49,12 +53,25 @@ export function ImageLightboxProvider({ children }: { children: ReactNode }) {
   const api = useMemo(() => ({ open }), [open]);
 
   useEffect(() => {
-    if (shown === null) return;
+    if (shown === null) {
+      openerRef.current?.focus({ preventScroll: true });
+      openerRef.current = null;
+      return;
+    }
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape" && !event.isComposing) {
+        event.preventDefault();
+        close();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>("[data-focus-first]")?.focus({ preventScroll: true });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [shown, close]);
 
   return (
@@ -62,10 +79,19 @@ export function ImageLightboxProvider({ children }: { children: ReactNode }) {
       {children}
       {shown === null ? null : (
         <div
+          ref={dialogRef}
           className={styles.mask}
           role="dialog"
+          aria-labelledby="lightbox-title"
           aria-modal="true"
           aria-label={t("lightbox.title")}
+          onKeyDown={(event) => {
+            if (event.key !== "Tab") return;
+            const target = dialogRef.current?.querySelector<HTMLElement>("[data-focus-first]");
+            if (!target) return;
+            event.preventDefault();
+            target.focus();
+          }}
           // The mask is the close target, so a click beside the picture does
           // what a click on a photo viewer always does. The comparison against
           // `currentTarget` is what keeps a click *on* the picture (or on the
@@ -78,6 +104,7 @@ export function ImageLightboxProvider({ children }: { children: ReactNode }) {
           <button
             type="button"
             className={styles.close}
+            data-focus-first
             onClick={close}
             aria-label={t("common.close")}
             title={t("lightbox.closeTitle")}

@@ -222,14 +222,12 @@ export class TerminalManager implements TerminalHost {
         env: shellEnv(),
       });
     } catch (err) {
-      // A spawn that throws means this machine's node-pty is broken rather than
-      // this request being wrong — most often a `spawn-helper` installed
-      // without its execute bit, which reads as `posix_spawnp failed`. Retire
-      // the module so every later call takes the cheap "unavailable" path
-      // instead of retrying a failure that will not heal.
-      this.module = null;
-      this.failure = (err as Error).message;
-      throw new HttpError(503, `终端无法启动：${this.failure}`);
+      // A spawn failure is transient and request-specific: the module loaded
+      // successfully, so keep it cached and let a later request retry. Module
+      // loading failures are handled separately by load() and remain cached as
+      // unavailable.
+      const failure = err instanceof Error ? err.message : String(err);
+      throw new HttpError(503, `终端无法启动：${failure}`);
     }
 
     const record: TerminalRecord = {

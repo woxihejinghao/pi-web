@@ -1,5 +1,6 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { join, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { badRequest, forbidden } from "./errors.ts";
 
 /**
@@ -35,11 +36,37 @@ export function assertAllowedSessionPath(input: string, root = getSessionRoot())
     throw badRequest("sessionPath is required");
   }
   const path = resolve(input);
+  const resolvedRoot = resolve(root);
   if (!path.endsWith(".jsonl")) {
     throw badRequest(`not a session file: ${path}`);
   }
-  if (path !== root && !path.startsWith(root + sep)) {
-    throw forbidden(`session path is outside ${root}`);
+
+  // Lexical containment is not enough: a session file (or one of its parent
+  // directories) may be a symlink to somewhere outside the storage root.
+  // Canonicalize the existing part of each path while retaining the requested
+  // path when the file itself does not exist yet.
+  const canonicalRoot = canonicalPath(resolvedRoot);
+  const canonicalPathname = canonicalPath(path);
+  if (
+    canonicalPathname !== canonicalRoot &&
+    !canonicalPathname.startsWith(canonicalRoot + sep)
+  ) {
+    throw forbidden(`session path is outside ${resolvedRoot}`);
   }
   return path;
+}
+
+function canonicalPath(path: string): string {
+  let current = path;
+  const suffix: string[] = [];
+  while (true) {
+    try {
+      return suffix.reduceRight((base, part) => join(base, part), realpathSync(current));
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return path;
+      suffix.push(basename(current));
+      current = parent;
+    }
+  }
 }

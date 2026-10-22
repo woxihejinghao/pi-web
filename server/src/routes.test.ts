@@ -97,6 +97,35 @@ async function createProject(name = "demo-project"): Promise<{ id: string; path:
   return res.body;
 }
 
+describe("request limits", () => {
+  it("rejects a declared body larger than the configured limit before parsing", async () => {
+    const tinyRegistry = new SessionRegistry({ cliPath: STUB_CLI });
+    const tinyHandler = createRequestHandler({
+      registry: tinyRegistry,
+      bus: new EventBus(),
+      sessionRoot,
+      requestBodyMaxBytes: 4,
+    });
+    const tinyServer = createServer((req, res) => {
+      void tinyHandler(req, res);
+    });
+    await new Promise<void>((resolve) => tinyServer.listen(0, "127.0.0.1", resolve));
+    const tinyBase = `http://127.0.0.1:${(tinyServer.address() as AddressInfo).port}`;
+    try {
+      const res = await fetch(`${tinyBase}/api/projects`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: projectRoot }),
+      });
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({ error: "request body too large" });
+    } finally {
+      await tinyRegistry.closeAll("test-cleanup");
+      await new Promise<void>((resolve) => tinyServer.close(() => resolve()));
+    }
+  });
+});
+
 describe("health", () => {
   it("reports ok with the active session count", async () => {
     const res = await api("/api/health");

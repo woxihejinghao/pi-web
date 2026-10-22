@@ -66,6 +66,8 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
   const scanned = useRef<ScannedDirectory | null>(null);
   /** Stale listing responses are dropped: a newer scan has already been asked for. */
   const requestSeq = useRef(0);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async (path?: string, syncAddress = true): Promise<void> => {
     const seq = ++requestSeq.current;
@@ -96,6 +98,7 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
     setError(null);
     setChoosing(false);
     setDropping(false);
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     scanned.current = null;
     requestSeq.current += 1;
     void load();
@@ -115,12 +118,25 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
   }, [open, listing, address, load]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      openerRef.current?.focus({ preventScroll: true });
+      openerRef.current = null;
+      return;
+    }
     const onKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !event.isComposing) {
+        event.preventDefault();
+        onClose();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>("[data-focus-first]")?.focus({ preventScroll: true });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -130,6 +146,23 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
   // scan lands — narrowing a stale level would move the view twice.
   const { tail } = listing ? readDraft(listing, address, scanned.current) : { tail: null };
   const rows = listing ? matchingEntries(listing.entries, tail) : [];
+
+  const onDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? []);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const onAddressKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key !== "Enter") return;
@@ -187,6 +220,8 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
     setChoosing(true);
     try {
       await onSelect(listing.path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setChoosing(false);
     }
@@ -202,10 +237,12 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
       onDrop={onDrop}
     >
       <div
+        ref={dialogRef}
         className={clsx(styles.dialog, dropping && styles.dialogDropping)}
         role="dialog"
         aria-modal="true"
         aria-label={t("picker.title")}
+        onKeyDown={onDialogKeyDown}
         onClick={(event) => event.stopPropagation()}
       >
         {dropping ? (
@@ -215,7 +252,7 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
         ) : null}
         <header className={styles.header}>
           <h2 className={styles.title}>{t("picker.title")}</h2>
-          <button type="button" className={styles.close} onClick={onClose} aria-label={t("settings.autoCompaction.off")}>
+          <button type="button" className={styles.close} data-focus-first onClick={onClose} aria-label={t("settings.autoCompaction.off")}>
             <CloseIcon />
           </button>
         </header>

@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
-import { FolderIcon, RefreshIcon } from "../../components/icons.tsx";
+import { RefreshIcon } from "../../components/icons.tsx";
+import { Glyph } from "../../components/dsh-icons.tsx";
 import { api } from "../../lib/api.ts";
 import type { WorkspaceEntry } from "../../lib/types.ts";
-import { FileIcon, TreeChevronIcon } from "./rightbar-icons.tsx";
+import { FileTypeIcon } from "./file-type-icon.tsx";
 import { PathLabel } from "./rightbar-path.tsx";
 import pane from "./Pane.module.css";
 import styles from "./FilesTab.module.css";
 import { useT } from "../../lib/app-state.ts";
 
-interface Level {
+/** One directory level of the tree, as the panel holds it. */
+export interface TreeLevel {
   status: "loading" | "ready" | "failed";
   entries: WorkspaceEntry[];
   truncated: boolean;
@@ -24,6 +26,11 @@ interface Level {
  * would otherwise turn the panel's first paint into a recursive walk. A level
  * that has been fetched stays in memory while it is collapsed, so folding and
  * unfolding a directory does not re-list it.
+ *
+ * Fetching and drawing are split: the cache lives here, and {@link FilesLevel}
+ * draws whatever level it is handed. That is what lets the recursion pass the
+ * `levels` record down to the nested lists instead of closing over a function
+ * defined in this body.
  */
 export function FilesTab({
   projectId,
@@ -36,7 +43,7 @@ export function FilesTab({
   onOpenFile(path: string): void;
 }) {
   const t = useT();
-  const [levels, setLevels] = useState<Record<string, Level>>({});
+  const [levels, setLevels] = useState<Record<string, TreeLevel>>({});
   const [expanded, setExpanded] = useState<Record<string, true>>({ "": true });
 
   const load = useCallback(
@@ -101,81 +108,6 @@ export function FilesTab({
     [expanded, levels, load],
   );
 
-  const renderLevel = (path: string, depth: number): React.ReactNode[] => {
-    const level = levels[path];
-    if (level === undefined) return [];
-    if (level.status === "failed") {
-      return [
-        <div key={`${path}:error`} className={styles.rowNote} style={indent(depth)}>
-          {level.error}
-        </div>,
-      ];
-    }
-    if (level.status === "loading" && level.entries.length === 0) {
-      return [
-        <div key={`${path}:loading`} className={styles.rowNote} style={indent(depth)}>{t("common.loading")}</div>,
-      ];
-    }
-    if (level.entries.length === 0) {
-      return [
-        <div key={`${path}:empty`} className={styles.rowNote} style={indent(depth)}>{t("files.empty")}</div>,
-      ];
-    }
-
-    const rows: React.ReactNode[] = [];
-    for (const entry of level.entries) {
-      if (entry.type === "other") {
-        rows.push(
-          <div key={entry.path} className={styles.rowDisabled} style={indent(depth)}>
-            <span className={styles.name}>{entry.name}</span>
-          </div>,
-        );
-        continue;
-      }
-      if (entry.type === "directory") {
-        const open = expanded[entry.path] === true;
-        rows.push(
-          <button
-            key={entry.path}
-            type="button"
-            className={styles.row}
-            style={indent(depth)}
-            aria-expanded={open}
-            onClick={() => toggle(entry.path)}
-          >
-            <span className={clsx(styles.chevron, open && styles.chevronOpen)}>
-              <TreeChevronIcon width={12} height={12} />
-            </span>
-            <FolderIcon width={13} height={13} />
-            <span className={styles.name}>{entry.name}</span>
-          </button>,
-        );
-        if (open) rows.push(...renderLevel(entry.path, depth + 1));
-        continue;
-      }
-      rows.push(
-        <button
-          key={entry.path}
-          type="button"
-          className={styles.row}
-          style={indent(depth)}
-          title={entry.path}
-          onClick={() => onOpenFile(entry.path)}
-        >
-          <span className={styles.chevron} />
-          <FileIcon width={13} height={13} />
-          <span className={styles.name}>{entry.name}</span>
-        </button>,
-      );
-    }
-    if (level.truncated) {
-      rows.push(
-        <div key={`${path}:truncated`} className={styles.rowNote} style={indent(depth)}>{t("files.tooMany")}</div>,
-      );
-    }
-    return rows;
-  };
-
   return (
     <div className={pane.pane}>
       <div className={pane.header}>
@@ -192,12 +124,185 @@ export function FilesTab({
           <RefreshIcon width={14} height={14} />
         </button>
       </div>
-      <div className={clsx(pane.scroll, styles.tree)}>{renderLevel("", 0)}</div>
+      <div className={clsx(pane.scroll, styles.tree)}>
+        <FilesNode path="" levels={levels} expanded={expanded} onToggle={toggle} onOpenFile={onOpenFile} />
+      </div>
     </div>
   );
 }
 
-/** Left padding for one tree row; the depth is the only thing that varies. */
-function indent(depth: number): CSSProperties {
-  return { paddingLeft: `${String(8 + depth * 12)}px` };
+/** One level from the cache: nothing is drawn until it has been listed. */
+function FilesNode({
+  path,
+  levels,
+  expanded,
+  onToggle,
+  onOpenFile,
+}: {
+  path: string;
+  levels: Readonly<Record<string, TreeLevel>>;
+  expanded: Readonly<Record<string, true>>;
+  onToggle(path: string): void;
+  onOpenFile(path: string): void;
+}): React.ReactNode {
+  const level = levels[path];
+  if (level === undefined) return null;
+  return (
+    <FilesLevel
+      level={level}
+      levels={levels}
+      expanded={expanded}
+      onToggle={onToggle}
+      onOpenFile={onOpenFile}
+    />
+  );
+}
+
+/**
+ * One level of the tree, drawn from levels that are already in memory.
+ *
+ * Drawing is a function of its inputs, which is what makes this the half a test
+ * can render directly: lists in, rows out, no fetching and no state of its own.
+ * A level that is still loading, or that could not be read, is a note row in
+ * place of its entries.
+ *
+ * The level is one `<ul>` and a directory's children are a `<ul>` inside its
+ * `<li>`, so the indent is the nesting depth rather than a padding number
+ * threaded through the recursion.
+ */
+export function FilesLevel({
+  level,
+  levels,
+  expanded,
+  onToggle,
+  onOpenFile,
+}: {
+  level: TreeLevel;
+  levels: Readonly<Record<string, TreeLevel>>;
+  expanded: Readonly<Record<string, true>>;
+  onToggle(path: string): void;
+  onOpenFile(path: string): void;
+}): React.ReactNode {
+  const t = useT();
+  if (level.status === "failed") {
+    return (
+      <ul className={styles.level}>
+        <li className={styles.item}>
+          <div className={styles.rowNote}>{level.error}</div>
+        </li>
+      </ul>
+    );
+  }
+  if (level.status === "loading" && level.entries.length === 0) {
+    return (
+      <ul className={styles.level}>
+        <li className={styles.item}>
+          <div className={styles.rowNote}>{t("common.loading")}</div>
+        </li>
+      </ul>
+    );
+  }
+  if (level.entries.length === 0) {
+    return (
+      <ul className={styles.level}>
+        <li className={styles.item}>
+          <div className={styles.rowNote}>{t("files.empty")}</div>
+        </li>
+      </ul>
+    );
+  }
+
+  const rows: React.ReactNode[] = [];
+  for (const entry of level.entries) {
+    if (entry.type === "other") {
+      rows.push(
+        <li key={entry.path} className={styles.item}>
+          <div className={styles.rowDisabled}>
+            <span className={styles.name}>{entry.name}</span>
+          </div>
+        </li>,
+      );
+    } else if (entry.type === "directory") {
+      rows.push(
+        <li key={entry.path} className={styles.item}>
+          <DirectoryNode
+            entry={entry}
+            levels={levels}
+            expanded={expanded}
+            onToggle={onToggle}
+            onOpenFile={onOpenFile}
+          />
+        </li>,
+      );
+    } else {
+      rows.push(
+        <li key={entry.path} className={styles.item}>
+          <button
+            type="button"
+            className={styles.row}
+            title={entry.path}
+            onClick={() => onOpenFile(entry.path)}
+          >
+            <FileTypeIcon name={entry.name} size={16} />
+            <span className={styles.name}>{entry.name}</span>
+          </button>
+        </li>,
+      );
+    }
+  }
+  if (level.truncated) {
+    rows.push(
+      <li key="truncated" className={styles.item}>
+        <div className={styles.rowNote}>{t("files.tooMany")}</div>
+      </li>,
+    );
+  }
+  return <ul className={styles.level}>{rows}</ul>;
+}
+
+/**
+ * A directory row and, when it is open, the level beneath it.
+ *
+ * The two glyphs are dsh's two folders — `folderOpen` is not a tint of
+ * `folderClose` but its own drawing — so an open workspace reads as a different
+ * mark rather than a hue.
+ */
+function DirectoryNode({
+  entry,
+  levels,
+  expanded,
+  onToggle,
+  onOpenFile,
+}: {
+  entry: WorkspaceEntry;
+  levels: Readonly<Record<string, TreeLevel>>;
+  expanded: Readonly<Record<string, true>>;
+  onToggle(path: string): void;
+  onOpenFile(path: string): void;
+}): React.ReactNode {
+  const open = expanded[entry.path] === true;
+  return (
+    <>
+      <button
+        type="button"
+        className={styles.row}
+        aria-expanded={open}
+        onClick={() => onToggle(entry.path)}
+      >
+        <span className={styles.folderIcon}>
+          <Glyph name={open ? "folderOpen" : "folderClose"} size={16} />
+        </span>
+        <span className={styles.name}>{entry.name}</span>
+      </button>
+      {open ? (
+        <FilesNode
+          path={entry.path}
+          levels={levels}
+          expanded={expanded}
+          onToggle={onToggle}
+          onOpenFile={onOpenFile}
+        />
+      ) : null}
+    </>
+  );
 }

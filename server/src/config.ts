@@ -27,6 +27,15 @@ export const IDLE_TIMEOUT_MS = Number(process.env.PI_WEB_SIMPLE_IDLE_MS ?? 10 * 
 export const MAX_ACTIVE_SESSIONS = Number(process.env.PI_WEB_SIMPLE_MAX_SESSIONS ?? 8);
 
 /**
+ * Maximum JSON request body size accepted by the API. Keep this bounded because
+ * prompt image data is sent inline as base64 and otherwise an untrusted local
+ * client could make the server retain arbitrarily large payloads in memory.
+ */
+export const REQUEST_BODY_MAX_BYTES = Number(
+  process.env.PI_WEB_SIMPLE_REQUEST_BODY_BYTES ?? 32 * 1024 * 1024,
+);
+
+/**
  * How much one SSE connection may buffer while its socket is backed up.
  *
  * `res.write` returning false means Node's own buffer is full — the client is

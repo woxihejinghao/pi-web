@@ -262,6 +262,22 @@ describe("TerminalManager", () => {
       expect(statusOf(() => open(h))).toBe(503);
     });
 
+    it("retries after a transient PTY spawn failure", () => {
+      let attempts = 0;
+      const bus = new EventBus();
+      const pty: PtyModule = {
+        spawn: () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("posix_spawnp failed");
+          return new FakePty(80, 24);
+        },
+      };
+      const manager = new TerminalManager({ bus, loadModule: () => pty });
+      expect(statusOf(() => manager.create({ sessionPath: "/s.jsonl", cwd: "/work", cols: 80, rows: 24 }))).toBe(503);
+      expect(manager.create({ sessionPath: "/s.jsonl", cwd: "/work", cols: 80, rows: 24 }).exitCode).toBeNull();
+      expect(attempts).toBe(2);
+    });
+
     it("clamps a size that no PTY could honour", () => {
       const h = harness();
       const info = h.manager.create({
