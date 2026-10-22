@@ -3,7 +3,7 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [0.13.0] - 2026-10-22
 
 ### 新增
 
@@ -20,6 +20,13 @@
 - 终端标签的「重新启动」改成「新建终端」：先释放旧 id 再开，不再复用同一个 shell。
 - `GET /api/terminal` 多返回 `environment`；新增 `GET /api/terminal/shells`、`GET /api/terminal/cleanup`、`POST /api/terminal/:id/attach|detach|heartbeat|cleanup/:id/retry`、`GET /api/terminal/:id/snapshot`、`PATCH /api/terminal/:id`。
 - 终端不再只开 bash；`docs/known-limitations.md` 与 `docs/design-notes.md` 的终端段落已重写。agent 侧仍只有 `bash`，没有 dsh 的六个 `terminal_*` 工具。
+
+### 修复
+
+- **会话与路径的加固**：会话文件的 `sessionPath` 与工作区文件解析都改成先 canonicalize（`realpathSync`）再判前缀——符号链接指到目录之外现在被拒，`path=../../../etc/passwd` 在任何系统调用之前就返回 403；对应回归测试在 `server/src/session-path.test.ts` 与 `server/src/routes.test.ts`。
+- **请求体有上限**：`POST/PUT/PATCH/DELETE` 的 `Content-Length` 超过 32 MiB（`PI_WEB_SIMPLE_REQUEST_BODY_BYTES`）直接 413，不再先把整段 base64 图片读进内存再判定。
+- **会话状态不再被异步回写覆盖**：`useConversation` 的进行中状态改成按最新快照合并，异步回调晚到的旧值不再把界面打回上一轮（`web/src/features/conversation/useConversation.regression.test.ts` 覆盖）。
+- **桌面打包更稳**：四个平台的产物校验、依赖安装可复现，Windows 退出时清掉整棵子进程树，目录选择弹窗的焦点与 Esc 处理也补齐了。
 
 ## [0.12.0] - 2026-10-16
 
