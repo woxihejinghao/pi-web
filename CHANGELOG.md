@@ -3,6 +3,17 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.13.1] - 2026-10-22
+
+### 修复
+
+- **Linux 上创建不了带图会话的用例（也是 0.13.0 没能发上 npm 的原因）**：
+  `routes.test.ts` 把 ~200 KB base64 的转录塞进 `STUB_MESSAGES` 环境变量，而 Linux
+  对单条环境字符串的上限是 128 KiB（`MAX_ARG_STRLEN`），`spawn` 直接 E2BIG，
+  `/api/sessions/:id/state` 回 500。这条用例在本机 macOS 上一直通过，所以 CI 从
+  0.12.0 起就是红的、npm 停在 0.11.0。桩进程新增 `STUB_MESSAGES_FILE`：给到路径就
+  从文件读转录，环境变量只留给小 payload。
+
 ## [0.13.0] - 2026-10-22
 
 ### 新增
