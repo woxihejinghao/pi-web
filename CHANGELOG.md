@@ -15,6 +15,7 @@
 
 ### 变更
 
+- **文件树的四行样式补齐 dsh**（图标集本身早已和 dsh 逐字节相同，差的是装它的那棵树）：字号从写死的 12.5px 换成 dsh 的 `var(--dsh-content-font-size-secondary, 13px)`，跟着字号轴缩放（默认 14 时树是 13px）；文件名补上 `white-space: nowrap`，长名字现在走省略号而不是把行撑高；行内提示从 11.5px 回到 dsh 的 12px；文件行的类型图标挂上 dsh 的 `.fileIcon`（`flex: none`），长文件名挤过来时不再被压窄。
 - 终端主题即时跟随明暗切换（`MutationObserver`），xterm 设 `minimumContrastRatio: 4.5`。
 - 终端标签的「重新启动」改成「新建终端」：先释放旧 id 再开，不再复用同一个 shell。
 - `GET /api/terminal` 多返回 `environment`；新增 `GET /api/terminal/shells`、`GET /api/terminal/cleanup`、`POST /api/terminal/:id/attach|detach|heartbeat|cleanup/:id/retry`、`GET /api/terminal/:id/snapshot`、`PATCH /api/terminal/:id`。

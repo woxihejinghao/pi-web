@@ -243,7 +243,7 @@ export function FilesLevel({
             title={entry.path}
             onClick={() => onOpenFile(entry.path)}
           >
-            <FileTypeIcon name={entry.name} size={16} />
+            <FileTypeIcon name={entry.name} size={16} className={styles.fileIcon} />
             <span className={styles.name}>{entry.name}</span>
           </button>
         </li>,

@@ -10,7 +10,10 @@
   margin-right: 2px;
   padding: 8px 0 8px 8px;
   color: var(--dsw-alias-label-primary);
-  font-size: 12.5px;
+  /* dsh's FilesBody root reads the font-size axis (`content-font-size-secondary`,
+   * 13px at the 14px default) rather than pinning its own size, so the tree
+   * shrinks and grows with the transcript. */
+  font-size: var(--dsh-content-font-size-secondary, 13px);
 }
 
 .tree::-webkit-scrollbar-track {
@@ -67,6 +70,7 @@
 }
 
 .name {
+  white-space: nowrap;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -74,12 +78,18 @@
 
 .rowNote {
   padding: 3px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The folder sheet rides the tertiary ink, as the workspace tree's slot does;
- * the file-type mark carries its own colour and must not inherit this. */
+/* dsh's `.fileIcon` on the row's type glyph: the mark never shrinks under a
+ * long name. The folder sheet rides the tertiary ink, as the workspace tree's
+ * slot does; the file-type mark carries its own colour and must not inherit
+ * this. */
+.fileIcon {
+  flex: none;
+}
+
 .folderIcon {
   flex: 0 0 auto;
   color: var(--dsw-alias-label-tertiary);
