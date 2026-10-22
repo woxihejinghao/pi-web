@@ -9,6 +9,7 @@
  * pi's framing rule.
  */
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,7 +64,22 @@ const minimalComposition = args.includes("--no-extensions");
  * test that wants the `get_messages` route to answer from memory sets
  * STUB_MESSAGES to a JSON payload; everything else gets an empty transcript.
  */
-const stubMessages = process.env.STUB_MESSAGES ? JSON.parse(process.env.STUB_MESSAGES) : [];
+const stubMessages = readStubMessages();
+
+/**
+ * A test that needs a transcript bigger than a few characters points
+ * `STUB_MESSAGES_FILE` at a JSON file instead of putting the payload in the
+ * environment: Linux caps one environment string at 128 KiB (MAX_ARG_STRLEN),
+ * so a ~200 KB `STUB_MESSAGES` makes `execve` fail with E2BIG and the session
+ * opens with an error the test never asked for. macOS has no such per-string
+ * limit, which is why the payload fits there and not on the CI runner.
+ */
+function readStubMessages() {
+  const file = process.env.STUB_MESSAGES_FILE;
+  if (file) return JSON.parse(readFileSync(file, "utf8"));
+  return process.env.STUB_MESSAGES ? JSON.parse(process.env.STUB_MESSAGES) : [];
+}
+
 /**
  * Leave a prompted turn in flight. A real pi streams from `agent_start` until
  * the run settles, and while it does, its memory can hold turns no session file

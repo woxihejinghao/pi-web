@@ -67,6 +67,7 @@ afterEach(async () => {
   // the next process — a stale transcript, or a run left in flight, would be a
   // confusing failure somewhere else.
   delete process.env.STUB_MESSAGES;
+  delete process.env.STUB_MESSAGES_FILE;
   delete process.env.STUB_KEEP_RUNNING;
   await registry.closeAll("test-cleanup");
   await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -564,24 +565,33 @@ describe("sessions api", () => {
     // Deliberately bigger than any assertion below would notice if it leaked:
     // the response has to be the transcript, not the picture it mentions.
     const data = Buffer.alloc(150_000, 7).toString("base64");
-    process.env.STUB_MESSAGES = JSON.stringify([
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "看看" },
-          { type: "image", data: "dXNlcg==", mimeType: "image/png" },
-        ],
-        timestamp: 0,
-      },
-      {
-        role: "toolResult",
-        toolCallId: "c1",
-        toolName: "read",
-        content: [{ type: "image", data, mimeType: "image/png" }],
-        isError: false,
-        timestamp: 1,
-      },
-    ]);
+    // Through a file rather than STUB_MESSAGES: this payload is ~200 KB of base64,
+    // and Linux refuses to exec with any single environment string over 128 KiB
+    // (E2BIG), so as an env var it only ever opened on macOS.
+    const messagesFile = join(sessionRoot, "--live-images--", "stub-messages.json");
+    await writeFile(
+      messagesFile,
+      JSON.stringify([
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "看看" },
+            { type: "image", data: "dXNlcg==", mimeType: "image/png" },
+          ],
+          timestamp: 0,
+        },
+        {
+          role: "toolResult",
+          toolCallId: "c1",
+          toolName: "read",
+          content: [{ type: "image", data, mimeType: "image/png" }],
+          isError: false,
+          timestamp: 1,
+        },
+      ]),
+      "utf8",
+    );
+    process.env.STUB_MESSAGES_FILE = messagesFile;
 
     // Prompt it and leave the turn in flight: it stays resident for ten minutes
     // (registry.ts) *and* its memory is still ahead of the file, so the switch
