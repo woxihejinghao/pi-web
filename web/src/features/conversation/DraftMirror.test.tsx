@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DraftMirror } from "./DraftMirror.tsx";
+import type { SlashCommand } from "../../lib/types.ts";
 import { fileToken, REFERENCE_SLOT } from "./reference-token.ts";
 
 const html = (text: string): string => renderToStaticMarkup(<DraftMirror text={text} />);
@@ -30,6 +31,37 @@ describe("DraftMirror", () => {
   it("paints every reference in the draft", () => {
     const markup = html("a src/ b lib/ c");
     expect(markup.match(/class="[^"]*reference[^"]*"/g) ?? []).toHaveLength(4);
+  });
+
+  const commands: SlashCommand[] = [
+    { name: "skill:git-commit", source: "skill" },
+    { name: "help", source: "builtin" },
+  ];
+  const skillHtml = (value: string, available = commands): string =>
+    renderToStaticMarkup(<DraftMirror text={value} commands={available} />);
+
+  it("highlights a registered skill typed or selected into the draft", () => {
+    for (const value of ["/skill:git-commit", "/skill:git-commit ", "  /skill:git-commit fix it"]) {
+      const markup = skillHtml(value);
+      expect(markup).toMatch(/class="[^"]*skill[^"]*">\/skill:git-commit<\/span>/);
+      expect(text(markup)).toBe(value);
+    }
+  });
+
+  it("does not highlight partial, unknown, unavailable or merely mentioned skills", () => {
+    for (const value of ["/skill:git", "/skill:missing", "/skill:git-commit-extra", "see /skill:git-commit", "/skill:git-commit/file", "/help"]) {
+      expect(skillHtml(value)).not.toMatch(/class="[^"]*skill/);
+    }
+    expect(skillHtml("/skill:git-commit", [])).not.toMatch(/class="[^"]*skill/);
+  });
+
+  it("keeps file references and all draft characters alongside a skill", () => {
+    const value = `/skill:git-commit check ${REFERENCE_SLOT}${fileToken("api.ts")} and src/\n`;
+    const markup = skillHtml(value);
+    expect(markup).toMatch(/class="[^"]*skill/);
+    expect(markup).toContain("data-file");
+    expect(markup).toContain("reference");
+    expect(text(markup)).toBe(value);
   });
 
   it("renders an empty draft as nothing", () => {

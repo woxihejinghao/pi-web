@@ -278,7 +278,7 @@ export function Composer({
         />
 
         <div className={styles.inputStack}>
-          <DraftMirror text={text} className={styles.inputMirror} mirrorRef={mirrorRef} />
+          <DraftMirror text={text} commands={commands} className={styles.inputMirror} mirrorRef={mirrorRef} />
           <textarea
             ref={textareaRef}
             className={styles.input}

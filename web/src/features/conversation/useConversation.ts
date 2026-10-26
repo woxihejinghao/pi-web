@@ -554,8 +554,6 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const failedAttemptsRef = useRef(0);
   /** Wall-clock boundaries accumulated from the event stream; see `TimingState`. */
   const timingRef = useRef<TimingState>(emptyTiming());
-  /** Guards the one-time "this session now exists on disk" sidebar refresh. */
-  const persistedNotifiedRef = useRef(false);
   /**
    * A repaint already scheduled for the streaming update, or null.
    *
@@ -739,7 +737,6 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           const message = event.message as AgentMessage | undefined;
           if (!message) break;
           if (message.role === "assistant") {
-            const hadAssistant = messagesRef.current.some((m) => m.role === "assistant");
             messagesRef.current = [...messagesRef.current, message];
             slotRef.current = null;
 
@@ -761,13 +758,6 @@ export function useConversation(sessionPath: string | null): ConversationApi {
             }
             timing.stepStart = null;
             timing.firstTokenAt = null;
-
-            // pi writes the JSONL once the first assistant message lands, so
-            // this is the moment the sidebar can finally show the session.
-            if (!hadAssistant && !persistedNotifiedRef.current) {
-              persistedNotifiedRef.current = true;
-              actions.refreshSelectedProjectSessions();
-            }
           } else if (message.role === "user") {
             // An extension command's own message: the command steered it, so pi
             // is the only party that wrote a row for it — the composer
@@ -922,7 +912,6 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         // surviving queue re-reveals itself through deliveries instead.
         queueRef.current = [];
         forkPointsRef.current = forkPoints;
-        persistedNotifiedRef.current = visible.some((message) => message.role === "assistant");
         loadingRef.current = false;
       } catch (err) {
         if (generation !== loadGenerationRef.current) return;
@@ -963,7 +952,6 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     // set would put the running row under the next session's transcript, where
     // no `compaction_end` is ever going to arrive to clear it.
     compactingRef.current = false;
-    persistedNotifiedRef.current = false;
     // The history below belongs to the previous session until `load` says
     // otherwise; leaving this set would let a queued prompt skip the wait.
     setLoadedPath(null);

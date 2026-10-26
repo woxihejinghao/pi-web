@@ -271,6 +271,63 @@ describe("draft sessions", () => {
   });
 });
 
+describe("background session persistence", () => {
+  it("replaces an unsaved row and its title in the owning workspace after switching away", async () => {
+    appStore.update((state) => ({
+      ...state,
+      selectedProjectId: "other-project",
+      selectedSessionPath: "/other/session.jsonl",
+      sessions: { "project-1": [] },
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    mocked.listSessions.mockResolvedValue({
+      sessions: [diskSession(REAL_PATH, "修复登录问题")], total: 1,
+    });
+
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "assistant", content: [] },
+    });
+
+    await vi.waitFor(() => {
+      expect(appStore.get().unsavedSessions["project-1"]).toEqual([]);
+    });
+    expect(mocked.listSessions).toHaveBeenCalledWith("project-1", expect.any(Object));
+    expect(appStore.get().sessions["project-1"]?.[0]?.title).toBe("修复登录问题");
+    expect(appStore.get().selectedSessionPath).toBe("/other/session.jsonl");
+    expect(appStore.get().selectedProjectId).toBe("other-project");
+  });
+
+  it("retries persistence on settle if the first message still preceded the disk flush", async () => {
+    appStore.update((state) => ({
+      ...state,
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "assistant", content: [] },
+    });
+    await vi.waitFor(() => expect(mocked.listSessions).toHaveBeenCalledTimes(1));
+    expect(appStore.get().unsavedSessions["project-1"]).toEqual([REAL_PATH]);
+
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 1 });
+    actions.emitSessionEvent(REAL_PATH, { type: "agent_settled" });
+    await vi.waitFor(() => expect(appStore.get().unsavedSessions["project-1"]).toEqual([]));
+  });
+
+  it("does not refetch for tokens, user messages, or assistant messages already on disk", () => {
+    appStore.update((state) => ({
+      ...state, sessions: { "project-1": [diskSession(REAL_PATH)] },
+    }));
+    actions.emitSessionEvent(REAL_PATH, { type: "message_update" });
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "user", content: "hello" },
+    });
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "assistant", content: [] },
+    });
+    expect(mocked.listSessions).not.toHaveBeenCalled();
+  });
+});
+
 describe("pending prompts", () => {
   it("hands the text to the session that replaced the draft", () => {
     actions.queuePendingPrompt(REAL_PATH, "hello", "prompt");

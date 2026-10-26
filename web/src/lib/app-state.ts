@@ -21,6 +21,7 @@ import {
 import { createEmitter, createStore, useStoreSelector, type Emitter, type Store } from "./store.ts";
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
+  AgentMessage,
   AgentPresetRow,
   AgentSettings,
   ComposerModel,
@@ -1315,15 +1316,23 @@ export const actions = {
     });
   },
 
-  /**
-   * Fold an agent boundary into the sidebar's status mark.
-   *
-   * Called for every `session_event`, so it filters to the two boundaries that
-   * matter and leaves token deltas alone.
-   */
+  /** Track run boundaries and persistence even when the session is not open. */
   noteSessionActivity(sessionPath: string, event: SessionEvent): void {
     if (event.type === "agent_start") actions.markSessionOngoing(sessionPath);
     else if (event.type === "agent_settled") actions.markSessionSettled(sessionPath);
+
+    // pi first flushes a new session when its assistant message lands. This
+    // belongs to the global stream, not the conversation hook: switching away
+    // must not strand the row as "Unsaved" or refresh the wrong workspace.
+    const message = event.message as AgentMessage | undefined;
+    if ((event.type === "message_end" && message?.role === "assistant")
+      || event.type === "agent_settled") {
+      const state = appStore.get();
+      const owner = Object.keys(state.unsavedSessions).find((projectId) =>
+        state.unsavedSessions[projectId]?.includes(sessionPath),
+      );
+      if (owner !== undefined) void actions.refreshSessions(owner, { force: true });
+    }
   },
 
   markSessionOngoing(sessionPath: string): void {

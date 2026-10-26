@@ -8,6 +8,12 @@
  * is a character the textarea is laying out in the same place, and the moment
  * this span added width the caret would drift away from the words.
  */
+/* Keep the textarea's exact metrics: colour only, with no added icon, padding,
+ * font weight or font family that could shift its caret or line wrapping. */
+.skill {
+  color: var(--dsw-alias-state-business-primary);
+}
+
 .reference {
   position: relative;
   color: var(--dsw-alias-state-business-primary);
