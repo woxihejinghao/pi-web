@@ -199,7 +199,7 @@ describe("MessageActions stylesheet", () => {
     expect(reveal).toContain("position: relative");
     expect(reveal).toContain('[data-actions-reveal="hover"] .actions');
     expect(reveal).toContain("position: absolute");
-    expect(reveal).toContain("bottom: calc(-1 * var(--transcript-gap, 14px))");
+    expect(reveal).toContain("top: calc(100% + var(--transcript-gap, 14px))");
     // Without both edges the absolute row shrink-wraps and loses the alignment
     // the row above relies on (`actionsEnd` to the right, `timeStart` left).
     expect(reveal).toContain("left: 0");

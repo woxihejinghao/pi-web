@@ -208,7 +208,7 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: calc(-1 * var(--transcript-gap, 14px));
+    top: calc(100% + var(--transcript-gap, 14px));
     opacity: 0;
     transition: opacity 80ms ease;
   }
