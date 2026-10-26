@@ -1,8 +1,7 @@
 /*
- * The right-hand control shared by both version rows — 项目版本 used to be a
- * bare number, so the rule it needed then ("no control") is gone.
+ * The right-hand control for the project version row.
  *
- * It wraps rather than squeezing: the version, its status, and two buttons do
+ * It wraps rather than squeezing: the version, its status, and buttons do
  * not fit beside the description on a narrow window, and a wrapped button is
  * still usable where a clipped one is not.
  */
@@ -37,9 +36,7 @@
 }
 
 /*
- * The primary action of a row: an update available is the one thing on this
- * page worth leaving with. Two rows use it — 复制更新命令 for pi (the command
- * is the whole next step) and 立即更新 for this project (the button does it).
+ * The primary action is the one thing on this page worth leaving with.
  */
 .action {
   box-sizing: border-box;

@@ -3,6 +3,12 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.13.3] - 2026-10-26
+
+### 变更
+
+- 移除通用设置「关于」中的 pi 版本模块，保留项目版本信息及其检查更新、更新操作。
+
 ## [0.13.2] - 2026-10-26
 
 ### 修复
