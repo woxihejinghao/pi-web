@@ -1070,6 +1070,13 @@
   flex: 0 0 auto;
 }
 
+.sessionDraft {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .externalDot {
   width: 6px;
   height: 6px;

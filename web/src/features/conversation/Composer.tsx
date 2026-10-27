@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { SendIcon, StopIcon } from "../../components/icons.tsx";
 import type {
   BusySendBehavior,
@@ -21,7 +21,8 @@ import { useFileCompletion } from "./useFileCompletion.ts";
 import styles from "./Composer.module.css";
 import { appStore, useT } from "../../lib/app-state.ts";
 import { isCoarsePointer } from "../../lib/pointer.ts";
-import { useStoreSelector } from "../../lib/store.ts";
+import { useStore, useStoreSelector, type Store } from "../../lib/store.ts";
+import { composerDraftFor, type ComposerDraft } from "../../lib/composer-drafts.ts";
 import { isNarrow } from "../../layout/columns.ts";
 import { layoutStore } from "../../layout/layout-state.ts";
 
@@ -105,7 +106,13 @@ function deliveryOf(behavior: BusySendBehavior): "steer" | "followUp" {
  * be sent into, so they belong to the input rather than to the transcript
  * above it.
  */
-export function Composer({
+export function Composer(props: ComposerProps) {
+  const sessionPath = useStoreSelector(appStore, (state) => state.selectedSessionPath);
+  const draftStore = useMemo(() => composerDraftFor(sessionPath ?? ""), [sessionPath]);
+  return <SessionComposer key={sessionPath} {...props} draftStore={draftStore} />;
+}
+
+function SessionComposer({
   isStreaming,
   disabled,
   commands = [],
@@ -115,7 +122,8 @@ export function Composer({
   onSend,
   onAbort,
   workspacePath,
-}: ComposerProps) {
+  draftStore,
+}: ComposerProps & { draftStore: Store<ComposerDraft> }) {
   const t = useT();
   // The placeholder is the widest thing the card holds, and a phone's card is
   // one line tall: past that the text is clipped (see `Composer.module.css`).
@@ -129,14 +137,19 @@ export function Composer({
    * the session this card belongs to is inside it.
    */
   const projectId = useStoreSelector(appStore, (state) => state.selectedProjectId);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
+  const { text, sending, references } = useStore(draftStore);
+  const setText = useCallback((value: string) => {
+    draftStore.update((state) => ({ ...state, text: value }));
+  }, [draftStore]);
+  const setSending = (value: boolean) => {
+    draftStore.update((state) => ({ ...state, sending: value }));
+  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** The layer painting the draft under the transparent textarea. */
   const mirrorRef = useRef<HTMLDivElement>(null);
-  const reference = useReferenceDraft({ text, setText, textareaRef, workspacePath });
-  /** The pictures going with the text; see `useImageDraft` for why they are a hook. */
-  const draft = useImageDraft(reference);
+  const reference = useReferenceDraft({ text, setText, textareaRef, workspacePath, references });
+  /** The pictures and asynchronous reads belong to this session's store. */
+  const draft = useImageDraft(reference, draftStore);
 
   const completion = useSlashCompletion({ setText, textareaRef, commands });
   /** The `@` menu. Both completions read the same textarea; the two tokens
@@ -179,22 +192,26 @@ export function Composer({
     completion.close();
     fileCompletion.close();
     const choice = override ?? busySendBehavior;
-    const ok = await onSend(
-      reference.expand(message),
-      isStreaming ? deliveryOf(choice) : "prompt",
-      attachments,
-    );
-    if (!ok) {
-      // The draft as it was, not the trimmed sentence: the trim only decides
-      // whether there was anything to send, and putting its result back would
-      // drop the glyph slot off a reference that starts the draft.
-      setText(text);
-      draft.restore(attachments);
-    } else {
-      reference.clear();
+    let ok = false;
+    try {
+      ok = await onSend(
+        reference.expand(message),
+        isStreaming ? deliveryOf(choice) : "prompt",
+        attachments,
+      );
+    } finally {
+      if (!ok) {
+        // Restore to the originating session even if it is no longer mounted.
+        // Keep anything typed while the request was pending as well.
+        const current = draftStore.get();
+        setText(current.text ? `${text}\n${current.text}` : text);
+        draft.restore([...attachments, ...current.images]);
+      } else if (draftStore.get().text.length === 0) {
+        reference.clear();
+      }
+      setSending(false);
+      textareaRef.current?.focus();
     }
-    setSending(false);
-    textareaRef.current?.focus();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {

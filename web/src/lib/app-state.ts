@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { api, ApiError } from "./api.ts";
 import { APP_NAME } from "./brand.ts";
+import { clearComposerDrafts, deleteComposerDraft, moveComposerDraft } from "./composer-drafts.ts";
 import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
 import {
   pageIsAttended,
@@ -519,6 +520,7 @@ export const workspaceChanged: Emitter<{
 
 /** Test seam: restore the initial state. */
 export function resetAppState(): void {
+  clearComposerDrafts();
   appStore.set({ ...initialState });
   draftRequest = null;
   commandsRequests.clear();
@@ -1170,6 +1172,7 @@ export const actions = {
   async deleteSession(sessionPath: string): Promise<void> {
     try {
       const result = await api.deleteSession(sessionPath);
+      deleteComposerDraft(sessionPath);
       if (appStore.get().selectedSessionPath === sessionPath) actions.selectSession(null);
       // The "changed by another process" dot and the run-state mark are keyed
       // by path too; a deleted session must not leave either behind for a
@@ -1237,6 +1240,7 @@ export const actions = {
         }
         // The draft id is replaced by the real path in place, wherever the user
         // has navigated to by now — the row follows the session, not the view.
+        moveComposerDraft(localId, created.sessionPath);
         appStore.update((state) => ({
           ...state,
           selectedSessionPath:

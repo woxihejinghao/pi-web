@@ -87,18 +87,20 @@ function takenLabels(text: string, references: ReadonlyMap<string, string>): Set
  * set: React has not written the new text into the textarea yet, and a browser
  * whose value changes puts the caret at the end on its own.
  */
-export function useReferenceDraft({ text, setText, textareaRef, workspacePath }: {
+export function useReferenceDraft({ text, setText, textareaRef, workspacePath, references: savedReferences }: {
   text: string;
   setText(value: string): void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   /** The workspace the message is about to be sent in; references are relative to it. */
   workspacePath: string | undefined;
+  /** Session-owned labels, restored with the text when the input remounts. */
+  references?: Map<string, string>;
 }): ReferenceDraft {
   const t = useT();
   /** The caret the next commit owes, once the value it belongs to is in the DOM. */
   const pendingCaret = useRef<number | null>(null);
   /** Label → absolute path, for the references currently spelled in the draft. */
-  const references = useRef(new Map<string, string>());
+  const references = useRef(savedReferences ?? new Map<string, string>());
 
   useLayoutEffect(() => {
     const caret = pendingCaret.current;

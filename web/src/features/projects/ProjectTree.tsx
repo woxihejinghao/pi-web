@@ -8,7 +8,8 @@ import { pendingAskOf, type PendingAsk } from "../conversation/question-model.ts
 import type { MessageKey } from "../../lib/i18n/index.ts";
 import { formatRelativeTime } from "../../lib/format.ts";
 import type { ProjectNode } from "../../lib/project-tree.ts";
-import { useStore } from "../../lib/store.ts";
+import { useStore, useStoreSelector } from "../../lib/store.ts";
+import { composerDraftPaths } from "../../lib/composer-drafts.ts";
 import { useDelayedFlag } from "../../lib/use-delayed-flag.ts";
 import styles from "../../layout/Sidebar.module.css";
 import { sessionRowsOf } from "./session-rows.ts";
@@ -133,6 +134,7 @@ export function SessionRow({
   canDelete?: boolean;
 }) {
   const t = useT();
+  const hasDraft = useStoreSelector(composerDraftPaths, (paths) => paths.has(sessionPath));
   const rename = async (): Promise<void> => {
     const next = window.prompt(t("session.renamePrompt"), title);
     if (next === null) return;
@@ -188,6 +190,11 @@ export function SessionRow({
       >
         {title}
       </button>
+      {hasDraft ? (
+        <span className={styles.sessionDraft} title={t("session.draftHint")}>
+          {t("session.draftIndicator")}
+        </span>
+      ) : null}
       {external ? <span className={styles.externalDot} title={t("session.external")} /> : null}
       <span className={styles.sessionTime}>{time}</span>
       <div className={styles.rowActions}>
