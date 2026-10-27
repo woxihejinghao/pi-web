@@ -336,6 +336,7 @@ export const zhCN = {
   "question.incomplete": "还有 {count} 个问题未回答",
   "question.unreadable": "这个问题批次无法读取，请取消后重试。",
   "question.pendingTitle": "还有问题未回答",
+  "question.answerSendFailed": "回答发送失败，请重试；已填写的内容会保留。",
   "question.pendingCount": "{count} 个问题",
   "question.answerTitle": "已回答：",
   "question.answerSeparator": "；",
@@ -393,7 +394,7 @@ export const zhCN = {
   "context.used": "已用",
   "context.remaining": "剩余",
   "context.emptyNote": "这个会话还没有可用的上下文用量。",
-  "context.note": "已用是 pi 的估算：最后一次模型回复上报的用量，加上其后每条消息的字符估算。刚压缩完时会短暂显示为未知，直到下一次回复。",
+  "context.note": "已用是 pi 的估算：模型生成过程中会定期刷新，工具调用和回复结束时也会同步。刚压缩完时可能短暂显示为未知。", 
 
   // --- time and durations ---------------------------------------------------
   "time.justNow": "刚刚",
@@ -1171,6 +1172,7 @@ export const en: Record<MessageKey, string> = {
   "question.incomplete": "{count} question(s) still need an answer",
   "question.unreadable": "This question batch could not be read. Cancel and try again.",
   "question.pendingTitle": "Questions awaiting an answer",
+  "question.answerSendFailed": "Could not send your answer. Please retry; your draft has been kept.",
   "question.pendingCount": "{count} question(s)",
   "question.answerTitle": "Answered: ",
   "question.answerSeparator": "; ",
@@ -1227,7 +1229,7 @@ export const en: Record<MessageKey, string> = {
   "context.used": "Used",
   "context.remaining": "Remaining",
   "context.emptyNote": "No context usage available for this session yet.",
-  "context.note": "Used is pi's estimate: the usage the last model reply reported, plus a character-based estimate for every message after it. Right after a compaction it shows as unknown until the next reply.",
+  "context.note": "Used is pi's estimate: it refreshes during generation and after tool calls or a completed reply. Right after compaction it may briefly be unknown.",
 
   "time.justNow": "just now",
   "time.minutes": "{count}m",

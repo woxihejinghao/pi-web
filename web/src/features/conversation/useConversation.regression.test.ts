@@ -111,6 +111,26 @@ describe("useConversation generation and targeted rollback regressions", () => {
     expect(state.result.messages.map((message: any) => message.content)).toEqual(["new history"]);
   });
 
+  it("does not reload the same session during a StrictMode effect replay", async () => {
+    resetHarness();
+    getMessages.mockResolvedValue({ messages: [loaded("history")], forkPoints: [] });
+
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+
+    // StrictMode performs the effect cleanup and setup again without changing
+    // dependencies. Re-run the recorded effect to model that replay.
+    const effect = state.effects[1] as any;
+    effect.cleanup?.();
+    effect.run = true;
+    flushEffects();
+    await Promise.resolve();
+
+    expect(getMessages).toHaveBeenCalledTimes(1);
+  });
+
   it("rolls back only the failed optimistic send when sends run concurrently", async () => {
     resetHarness();
     getMessages.mockResolvedValue({ messages: [], forkPoints: [] });

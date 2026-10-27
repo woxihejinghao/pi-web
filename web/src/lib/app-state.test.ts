@@ -272,6 +272,53 @@ describe("draft sessions", () => {
 });
 
 describe("background session persistence", () => {
+  it("names the pending row on the first user frame without waiting for an assistant", async () => {
+    appStore.update((state) => ({
+      ...state,
+      selectedProjectId: "other-project",
+      selectedSessionPath: "/other/session.jsonl",
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_start", message: { role: "user", content: [{ type: "text", text: "修复登录问题" }] },
+    });
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBe("修复登录问题");
+    expect(appStore.get().unsavedSessions["project-1"]).toEqual([REAL_PATH]);
+    expect(appStore.get().selectedSessionPath).toBe("/other/session.jsonl");
+    expect(mocked.listSessions).not.toHaveBeenCalled();
+
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "user", content: "another message" },
+    });
+    await actions.refreshSessions("project-1", { force: true });
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBe("修复登录问题");
+
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH, "正式标题")], total: 1 });
+    await actions.refreshSessions("project-1", { force: true });
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBeUndefined();
+    expect(appStore.get().sessions["project-1"]?.[0]?.title).toBe("正式标题");
+  });
+
+  it("bounds pending titles and cleans them up when the session closes", () => {
+    appStore.update((state) => ({ ...state, unsavedSessions: { "project-1": [REAL_PATH] } }));
+    actions.noteUnsavedSessionTitle(REAL_PATH, "中文😀".repeat(100));
+    const title = appStore.get().unsavedSessionTitles[REAL_PATH]!;
+    expect(new TextEncoder().encode(title).length).toBeLessThanOrEqual(120);
+    expect(title.endsWith("…")).toBe(true);
+    expect(title).not.toContain("�");
+    actions.forgetUnsavedSession(REAL_PATH);
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBeUndefined();
+  });
+
+  it("does not replace persisted or manually named rows with a user message", () => {
+    appStore.update((state) => ({
+      ...state, sessions: { "project-1": [diskSession(REAL_PATH, "手动命名")] },
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    actions.noteUnsavedSessionTitle(REAL_PATH, "hello");
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBeUndefined();
+    expect(appStore.get().sessions["project-1"]?.[0]?.title).toBe("手动命名");
+  });
   it("replaces an unsaved row and its title in the owning workspace after switching away", async () => {
     appStore.update((state) => ({
       ...state,

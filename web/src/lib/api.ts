@@ -124,9 +124,10 @@ export const api = {
     ),
 
   /** One file's content, for the right sidebar's preview tab. */
-  readWorkspaceFile: (projectId: string, path: string) =>
+  readWorkspaceFile: (projectId: string, path: string, sessionPath?: string) =>
     request<WorkspaceFileContent>(
-      `/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}`,
+      `/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}` +
+        (sessionPath === undefined ? "" : `&session=${encodeURIComponent(sessionPath)}`),
     ),
 
   /**
@@ -156,8 +157,9 @@ export const api = {
    * because it lets the answer be streamed, type-tagged and cached by the
    * browser instead of being inflated into JSON.
    */
-  workspaceRawUrl: (projectId: string, path: string): string =>
-    `/api/projects/${encodeURIComponent(projectId)}/raw?path=${encodeURIComponent(path)}`,
+  workspaceRawUrl: (projectId: string, path: string, sessionPath?: string): string =>
+    `/api/projects/${encodeURIComponent(projectId)}/raw?path=${encodeURIComponent(path)}` +
+    (sessionPath === undefined ? "" : `&session=${encodeURIComponent(sessionPath)}`),
 
   /**
    * What this machine can open one file with.

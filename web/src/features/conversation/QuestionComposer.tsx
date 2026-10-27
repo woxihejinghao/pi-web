@@ -221,7 +221,9 @@ export function QuestionComposer({
   // does, and the same escape hatch: a pointer or key press always wins.
   useEffect(() => {
     // A plan review takes the card over entirely and owns its own keyboard.
-    if (intent !== null) return;
+    // A deferred answer is an optional editor, not a blocking dialog. It must
+    // never take focus back from the composer or a newer live question.
+    if (intent !== null || embedded) return;
     const focusTarget = (): HTMLElement | null =>
       cardRef.current?.querySelector<HTMLElement>("[data-focus-first]") ?? null;
     focusTarget()?.focus();

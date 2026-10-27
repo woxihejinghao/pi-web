@@ -45,8 +45,10 @@ type PreviewState =
 export function PreviewTab({
   projectId,
   projectPath,
+  sessionPath,
   tab,
 }: {
+  sessionPath?: string;
   projectId: string;
   /** The project root the watcher reports paths against. */
   projectPath: string;
@@ -64,7 +66,10 @@ export function PreviewTab({
   // header and, for a file this app cannot render, the empty state. dsh shares
   // one per (file, query) for the same reason: two controls for one file must
   // not be able to disagree about what the host offers.
-  const openWith = useOpenWith(projectId, tab.target);
+  // External transcript images are preview-only; native file actions retain
+  // their project-relative boundary.
+  const absoluteTarget = tab.target.startsWith("/") || /^[a-zA-Z]:/.test(tab.target);
+  const openWith = useOpenWith(projectId, tab.target, !absoluteTarget);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +78,7 @@ export function PreviewTab({
     // first read — nothing to keep — shows the loading state.
     setState((previous) => (previous.status === "ready" ? previous : { status: "loading" }));
     api
-      .readWorkspaceFile(projectId, tab.target)
+      .readWorkspaceFile(projectId, tab.target, absoluteTarget ? sessionPath : undefined)
       .then((file) => {
         if (!cancelled) setState({ status: "ready", file });
       })
@@ -92,7 +97,7 @@ export function PreviewTab({
     return () => {
       cancelled = true;
     };
-  }, [projectId, tab.target, attempt]);
+  }, [projectId, tab.target, attempt, absoluteTarget, sessionPath]);
 
   /**
    * Follow the file the way the changes panel follows the tree.

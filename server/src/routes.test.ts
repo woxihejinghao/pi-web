@@ -249,6 +249,70 @@ describe("workspace files api", () => {
   });
 });
 
+describe("external session-referenced image api", () => {
+  async function writeImageSession(sessionName: string, projectPath: string, reference: string): Promise<string> {
+    const sessionPath = join(sessionRoot, `--${sessionName}--`, "session.jsonl");
+    await mkdir(dirname(sessionPath), { recursive: true });
+    await writeFile(sessionPath, [
+      { type: "session", version: 3, id: sessionName, timestamp: "2026-01-01T00:00:00.000Z", cwd: projectPath },
+      { type: "message", id: "m1", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: reference } },
+    ].map((entry) => `${JSON.stringify(entry)}\n`).join(""), "utf8");
+    return sessionPath;
+  }
+
+  it("serves an image named in a bash command and markdown link", async () => {
+    const project = await createProject("external-image");
+    const imageDir = await mkdtemp(join(tmpdir(), "piws-external-image-"));
+    const imagePath = join(imageDir, "fin_archive.png");
+    await writeFile(imagePath, "PNG bytes", "utf8");
+    const sessionPath = await writeImageSession("external-image", project.path, `bash command: open ${imagePath}`);
+    const encoded = encodeURIComponent(imagePath);
+    const session = encodeURIComponent(sessionPath);
+    const file = await api(`/api/projects/${project.id}/file?path=${encoded}&session=${session}`);
+    expect(file.status).toBe(200);
+    expect(file.body).toMatchObject({ kind: "image", name: "fin_archive.png" });
+    const markdownSessionPath = await writeImageSession("external-markdown", project.path, `![preview](${imagePath})`);
+    const markdownSession = encodeURIComponent(markdownSessionPath);
+    const markdown = await api(`/api/projects/${project.id}/file?path=${encoded}&session=${markdownSession}`);
+    expect(markdown.status).toBe(200);
+    const raw = await fetch(`${baseUrl}/api/projects/${project.id}/raw?path=${encoded}&session=${session}`);
+    expect(raw.status).toBe(200);
+    expect(Buffer.from(await raw.arrayBuffer()).toString()).toBe("PNG bytes");
+  });
+
+  it("rejects unreferenced, prefixed, missing-session, and wrong-project requests", async () => {
+    const project = await createProject("external-reject");
+    const other = await createProject("external-other");
+    const imageDir = await mkdtemp(join(tmpdir(), "piws-external-reject-"));
+    const imagePath = join(imageDir, "unreferenced.png");
+    await writeFile(imagePath, "PNG bytes", "utf8");
+    const sessionPath = await writeImageSession("external-reject", project.path, `${imagePath}.bak`);
+    const path = encodeURIComponent(imagePath);
+    const session = encodeURIComponent(sessionPath);
+    expect((await api(`/api/projects/${project.id}/file?path=${path}&session=${session}`)).status).toBe(403);
+    expect((await api(`/api/projects/${project.id}/file?path=${path}`)).status).toBe(403);
+    expect((await api(`/api/projects/${other.id}/file?path=${path}&session=${session}`)).status).toBe(403);
+  });
+
+  it("rejects a symlink that escapes the referenced image directory", async () => {
+    const project = await createProject("external-symlink");
+    const imageDir = await mkdtemp(join(tmpdir(), "piws-external-symlink-"));
+    const outsideDir = join(imageDir, "outside");
+    const linkDir = join(imageDir, "link");
+    await mkdir(outsideDir);
+    await mkdir(linkDir);
+    const outside = join(outsideDir, "secret.txt");
+    const link = join(linkDir, "escape.png");
+    await writeFile(outside, "secret", "utf8");
+    await rm(link, { force: true });
+    const { symlink } = await import("node:fs/promises");
+    await symlink(outside, link);
+    const sessionPath = await writeImageSession("external-symlink", project.path, link);
+    const response = await api(`/api/projects/${project.id}/file?path=${encodeURIComponent(link)}&session=${encodeURIComponent(sessionPath)}`);
+    expect(response.status).toBe(403);
+  });
+});
+
 describe("git api", () => {
   /** A project that is also a repository, with one commit already made. */
   async function createRepo(name: string): Promise<{ id: string; path: string }> {

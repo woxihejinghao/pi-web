@@ -188,6 +188,8 @@ export interface AppState {
    * already has to mirror, so ownership is recorded here at creation time.
    */
   unsavedSessions: Record<string, string[]>;
+  /** First-message titles while pi has not flushed the new session yet. */
+  unsavedSessionTitles: Record<string, string>;
   /** Session files with a live pi process on the server. */
   activeSessions: string[];
   /**
@@ -317,6 +319,7 @@ const initialState: AppState = {
   sessionsLoading: {},
   selectedSessionPath: null,
   unsavedSessions: {},
+  unsavedSessionTitles: {},
   activeSessions: [],
   sessionActivity: {},
   externalChanged: {},
@@ -1026,9 +1029,14 @@ export const actions = {
         const onDisk = new Set(page.sessions.map((session) => session.path));
         const remaining = unsaved.filter((path) => !onDisk.has(path));
         if (remaining.length === unsaved.length) return next;
+        const unsavedSessionTitles = { ...state.unsavedSessionTitles };
+        for (const path of unsaved) {
+          if (onDisk.has(path)) delete unsavedSessionTitles[path];
+        }
         return {
           ...next,
           unsavedSessions: { ...state.unsavedSessions, [projectId]: remaining },
+          unsavedSessionTitles,
         };
       });
     } catch (err) {
@@ -1316,10 +1324,58 @@ export const actions = {
     });
   },
 
+  /** Name only a pending row, once; persisted and manually named rows win. */
+  noteUnsavedSessionTitle(sessionPath: string, text: string): void {
+    const state = appStore.get();
+    if (state.unsavedSessionTitles[sessionPath] !== undefined
+      || !Object.values(state.unsavedSessions).some((paths) => paths.includes(sessionPath))
+      || Object.values(state.sessions).some((rows) => rows.some((row) => row.path === sessionPath))) return;
+    // Match the default first-message title budgets; the disk-derived title
+    // remains authoritative, including custom server budgets and model titles.
+    const folded = text.replace(/^<skill name="([^"]+)"[^>]*>[\s\S]*?<\/skill>(?:\s*([\s\S]*))?$/, (_, name: string, args: string | undefined) =>
+      `/skill:${name}${args?.trim() ? ` ${args.trim()}` : ""}`);
+    const words = folded.replace(/[\u0000-\u001f\u007f-\u009f\s]+/g, " ").trim().split(" ").filter(Boolean);
+    const kept = words.slice(0, 8).join(" ");
+    if (!kept) return;
+    const encoder = new TextEncoder();
+    let title = kept;
+    if (encoder.encode(title).length > 120) {
+      title = "";
+      for (const char of kept) {
+        if (encoder.encode(title + char).length > 117) break;
+        title += char;
+      }
+      title = `${title.trimEnd()}…`;
+    } else if (words.length > 8) title += "…";
+    appStore.update((current) => ({
+      ...current,
+      unsavedSessionTitles: { ...current.unsavedSessionTitles, [sessionPath]: title },
+    }));
+  },
+
   /** Track run boundaries and persistence even when the session is not open. */
   noteSessionActivity(sessionPath: string, event: SessionEvent): void {
     if (event.type === "agent_start") actions.markSessionOngoing(sessionPath);
     else if (event.type === "agent_settled") actions.markSessionSettled(sessionPath);
+
+    // User frames arrive before the first assistant reply (and before the file
+    // exists). Keep this separate from disk rows: refetching must not erase the
+    // title or incorrectly mark an unsaved session as persisted.
+    if (event.type === "message_start" || event.type === "message_end") {
+      const user = event.message as AgentMessage | undefined;
+      if (user?.role === "user") {
+        const text = typeof user.content === "string"
+          ? user.content
+          : Array.isArray(user.content)
+            ? user.content.flatMap((block: unknown) => {
+              if (block === null || typeof block !== "object" || !("type" in block)
+                || block.type !== "text" || !("text" in block) || typeof block.text !== "string") return [];
+              return [block.text];
+            }).join(" ")
+            : "";
+        actions.noteUnsavedSessionTitle(sessionPath, text);
+      }
+    }
 
     // pi first flushes a new session when its assistant message lands. This
     // belongs to the global stream, not the conversation hook: switching away
@@ -1434,7 +1490,10 @@ export const actions = {
         changed = true;
         unsaved[projectId] = paths.filter((path) => path !== sessionPath);
       }
-      return changed ? { ...state, unsavedSessions: unsaved } : state;
+      if (!changed) return state;
+      const unsavedSessionTitles = { ...state.unsavedSessionTitles };
+      delete unsavedSessionTitles[sessionPath];
+      return { ...state, unsavedSessions: unsaved, unsavedSessionTitles };
     });
   },
 

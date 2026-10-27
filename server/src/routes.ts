@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
+import { realpath } from "node:fs/promises";
+import { basename, dirname, extname, resolve } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { pipeline } from "node:stream/promises";
@@ -744,6 +746,66 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
 
   const allowedPath = (raw: string): string => assertAllowedSessionPath(raw, sessionRoot);
 
+  /** External absolute image paths are allowed only when the session itself named them. */
+  const externalImagePath = async (raw: string, sessionRaw: string | null, projectPath: string): Promise<string | null> => {
+    if (!raw.startsWith("/") || sessionRaw === null) return null;
+    const sessionPath = allowedPath(sessionRaw);
+    const live = registry.get(sessionPath);
+    let cwd = projectPath;
+    let messages: unknown;
+    if (live && !live.dead) {
+      cwd = live.projectPath;
+      messages = await callClient(live, () => live.client.getMessages());
+    } else {
+      try {
+        const manager = openSessionForRead(sessionPath);
+        cwd = manager.getCwd();
+        messages = manager.buildSessionContext().messages;
+      } catch {
+        throw notFound("无法读取会话");
+      }
+    }
+    // The project route must be the same project that owns the session.
+    if (resolve(cwd) !== resolve(projectPath)) throw forbidden("会话不属于此项目");
+    const target = resolve(raw);
+    const hasPathToken = (text: string): boolean => {
+      let at = text.indexOf(target);
+      while (at >= 0) {
+        const before = at === 0 ? "" : text[at - 1]!;
+        const afterAt = at + target.length;
+        const after = afterAt === text.length ? "" : text[afterAt]!;
+        const boundary = (char: string): boolean => char === "" || /[\s\"'`()\[\]<>,;:!?]/.test(char);
+        if (boundary(before) && boundary(after)) return true;
+        at = text.indexOf(target, at + 1);
+      }
+      return false;
+    };
+    let referenced = false;
+    const visit = (value: unknown): void => {
+      if (referenced) return;
+      if (typeof value === "string") {
+        if (hasPathToken(value)) referenced = true;
+        return;
+      }
+      if (Array.isArray(value)) { for (const item of value) visit(item); return; }
+      if (typeof value === "object" && value !== null) {
+        for (const item of Object.values(value as Record<string, unknown>)) visit(item);
+      }
+    };
+    visit(messages);
+    if (!referenced) throw forbidden("外部文件未被会话引用");
+    const extension = extname(target).slice(1).toLowerCase();
+    if (!new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]).has(extension)) {
+      throw forbidden("只允许预览图片");
+    }
+    // Refuse symlinks escaping the named file's canonical location.
+    const canonicalTarget = await realpath(target);
+    if (extname(canonicalTarget).toLowerCase() !== extname(target).toLowerCase()) {
+      throw forbidden("不允许通过符号链接读取非图片文件");
+    }
+    return target;
+  };
+
   /**
    * Whether this id names a session file this process may read.
    *
@@ -1407,6 +1469,11 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     const project = await getProject(params.id!);
     const path = query.get("path") ?? "";
     if (path.length === 0) throw badRequest("path is required");
+    const external = await externalImagePath(path, query.get("session"), project.path);
+    if (external !== null) {
+      json(res, 200, await readWorkspaceFile(dirname(external), basename(external)));
+      return;
+    }
     json(res, 200, await readWorkspaceFile(project.path, path));
   });
 
@@ -1446,7 +1513,10 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     const project = await getProject(params.id!);
     const path = query.get("path") ?? "";
     if (path.length === 0) throw badRequest("path is required");
-    const file = await readWorkspaceRaw(project.path, path);
+    const external = await externalImagePath(path, query.get("session"), project.path);
+    const file = external === null
+      ? await readWorkspaceRaw(project.path, path)
+      : await readWorkspaceRaw(dirname(external), basename(external));
     res.writeHead(200, {
       "content-type": file.mimeType,
       "content-length": file.size,

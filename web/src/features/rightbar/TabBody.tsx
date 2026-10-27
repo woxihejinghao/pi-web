@@ -86,7 +86,15 @@ function TabContent({ sessionPath, projectId, projectPath, tab, onOpenFile }: Ta
   if (tab.kind === "preview") {
     // Keyed by tab id so two tabs previewing the same file keep their own
     // scroll position and load state.
-    return <PreviewTab key={tab.id} projectId={projectId} projectPath={projectPath} tab={tab} />;
+    return (
+      <PreviewTab
+        key={tab.id}
+        projectId={projectId}
+        projectPath={projectPath}
+        sessionPath={sessionPath}
+        tab={tab}
+      />
+    );
   }
   if (tab.kind === "changes") {
     return <ChangesTab key={tab.id} projectId={projectId} onOpenFile={onOpenFile} />;

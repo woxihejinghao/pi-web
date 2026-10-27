@@ -544,6 +544,12 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const loadingRef = useRef(true);
   /** Monotonically invalidates history loads whose session is no longer current. */
   const loadGenerationRef = useRef(0);
+  /**
+   * React StrictMode replays an effect's setup/cleanup on mount. Keep the path
+   * across that replay so the second setup can restore the subscription without
+   * clearing the transcript or issuing the same history request twice.
+   */
+  const effectPathRef = useRef<string | null | undefined>(undefined);
   const errorRef = useRef<string | null>(null);
   const retryRef = useRef<RetryState | null>(null);
   /**
@@ -928,41 +934,51 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   );
 
   useEffect(() => {
-    // Invalidate any history request from the session that just became stale.
-    loadGenerationRef.current += 1;
-    messagesRef.current = [];
-    deliveredUsersRef.current = 0;
-    queueRef.current = [];
-    // A command's pending adoption belongs to the stream it was sent on.
-    adoptUserRef.current = false;
-    slotRef.current = null;
-    toolsRef.current = {};
-    streamingRef.current = false;
-    // Timings belong to the stream they were measured on; a new session starts
-    // its own clock rather than inheriting the previous one's speed.
-    timingRef.current = emptyTiming();
-    // A retry belongs to one turn; carrying it into another session would leave
-    // a countdown ticking for something that is no longer happening — and the
-    // failed-attempt count belongs to that turn's transcript row, which only the
-    // session being switched away from can show.
-    retryRef.current = null;
-    retryAttemptRef.current = 0;
-    failedAttemptsRef.current = 0;
-    // A compaction belongs to the session that was running it too: leaving this
-    // set would put the running row under the next session's transcript, where
-    // no `compaction_end` is ever going to arrive to clear it.
-    compactingRef.current = false;
-    // The history below belongs to the previous session until `load` says
-    // otherwise; leaving this set would let a queued prompt skip the wait.
-    setLoadedPath(null);
+    // React StrictMode intentionally runs setup → cleanup → setup once on mount.
+    // The second setup still needs a fresh event subscription, but it must not
+    // clear the transcript or start a duplicate history request. A real session
+    // switch has a different path and therefore takes the full reset path.
+    const sameEffectPath = effectPathRef.current === sessionPath;
+    if (!sameEffectPath) {
+      effectPathRef.current = sessionPath;
+      // Invalidate any history request from the session that just became stale.
+      loadGenerationRef.current += 1;
+      messagesRef.current = [];
+      deliveredUsersRef.current = 0;
+      queueRef.current = [];
+      // A command's pending adoption belongs to the stream it was sent on.
+      adoptUserRef.current = false;
+      slotRef.current = null;
+      toolsRef.current = {};
+      streamingRef.current = false;
+      // Timings belong to the stream they were measured on; a new session starts
+      // its own clock rather than inheriting the previous one's speed.
+      timingRef.current = emptyTiming();
+      // A retry belongs to one turn; carrying it into another session would leave
+      // a countdown ticking for something that is no longer happening — and the
+      // failed-attempt count belongs to that turn's transcript row, which only the
+      // session being switched away from can show.
+      retryRef.current = null;
+      retryAttemptRef.current = 0;
+      failedAttemptsRef.current = 0;
+      // A compaction belongs to the session that was running it too: leaving this
+      // set would put the running row under the next session's transcript, where
+      // no `compaction_end` is ever going to arrive to clear it.
+      compactingRef.current = false;
+      // The history below belongs to the previous session until `load` says
+      // otherwise; leaving this set would let a queued prompt skip the wait.
+      setLoadedPath(null);
+    }
 
     if (!sessionPath) {
-      loadingRef.current = false;
-      publish();
+      if (!sameEffectPath) {
+        loadingRef.current = false;
+        publish();
+      }
       return;
     }
 
-    void load(sessionPath);
+    if (!sameEffectPath) void load(sessionPath);
     const unsubscribe = sessionEvents.subscribe((payload) => {
       if (payload.sessionPath !== sessionPath) return;
       handleEvent(payload.event);

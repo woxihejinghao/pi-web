@@ -302,7 +302,7 @@ export interface OpenWithControls {
  * revealing may still work; the second removes the control, because there is
  * nothing on the other end to hand a path to.
  */
-export function useOpenWith(projectId: string, path: string): OpenWithControls {
+export function useOpenWith(projectId: string, path: string, enabled = true): OpenWithControls {
   const t = useT();
   const [state, setState] = useState<OpenWithState>({ status: "loading" });
   const [busy, setBusy] = useState(false);
@@ -312,6 +312,7 @@ export function useOpenWith(projectId: string, path: string): OpenWithControls {
   const inFlight = useRef(false);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     setState({ status: "loading" });
     setFailure(null);
@@ -327,11 +328,11 @@ export function useOpenWith(projectId: string, path: string): OpenWithControls {
     return () => {
       cancelled = true;
     };
-  }, [projectId, path]);
+  }, [projectId, path, enabled]);
 
   const act = useCallback(
     (target: OpenTarget) => {
-      if (inFlight.current) return;
+      if (!enabled || inFlight.current) return;
       inFlight.current = true;
       setBusy(true);
       setFailure(null);
@@ -357,7 +358,7 @@ export function useOpenWith(projectId: string, path: string): OpenWithControls {
           setBusy(false);
         });
     },
-    [projectId, path, t],
+    [projectId, path, t, enabled],
   );
 
   const loading = state.status === "loading";
@@ -367,7 +368,7 @@ export function useOpenWith(projectId: string, path: string): OpenWithControls {
   return {
     // Unknown is not the same as absent: while the answer is in flight, and when
     // it never arrives, the control stays where it is.
-    available: loading || failed || desktop,
+    available: enabled && (loading || failed || desktop),
     applications: state.status === "ready" ? state.applications : [],
     loading,
     failed,

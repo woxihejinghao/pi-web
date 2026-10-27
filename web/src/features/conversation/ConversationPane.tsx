@@ -269,8 +269,10 @@ export function ConversationPane() {
   const projectId = project?.id;
   const imageUrlFor = useCallback(
     (path: string): string | undefined =>
-      projectId === undefined || !isImageName(path) ? undefined : api.workspaceRawUrl(projectId, path),
-    [projectId],
+      projectId === undefined || !isImageName(path)
+        ? undefined
+        : api.workspaceRawUrl(projectId, path, sessionPath ?? undefined),
+    [projectId, sessionPath],
   );
   const sessions = state.selectedProjectId ? (state.sessions[state.selectedProjectId] ?? []) : [];
   const session = sessions.find((candidate) => candidate.path === selected);
@@ -541,7 +543,7 @@ export function ConversationPane() {
   const headerSub = draft
     ? t("pane.preparing")
     : sessionPath
-      ? (session?.title ?? t("pane.session"))
+      ? (session?.title ?? state.unsavedSessionTitles[sessionPath] ?? t("pane.session"))
       : t("pane.noSession");
 
   /**
@@ -662,8 +664,12 @@ export function ConversationPane() {
           taking the seat the live card takes. */}
       <PendingQuestions
         questions={conversation.pendingQuestions}
+        suspended={pendingUi !== null}
         onAnswer={async (text) => {
-          await conversation.send(text, "prompt");
+          const sent = await conversation.send(text, conversation.isStreaming ? "followUp" : "prompt");
+          // A refused send must not look like a submitted answer or clear its
+          // saved draft. QuestionComposer surfaces this rejection in its footer.
+          if (!sent) throw new Error(t("question.answerSendFailed"));
         }}
       />
       {/* The sends pi has not taken up yet, with the exits the transcript rows

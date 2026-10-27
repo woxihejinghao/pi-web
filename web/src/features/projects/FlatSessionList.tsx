@@ -67,7 +67,7 @@ export function FlatSessionList({ drag }: { drag: SidebarDrag }) {
           key={path}
           sessionPath={path}
           projectId={ownerOf.get(path)}
-          title={t("sidebar.newSession")}
+          title={state.unsavedSessionTitles[path] ?? t("sidebar.newSession")}
           time={isDraftSession(path) ? t("session.preparing") : t("session.unsaved")}
           active={path === selected}
           external={false}

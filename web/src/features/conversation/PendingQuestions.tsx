@@ -22,11 +22,13 @@ import styles from "./TodoPanel.module.css";
  */
 export interface PendingQuestionsProps {
   questions: readonly PendingQuestion[];
+  /** A live dialog owns the input seat; keep deferred editors folded meanwhile. */
+  suspended?: boolean;
   /** Hand the composed reply back; the caller sends it as a user message. */
   onAnswer: (text: string) => Promise<void> | void;
 }
 
-export function PendingQuestions({ questions, onAnswer }: PendingQuestionsProps) {
+export function PendingQuestions({ questions, suspended = false, onAnswer }: PendingQuestionsProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
 
@@ -43,7 +45,8 @@ export function PendingQuestions({ questions, onAnswer }: PendingQuestionsProps)
           <button
             type="button"
             className={styles.header}
-            aria-expanded={open}
+            aria-expanded={open && !suspended}
+            disabled={suspended}
             onClick={() => setOpen((value) => !value)}
           >
             <span className={styles.lead} aria-hidden>
@@ -56,10 +59,10 @@ export function PendingQuestions({ questions, onAnswer }: PendingQuestionsProps)
             <span className={styles.chevron} aria-hidden>
               {/* The plan strip's outline chevron: both strips share this module,
                   so their disclosure marks are the same mark. */}
-              <Glyph name="chevronDownOutline" className={open ? undefined : styles.chevronCollapsed} />
+              <Glyph name="chevronDownOutline" className={open && !suspended ? undefined : styles.chevronCollapsed} />
             </span>
           </button>
-          {open ? (
+          {open && !suspended ? (
             <QuestionComposer
               // Keyed by the call, so answering one batch and opening the next
               // starts from blank drafts instead of inheriting the last set.

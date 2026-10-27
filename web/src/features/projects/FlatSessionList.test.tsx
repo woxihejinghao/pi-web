@@ -70,6 +70,16 @@ describe("FlatSessionList", () => {
     expect(html.indexOf("beta")).toBeLessThan(html.indexOf("alpha"));
   });
 
+  it("shows the first-message title before a session is persisted", () => {
+    seed({
+      unsavedSessions: { p1: ["/s/pending.jsonl", "draft:empty"] },
+      unsavedSessionTitles: { "/s/pending.jsonl": "修复登录问题" },
+    });
+    const html = renderToStaticMarkup(<FlatSessionList drag={NO_DRAG} />);
+    expect(html).toContain("修复登录问题");
+    expect(html).toContain("新会话");
+  });
+
   it("has no workspace headers to draw", () => {
     seed();
     const html = renderToStaticMarkup(<FlatSessionList drag={NO_DRAG} />);

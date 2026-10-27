@@ -411,7 +411,7 @@ export function ProjectTreeItem({
               key={path}
               sessionPath={path}
               projectId={project.id}
-              title={t("sidebar.newSession")}
+              title={state.unsavedSessionTitles[path] ?? t("sidebar.newSession")}
               time={isDraftSession(path) ? t("session.preparing") : t("session.unsaved")}
               active={path === selected}
               external={false}
