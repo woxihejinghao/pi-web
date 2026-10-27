@@ -221,6 +221,46 @@ const emptyView: ConversationView = {
   stats: sessionStats([], EMPTY_TIMING),
 };
 
+/** Keep a few recently opened transcripts warm without retaining every session. */
+const SESSION_CACHE_LIMIT = 4;
+
+interface CachedConversation {
+  messages: AgentMessage[];
+  forkPoints: ForkPoint[];
+  stats: SessionStatsData;
+}
+
+function rememberConversation(
+  cache: Map<string, CachedConversation>,
+  sessionPath: string,
+  view: ConversationView,
+): void {
+  cache.delete(sessionPath);
+  cache.set(sessionPath, {
+    messages: view.messages,
+    forkPoints: view.forkPoints,
+    stats: view.stats,
+  });
+  while (cache.size > SESSION_CACHE_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (typeof oldest !== "string") break;
+    cache.delete(oldest);
+  }
+}
+
+/** A warm transcript is useful immediately, but its ephemeral stream state is not. */
+function warmConversationView(snapshot: CachedConversation): ConversationView {
+  return {
+    ...emptyView,
+    messages: snapshot.messages,
+    forkPoints: snapshot.forkPoints,
+    todos: projectTodos(snapshot.messages, 0),
+    pendingQuestions: projectPendingQuestions(snapshot.messages),
+    loading: true,
+    stats: snapshot.stats,
+  };
+}
+
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -544,6 +584,12 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const loadingRef = useRef(true);
   /** Monotonically invalidates history loads whose session is no longer current. */
   const loadGenerationRef = useRef(0);
+  /** The path currently represented by the mutable refs below. */
+  const activePathRef = useRef<string | null>(sessionPath);
+  /** The path represented by React's last published view. */
+  const viewPathRef = useRef<string | null>(sessionPath);
+  /** Recently published transcripts, keyed by session so switching can be warm. */
+  const sessionCacheRef = useRef(new Map<string, CachedConversation>());
   /**
    * React StrictMode replays an effect's setup/cleanup on mount. Keep the path
    * across that replay so the second setup can restore the subscription without
@@ -592,7 +638,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       0,
       countUserMessages(messagesRef.current) - deliveredUsersRef.current,
     );
-    setView({
+    const nextView: ConversationView = {
       messages: messagesRef.current,
       forkPoints: forkPointsRef.current,
       // Projected on every publish rather than cached: the scan walks backwards
@@ -620,7 +666,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       // Copied, not aliased: the ref keeps mutating as events arrive, and a view
       // holding the live object would compare equal to itself forever.
       stats: sessionStats(messagesRef.current, { ...timingRef.current.totals }),
-    });
+    };
+    const activePath = activePathRef.current;
+    if (activePath !== null) rememberConversation(sessionCacheRef.current, activePath, nextView);
+    viewPathRef.current = activePath;
+    setView(nextView);
   }, []);
 
   /**
@@ -943,9 +993,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       effectPathRef.current = sessionPath;
       // Invalidate any history request from the session that just became stale.
       loadGenerationRef.current += 1;
-      messagesRef.current = [];
-      deliveredUsersRef.current = 0;
+      const cached = sessionPath === null ? undefined : sessionCacheRef.current.get(sessionPath);
+      messagesRef.current = cached?.messages ?? [];
+      deliveredUsersRef.current = countUserMessages(messagesRef.current);
       queueRef.current = [];
+      forkPointsRef.current = cached?.forkPoints ?? [];
       // A command's pending adoption belongs to the stream it was sent on.
       adoptUserRef.current = false;
       slotRef.current = null;
@@ -968,6 +1020,8 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       // The history below belongs to the previous session until `load` says
       // otherwise; leaving this set would let a queued prompt skip the wait.
       setLoadedPath(null);
+      loadingRef.current = sessionPath !== null;
+      activePathRef.current = sessionPath;
     }
 
     if (!sessionPath) {
@@ -1214,13 +1268,25 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     [sessionPath],
   );
 
+  // During a switch the hook still holds the previous session's React state until
+  // the effect runs. Never let that state flash under the newly selected session:
+  // use its warm snapshot, or a clean loading view when it has not been opened.
+  const cached = sessionPath !== null && viewPathRef.current !== sessionPath
+    ? sessionCacheRef.current.get(sessionPath)
+    : undefined;
+  const visibleView = viewPathRef.current === sessionPath
+    ? view
+    : cached !== undefined
+      ? warmConversationView(cached)
+      : emptyView;
+
   // `view.isStreaming` is this hook's own view of the run; `running` is the
   // app-wide one. Either being true means the turn is still moving, so the two
   // are unioned: the ref knows about a run whose start frame this subscription
   // missed, and the mark knows about one that started before this hook mounted.
   return {
-    ...view,
-    isStreaming: view.isStreaming || running,
+    ...visibleView,
+    isStreaming: visibleView.isStreaming || running,
     send,
     runCommand,
     abort,

@@ -111,6 +111,35 @@ describe("useConversation generation and targeted rollback regressions", () => {
     expect(state.result.messages.map((message: any) => message.content)).toEqual(["new history"]);
   });
 
+  it("shows a cached transcript immediately while a switched-back session refreshes", async () => {
+    resetHarness();
+    const oldLoad = deferred<any>();
+    const newLoad = deferred<any>();
+    getMessages.mockImplementation((path: string) => path === "old" ? oldLoad.promise : newLoad.promise);
+
+    render("old");
+    flushEffects();
+    oldLoad.resolve({ messages: [loaded("old history")], forkPoints: [] });
+    await oldLoad.promise;
+    render("old");
+
+    render("new");
+    flushEffects();
+    newLoad.resolve({ messages: [loaded("new history")], forkPoints: [] });
+    await newLoad.promise;
+    render("new");
+
+    // The refresh for the old session is still pending, but its last committed
+    // transcript should be visible instead of a blank working-state row.
+    getMessages.mockImplementation(() => new Promise(() => undefined));
+    render("old");
+    flushEffects();
+    render("old");
+
+    expect(state.result.messages.map((message: any) => message.content)).toEqual(["old history"]);
+    expect(state.result.loading).toBe(true);
+  });
+
   it("does not reload the same session during a StrictMode effect replay", async () => {
     resetHarness();
     getMessages.mockResolvedValue({ messages: [loaded("history")], forkPoints: [] });
