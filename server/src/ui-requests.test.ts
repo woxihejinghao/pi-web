@@ -94,6 +94,23 @@ describe("PendingUiRequests", () => {
     }
   });
 
+  it("rejects an expired answer even when nobody has listed the dialogs", async () => {
+    vi.useFakeTimers();
+    try {
+      const table = new PendingUiRequests();
+      const { session, write } = handle("/sessions/a.jsonl");
+      table.add(session, dialog("ui_1", { timeout: 5_000 }));
+
+      vi.advanceTimersByTime(5_000);
+
+      expect(await table.answer("ui_1", { value: "a" })).toBe("unknown");
+      expect(write).not.toHaveBeenCalled();
+      expect(table.list()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a dialog with no timeout forever", () => {
     vi.useFakeTimers();
     try {

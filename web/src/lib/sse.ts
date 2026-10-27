@@ -92,6 +92,7 @@ export function connectEvents(): () => void {
 
   source.addEventListener("open", () => {
     void actions.refreshProjects();
+    void actions.loadPendingUiRequests();
     const selected = appStore.get().selectedProjectId;
     if (selected) void actions.refreshSessions(selected, { force: true });
     // The stream dropped and came back: frames were missed while it was away.
@@ -192,7 +193,17 @@ export function connectEvents(): () => void {
     if (data) workspaceChanged.emit({ projectPath: data.projectPath, paths: data.paths ?? null });
   });
 
+  // pi does not publish dialog settlement events. Reconcile even questions in
+  // background sessions, whose cards are unmounted and have no countdown.
+  let syncingDialogs = false;
+  const dialogTimer = setInterval(() => {
+    if (syncingDialogs || appStore.get().pendingUiRequests.length === 0) return;
+    syncingDialogs = true;
+    void actions.loadPendingUiRequests().finally(() => { syncingDialogs = false; });
+  }, 5_000);
+
   return () => {
+    clearInterval(dialogTimer);
     source.close();
     connectionId = null;
   };

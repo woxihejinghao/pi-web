@@ -1517,7 +1517,10 @@ export function MessageList({
                   {hasTailPlans ? (
                     <PlanCard plans={plansByTurn.get(group.turn) ?? []} onOpenPlan={onOpenPlan} />
                   ) : null}
-                  {hasAnswer ? (
+                  {/* Streaming answers keep the running status as the only live
+                      footer. The usage/copy row is provisional and can overlap
+                      that status line before the turn settles. */}
+                  {hasAnswer && !isLiveTurn ? (
                     <MessageActions
                       text={assistantTextOf(group.messages)}
                       usage={turnMeta.get(group.turn)?.usage ?? null}

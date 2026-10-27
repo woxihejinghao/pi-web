@@ -57,7 +57,7 @@ export type AnswerOutcome = "answered" | "unknown" | "invalid";
 function expired(entry: Entry, now: number): boolean {
   const timeout = entry.request.timeout;
   if (typeof timeout !== "number" || timeout <= 0) return false;
-  return now - entry.receivedAt > timeout;
+  return now - entry.receivedAt >= timeout;
 }
 
 export class PendingUiRequests {
@@ -103,7 +103,7 @@ export class PendingUiRequests {
   async answer(id: string, payload: Record<string, unknown>): Promise<AnswerOutcome> {
     const entry = this.entries.get(id);
     if (!entry) return "unknown";
-    if (entry.handle.dead) {
+    if (entry.handle.dead || expired(entry, Date.now())) {
       this.entries.delete(id);
       return "unknown";
     }

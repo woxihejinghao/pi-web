@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { appStore, DRAFT_PREFIX, resetAppState } from "./app-state.ts";
+import { actions, appStore, DRAFT_PREFIX, resetAppState } from "./app-state.ts";
+import { api } from "./api.ts";
 import { connectEvents, setEventSession } from "./sse.ts";
 
 /**
@@ -32,14 +33,52 @@ function notify(sessionPath: string, message: string): void {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.stubGlobal("EventSource", FakeEventSource);
   resetAppState();
   listeners.clear();
 });
 
 afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.resetModules();
+});
+
+describe("pending dialog synchronization", () => {
+  it("removes expired background dialogs and stops polling on disconnect", async () => {
+    const list = vi.spyOn(api, "listUiRequests").mockResolvedValue({ requests: [] });
+    actions.enqueueUiRequest({
+      sessionPath: "/sessions/background.jsonl",
+      request: { type: "extension_ui_request", id: "expired", method: "select" },
+    });
+    const disconnect = connectEvents();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(appStore.get().pendingUiRequests).toEqual([]);
+    disconnect();
+    actions.enqueueUiRequest({
+      sessionPath: "/sessions/background.jsonl",
+      request: { type: "extension_ui_request", id: "next", method: "select" },
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconciles dialogs when the event stream reconnects", () => {
+    const sync = vi.spyOn(actions, "loadPendingUiRequests").mockResolvedValue();
+    vi.spyOn(actions, "refreshProjects").mockResolvedValue();
+    connectEvents();
+
+    emit("open", {});
+    emit("open", {});
+
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("extension notices", () => {

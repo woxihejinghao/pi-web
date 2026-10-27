@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // lands on English without a navigator (node test environment). The assertions
 // below pin the Chinese wording, so fix the host locale here.
 vi.stubGlobal("navigator", { language: "zh-CN" });
-import { api } from "./api.ts";
+import { api, ApiError } from "./api.ts";
 import { APP_NAME } from "./brand.ts";
 import {
   actions,
@@ -17,7 +17,8 @@ import {
 import type { ExtensionUiRequest, ProjectView, SessionView } from "./types.ts";
 import { DEFAULT_PRESET_ID } from "./types.ts";
 
-vi.mock("./api.ts", () => ({
+vi.mock("./api.ts", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("./api.ts")>()).ApiError,
   api: {
     listProjects: vi.fn(),
     listSessions: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("./api.ts", () => ({
     deleteSession: vi.fn(),
     listCommands: vi.fn(),
     listUiRequests: vi.fn(),
+    respondToUiRequest: vi.fn(),
     env: vi.fn(),
     reorderProjects: vi.fn(),
   },
@@ -478,6 +480,66 @@ describe("extension dialogs", () => {
     mocked.listUiRequests.mockResolvedValue({ requests: [dialog("", "ui_1")] });
     await actions.loadPendingUiRequests();
     expect(appStore.get().pendingUiRequests).toEqual([dialog("", "ui_1")]);
+  });
+
+  it("removes expired dialogs while keeping the current question", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "expired"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "current"));
+    mocked.listUiRequests.mockResolvedValue({ requests: [dialog(REAL_PATH, "current")] });
+
+    await actions.loadPendingUiRequests();
+
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual(["current"]);
+  });
+
+  it("does not restore a dialog answered while the list was in flight", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    mocked.listUiRequests.mockImplementationOnce(async () => {
+      actions.dismissUiRequest("ui_1");
+      return { requests: [dialog(REAL_PATH, "ui_1")] };
+    });
+
+    await actions.loadPendingUiRequests();
+
+    expect(appStore.get().pendingUiRequests).toEqual([]);
+  });
+
+  it("keeps dialogs when synchronization fails", async () => {
+    const pending = dialog(REAL_PATH, "ui_1");
+    actions.enqueueUiRequest(pending);
+    mocked.listUiRequests.mockRejectedValueOnce(new Error("offline"));
+
+    await actions.loadPendingUiRequests();
+
+    expect(appStore.get().pendingUiRequests).toEqual([pending]);
+  });
+
+  it("closes an expired card on a 404 and reconciles other stale cards", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "expired"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "also-expired"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "current"));
+    mocked.respondToUiRequest.mockRejectedValueOnce(new ApiError(404, "no dialog is waiting under that id"));
+    mocked.listUiRequests.mockResolvedValue({ requests: [dialog(REAL_PATH, "current")] });
+
+    expect(await actions.respondToUiRequest("expired", { cancelled: true })).toBe(false);
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual(["current"]);
+  });
+
+  it("keeps a card retryable when submitting fails for another reason", async () => {
+    const pending = dialog(REAL_PATH, "ui_1");
+    actions.enqueueUiRequest(pending);
+    mocked.respondToUiRequest.mockRejectedValueOnce(new ApiError(400, "invalid answer"));
+
+    await expect(actions.respondToUiRequest("ui_1", { value: "allow" })).rejects.toThrow("invalid answer");
+    expect(appStore.get().pendingUiRequests).toEqual([pending]);
+  });
+
+  it("dismisses a successfully answered card", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    mocked.respondToUiRequest.mockResolvedValueOnce({ ok: true });
+
+    expect(await actions.respondToUiRequest("ui_1", { value: "allow" })).toBe(true);
+    expect(appStore.get().pendingUiRequests).toEqual([]);
   });
 
   it("does not drop a dialog that arrived while the list was in flight", async () => {

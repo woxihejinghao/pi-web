@@ -3,7 +3,6 @@ import clsx from "clsx";
 import { CloseIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { actions, type PendingUiRequest, useT } from "../../lib/app-state.ts";
-import { api } from "../../lib/api.ts";
 import { Markdown } from "./Markdown.tsx";
 import {
   CONFIRM_NO,
@@ -120,8 +119,7 @@ export function QuestionCard({ pending }: QuestionCardProps) {
     setBusy("answer");
     setError(null);
     try {
-      await api.respondToUiRequest(request.id, payload);
-      actions.dismissUiRequest(request.id);
+      await actions.respondToUiRequest(request.id, payload);
     } catch (err) {
       setBusy(null);
       setError((err as Error).message);
@@ -131,9 +129,8 @@ export function QuestionCard({ pending }: QuestionCardProps) {
   const cancel = (): void => {
     setBusy("cancel");
     setError(null);
-    void api
+    void actions
       .respondToUiRequest(request.id, { cancelled: true })
-      .then(() => actions.dismissUiRequest(request.id))
       .catch((err: Error) => {
         setBusy(null);
         setError(err.message);

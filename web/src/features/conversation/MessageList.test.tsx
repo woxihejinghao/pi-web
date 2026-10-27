@@ -937,6 +937,22 @@ describe("MessageList action-row reveal", () => {
     expect(html).not.toContain('data-actions-reveal="hover"');
   });
 
+  it("does not render the answer action row while the turn is working", () => {
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view(turn("继续", [text("正在输出")]), { isStreaming: true })}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    // The prompt action row uses clock=start; an answer tail uses clock=end.
+    // Keeping the latter out of the live turn prevents it from sitting on top
+    // of the separate "正在努力" status row.
+    expect(html.match(/data-clock="end"/g) ?? []).toHaveLength(0);
+    expect(html).toContain("正在努力");
+  });
+
   it("carries the turn's summed usage onto its answer's row", () => {
     const answeredWithUsage: AgentMessage = {
       ...answered([text("好了")]),

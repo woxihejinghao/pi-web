@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { api } from "./api.ts";
+import { api, ApiError } from "./api.ts";
 import { APP_NAME } from "./brand.ts";
 import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
 import {
@@ -1772,18 +1772,42 @@ export const actions = {
   },
 
   /**
-   * Adopt the dialogs the server is still holding. Runs once at bootstrap, so
-   * it merges rather than replaces: a request pushed over SSE while this fetch
-   * was in flight must not be dropped by the reply to an older question.
+   * Reconcile against the server's live dialogs, retaining requests that arrived
+   * over SSE during the fetch and never restoring a locally dismissed card.
    */
   async loadPendingUiRequests(): Promise<void> {
+    const before = new Map(appStore.get().pendingUiRequests.map((item) => [item.request.id, item]));
     try {
       const { requests } = await api.listUiRequests();
-      for (const pending of requests) actions.enqueueUiRequest(pending);
+      const live = new Set(requests.map((item) => item.request.id));
+      appStore.update((state) => ({
+        ...state,
+        pendingUiRequests: state.pendingUiRequests.filter(
+          (item) => before.get(item.request.id) !== item || live.has(item.request.id),
+        ),
+      }));
+      for (const pending of requests) {
+        if (before.has(pending.request.id)
+          && !appStore.get().pendingUiRequests.some((item) => item.request.id === pending.request.id)) continue;
+        actions.enqueueUiRequest(pending);
+      }
     } catch {
-      // The stream is still the primary path; a failure here just means a
-      // dialog that predates this page stays hidden until it is answered.
+      // Keep the current queue on network failure; a later sync can retry.
     }
+  },
+
+  /** A stale dialog is already closed, including when another tab answered it. */
+  async respondToUiRequest(id: string, payload: Record<string, unknown>): Promise<boolean> {
+    try {
+      await api.respondToUiRequest(id, payload);
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+      actions.dismissUiRequest(id);
+      await actions.loadPendingUiRequests();
+      return false;
+    }
+    actions.dismissUiRequest(id);
+    return true;
   },
 
   /**

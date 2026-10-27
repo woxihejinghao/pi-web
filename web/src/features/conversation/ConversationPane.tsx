@@ -494,8 +494,8 @@ export function ConversationPane() {
         draftKey={pendingUi.request.id}
         onOpenPlan={openPlanFromReview}
         onSubmit={async (decision) => {
-          await api.respondToUiRequest(pendingUi.request.id, decision);
-          actions.dismissUiRequest(pendingUi.request.id);
+          const answered = await actions.respondToUiRequest(pendingUi.request.id, decision);
+          if (!answered) return;
           // A plan review answers a mode switch as well as a verdict: approving
           // leaves plan mode, and the process knows that before any file does —
           // so ask it now instead of waiting for the next settled turn to read
