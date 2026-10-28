@@ -22,6 +22,15 @@ import {
   updateExtension,
 } from "./updates.ts";
 import {
+  readPrompts,
+  savePrompt,
+} from "./prompts.ts";
+import {
+  readSkills,
+  readSkill,
+  setSkillEnabled,
+} from "./skills.ts";
+import {
   McpConfigError,
   deleteMcpServer,
   probeMcpServer,
@@ -1152,6 +1161,27 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(res, 200, { models: await fetchProviderModels(input) });
   });
 
+  // --- prompts --------------------------------------------------------------
+
+  route("GET", "/api/prompts", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readPrompts(projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  route("PUT", "/api/prompts", async ({ res, body }) => {
+    const payload = asObject(body);
+    const scope = requireString(payload, "scope");
+    if (scope !== "global" && scope !== "workspace") throw badRequest("scope must be global or workspace");
+    if (typeof payload.content !== "string") throw badRequest("content must be a string");
+    const projectPath = optionalProjectPath(payload);
+    if (scope === "workspace" && projectPath === null) throw badRequest("projectPath is required for workspace prompts");
+    const view = await savePrompt(scope, payload.content, projectPath);
+    // Context files are loaded when pi starts. Retire resident sessions so the
+    // next session observes the edited instructions instead of stale state.
+    await registry.closeAllExcept(null, "prompts-changed");
+    json(res, 200, view);
+  });
+
   // --- extensions -----------------------------------------------------------
 
   /**
@@ -1189,6 +1219,33 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       enabled: payload.enabled,
     });
     await registry.closeAllExcept(null, "extensions-changed");
+    json(res, 200, view);
+  });
+
+  // --- skills ---------------------------------------------------------------
+
+  route("GET", "/api/skills", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readSkills(projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  route("GET", "/api/skills/detail", async ({ res, query }) => {
+    const path = query.get("path");
+    if (!path) throw badRequest("path is required");
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readSkill(path, projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  route("PUT", "/api/skills", async ({ res, body }) => {
+    const payload = asObject(body);
+    const path = requireString(payload, "path");
+    if (typeof payload.enabled !== "boolean") throw badRequest("enabled must be a boolean");
+    const view = await setSkillEnabled({
+      path,
+      enabled: payload.enabled,
+      projectPath: optionalProjectPath(payload),
+    });
+    await registry.closeAllExcept(null, "skills-changed");
     json(res, 200, view);
   });
 

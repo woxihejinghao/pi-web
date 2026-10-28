@@ -20,10 +20,14 @@ import type {
   OpenFileResult,
   PendingUiDialog,
   ProjectView,
+  PromptDocument,
+  PromptsView,
   ProviderInput,
   ProviderModelEntry,
   RpcSessionState,
   SessionListPage,
+  SkillItem,
+  SkillsView,
   SlashCommandList,
   StartLocation,
   TerminalCleanupFailure,
@@ -511,6 +515,13 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  /** Read pi's global context and the current workspace context file. */
+  getPrompts: (projectPath: string | null) =>
+    request<PromptsView>(`/api/prompts${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`),
+
+  savePrompt: (input: { scope: PromptDocument["scope"]; content: string; projectPath: string | null }) =>
+    request<PromptsView>("/api/prompts", { method: "PUT", body: JSON.stringify(input) }),
+
   /**
    * Installed extensions, resolved by pi's own package manager from the
    * settings and package files on disk. There is no RPC for this: a running
@@ -536,6 +547,17 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+
+  /** Skills discovered by pi in the global and current workspace skill roots. */
+  getSkills: (projectPath: string | null) =>
+    request<SkillsView>(`/api/skills${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`),
+
+  getSkill: (path: string, projectPath: string | null) =>
+    request<SkillItem>(`/api/skills/detail?path=${encodeURIComponent(path)}` +
+      (projectPath ? `&projectPath=${encodeURIComponent(projectPath)}` : "")),
+
+  setSkillEnabled: (input: { path: string; projectPath: string | null; enabled: boolean }) =>
+    request<SkillsView>("/api/skills", { method: "PUT", body: JSON.stringify(input) }),
 
   /**
    * Update notices: whether a newer pi is published, and which installed pi

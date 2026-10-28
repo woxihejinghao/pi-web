@@ -882,6 +882,40 @@ export interface ExtensionItem {
   enabled: boolean;
 }
 
+export interface PromptDocument {
+  scope: "global" | "workspace";
+  path: string;
+  content: string;
+  exists: boolean;
+  active: boolean;
+}
+
+export interface PromptsView {
+  global: PromptDocument;
+  workspace: PromptDocument | null;
+  workspacePath: string | null;
+}
+
+
+export interface SkillItem {
+  name: string;
+  description: string;
+  path: string;
+  scope: "user" | "project";
+  enabled: boolean;
+  content: string;
+  source: string;
+}
+
+export interface SkillsView {
+  agentDir: string;
+  projectPath: string | null;
+  projectTrusted: boolean;
+  skillsPath: string;
+  projectSkillsPath: string | null;
+  skills: SkillItem[];
+  error: string | null;
+}
 export interface ExtensionsView {
   agentDir: string;
   /** pi's global settings file. */
