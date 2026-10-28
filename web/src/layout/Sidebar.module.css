@@ -530,19 +530,6 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/*
- * The update dot on 设置. The label is the only place it fits without inventing
- * a nav item: the notices themselves live inside the settings page, and this is
- * what makes them discoverable without opening it.
- */
-.updateDot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--dsw-alias-state-warn-primary);
-}
-
 /* --- workspace row --- */
 
 /*

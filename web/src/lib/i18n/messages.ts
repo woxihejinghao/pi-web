@@ -78,7 +78,6 @@ export const zhCN = {
   "sidebar.orderByUpdated": "最近更新",
   "sidebar.empty": "还没有工作区。点击 + 选择一个本地目录。",
   "sidebar.settings": "设置",
-  "sidebar.settingsWithUpdate": "设置 · 有可用更新",
 
   // --- common ---------------------------------------------------------------
   "common.cancel": "取消",
@@ -969,7 +968,6 @@ export const en: Record<MessageKey, string> = {
   "sidebar.orderByUpdated": "Last updated",
   "sidebar.empty": "No workspaces yet. Click + to pick a local directory.",
   "sidebar.settings": "Settings",
-  "sidebar.settingsWithUpdate": "Settings · update available",
 
   "common.cancel": "Cancel",
   "common.close": "Close",

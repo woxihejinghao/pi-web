@@ -10,7 +10,6 @@ import { useSidebarDrag } from "../features/projects/use-sidebar-drag.ts";
 import { actions, appStore, useT } from "../lib/app-state.ts";
 import { APP_NAME, PI_MARK_URL } from "../lib/brand.ts";
 import { buildProjectTree } from "../lib/project-tree.ts";
-import { hasAnyUpdate } from "../lib/updates.ts";
 import { useStore } from "../lib/store.ts";
 import styles from "./Sidebar.module.css";
 
@@ -32,9 +31,6 @@ export function Sidebar() {
   const drag = useSidebarDrag(tree);
   const closeViewMenu = useCallback(() => setViewMenuAt(null), []);
   const currentProject = state.projects.find((project) => project.id === state.selectedProjectId);
-  // The user-scope answer, loaded at bootstrap: the badge is about the tool
-  // itself, so it does not follow whichever workspace is selected.
-  const updateAvailable = hasAnyUpdate(state.updates[""] ?? null);
 
   const searchRootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -204,14 +200,11 @@ export function Sidebar() {
         <button
           type="button"
           className={styles.settingsTrigger}
-          title={
-            updateAvailable ? t("sidebar.settingsWithUpdate") : t("sidebar.settings")
-          }
+          title={t("sidebar.settings")}
           onClick={actions.openSettings}
         >
           <Glyph name="settings" size={16} />
           {t("sidebar.settings")}
-          {updateAvailable ? <span className={styles.updateDot} aria-hidden /> : null}
         </button>
       </div>
 
