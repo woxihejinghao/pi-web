@@ -13,9 +13,8 @@
  *    so on web each one moves to `primary+alt`. A browser may still win a race
  *    it starts (nothing a page does can take back `⌘W`), which is why the
  *    panels that the browser reserves are the ones this table does not bind.
- *  * **`Ctrl+\`` is the same everywhere.** It is deliberately *not* built on
- *    `primary`, because it is the one binding every terminal-bearing editor
- *    agrees on and a Mac user's fingers already expect Control.
+ *  * **Ctrl+\\` is no longer bound here.** The right sidebar focuses on files,
+ * browser tabs and changes.
  *
  * Two of them act on the panel's **focused pane** rather than on the panel:
  * splitting and going fullscreen both mean "this half", and when two panes are
@@ -100,20 +99,6 @@ function openFiles(): void {
   rightbarActions.openFilesTab(key);
 }
 
-/**
- * Open one more shell.
- *
- * A new tab every time, which is dsh's `terminal.new` and the reason this is
- * not a toggle: two terminals are two processes and neither replaces the other.
- * `docs/known-limitations.md` records what that costs — the host caps a session
- * at eight shells, and closing a terminal's chip is what releases its slot.
- */
-function openTerminal(): void {
-  const key = activeSession();
-  if (key === null) return;
-  rightbarActions.openTerminalTab(key);
-}
-
 /** Open a browser tab on the local dev server this panel exists for. */
 function openBrowser(): void {
   const key = activeSession();
@@ -163,14 +148,6 @@ export const rightbarCommands = [
       web: { code: "KeyP", modifiers: ["primary", "alt"] },
     },
     run: openFiles,
-  },
-  {
-    id: "rightbar.terminal",
-    defaults: {
-      desktop: { code: "Backquote", modifiers: ["control"] },
-      web: { code: "Backquote", modifiers: ["control"] },
-    },
-    run: openTerminal,
   },
   {
     id: "rightbar.browser",

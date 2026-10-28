@@ -340,7 +340,7 @@ function parseSurface(raw: string): RightbarSurface | null {
   if (typeof record.tabs === "object" && record.tabs !== null && !Array.isArray(record.tabs)) {
     for (const entry of Object.values(record.tabs)) {
       const tab = readTab(entry);
-      if (tab !== null) tabs[tab.id] = tab;
+      if (tab !== null && tab.kind !== "terminal") tabs[tab.id] = tab;
     }
   }
 
@@ -409,7 +409,7 @@ function adoptLegacy(raw: string): RightbarSurface | null {
   if (Array.isArray(record.tabs)) {
     for (const entry of record.tabs) {
       const tab = readTab(entry);
-      if (tab === null) continue;
+      if (tab === null || tab.kind === "terminal") continue;
       ids.push(tab.id);
       tabs[tab.id] = tab;
     }

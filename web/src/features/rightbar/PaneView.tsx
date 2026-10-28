@@ -4,7 +4,6 @@ import clsx from "clsx";
 import { CloseIcon, PlusIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { useT } from "../../lib/app-state.ts";
-import { useStore } from "../../lib/store.ts";
 import { halvesFit } from "./dock-geometry.ts";
 import { STRIP_ATTR, TAB_ATTR, type DropTarget } from "./dock-hit.ts";
 import { DiffIcon, FileIcon } from "./rightbar-icons.tsx";
@@ -19,9 +18,7 @@ import {
   type RightbarTabKind,
 } from "./rightbar-state.ts";
 import { TabBody } from "./TabBody.tsx";
-import { TerminalGuide } from "./TerminalGuide.tsx";
 import { shortcutTitle } from "./shortcuts.ts";
-import { terminalActions, terminalStore } from "./terminal-state.ts";
 // Named `paneCss` rather than `pane`: this component's own prop is called
 // `pane`, and a shadowed CSS import silently resolves to the prop — the
 // `pane.note` placeholder below then reads as a property of `RightbarPane`.
@@ -35,7 +32,6 @@ export type SplitBlock = "budget" | "width";
 export function TabIcon({ kind }: { kind: RightbarTabKind }) {
   if (kind === "files") return <Glyph name="checklist" size={13} />;
   if (kind === "browser") return <Glyph name="browse" size={13} />;
-  if (kind === "terminal") return <Glyph name="terminal" size={13} />;
   if (kind === "changes" || kind === "changes-review") return <DiffIcon width={13} height={13} />;
   return <FileIcon width={13} height={13} />;
 }
@@ -200,7 +196,6 @@ export function PaneView({
   const paneRef = useRef<HTMLElement | null>(null);
   const tabs = paneTabs(surface, pane);
   const active = tabs.find((tab) => tab.id === pane.activeTabId) ?? tabs[0] ?? null;
-  const support = useStore(terminalStore).support;
 
   // The room rule reads pixels, which the model does not carry: the pane
   // measures itself and the split control says why it is disabled. A reading
@@ -305,12 +300,7 @@ export function PaneView({
       <div className={styles.paneBody}>
         {active === null ? (
           <div className={paneCss.guideHost} data-rb-empty>
-            <TerminalGuide
-              sessionPath={sessionPath}
-              paneId={pane.id}
-              disabled={support !== null && !support.available}
-              reason={support?.reason}
-            />
+            <span>{t("rightbar.emptyPane")}</span>
           </div>
         ) : (
           <TabBody
@@ -352,7 +342,7 @@ function Chip({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const cancelled = useRef(false);
-  const canEdit = tab.kind === "terminal" || tab.kind === "preview";
+  const canEdit = tab.kind === "preview";
 
   const commit = (): void => {
     setEditing(false);
@@ -365,12 +355,6 @@ function Chip({
     if (next.length === 0 || next === title) {
       setDraft(title);
       return;
-    }
-    // The host owns a terminal's name, so another window sees the rename; the
-    // local layout has to be told too, or this window keeps the old label until
-    // the next state frame arrives.
-    if (tab.kind === "terminal" && tab.target.length > 0) {
-      void terminalActions.rename(tab.target, next).catch(() => {});
     }
     rightbarActions.setTabTitle(sessionPath, tab.id, next);
   };
@@ -481,13 +465,7 @@ function Chip({
 function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [shellsOpen, setShellsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const state = useStore(terminalStore);
-  const support = state.support;
-  const shells = state.shells;
 
   useEffect(() => {
     if (!open) return;
@@ -495,50 +473,16 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
       const root = rootRef.current;
       if (root !== null && event.target instanceof Node && root.contains(event.target)) return;
       setOpen(false);
-      setShellsOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-    };
+    return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
-
-  // Asked when the menu opens rather than when the panel does: a sidebar opened
-  // to read a file has no business asking the host about shells.
-  useEffect(() => {
-    if (!open) return;
-    if (terminalStore.get().support === null) void terminalActions.probe();
-  }, [open]);
-
-  // null means the answer has not landed yet. The entry stays live in that
-  // case — the tab itself knows how to report a host that cannot open a shell.
-  const terminalOff = support !== null && !support.available;
 
   const pick = (kind: "files" | "changes" | "browser"): void => {
     setOpen(false);
     if (kind === "files") rightbarActions.openFilesTab(sessionPath, paneId);
     else if (kind === "changes") rightbarActions.openChangesTab(sessionPath, paneId);
     else rightbarActions.openBrowserTab(sessionPath, "", paneId);
-  };
-
-  const openShells = (): void => {
-    setShellsOpen(true);
-    setLoading(true);
-    setError(null);
-    void terminalActions
-      .loadShells()
-      .catch((err: unknown) => {
-        setError((err as Error).message);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  };
-
-  const openShell = (shellPath?: string): void => {
-    setOpen(false);
-    setShellsOpen(false);
-    rightbarActions.openTerminalTab(sessionPath, paneId, shellPath);
   };
 
   return (
@@ -556,103 +500,41 @@ function AddTabMenu({ sessionPath, paneId }: { sessionPath: string; paneId: stri
         onClick={(event) => {
           event.stopPropagation();
           setOpen((value) => !value);
-          setShellsOpen(false);
         }}
       >
         <PlusIcon width={13} height={13} />
       </button>
       {open ? (
         <div className={styles.menu} role="menu">
-          {shellsOpen ? (
-            <>
-              <div className={styles.menuLabel}>{t("terminal.shellMenu")}</div>
-              {loading ? <div className={styles.menuNote}>{t("terminal.shellsLoading")}</div> : null}
-              {error !== null ? <div className={styles.menuNote}>{error}</div> : null}
-              {!loading ? (
-                <button
-                  type="button"
-                  className={styles.menuItem}
-                  role="menuitem"
-                  onClick={() => {
-                    openShell();
-                  }}
-                >
-                  {t("terminal.defaultShell")}
-                </button>
-              ) : null}
-              {!loading
-                ? shells.map((shell) => (
-                    <button
-                      key={shell.path}
-                      type="button"
-                      className={styles.menuItem}
-                      role="menuitem"
-                      onClick={() => {
-                        openShell(shell.path);
-                      }}
-                    >
-                      {shell.name}
-                    </button>
-                  ))
-                : null}
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className={styles.menuItem}
-                role="menuitem"
-                title={shortcutTitle(t, t("tab.files"), "rightbar.files")}
-                onClick={() => {
-                  pick("files");
-                }}
-              >
-                <Glyph name="checklist" size={13} />
-                {t("tab.files")}
-              </button>
-              <button
-                type="button"
-                className={styles.menuItem}
-                role="menuitem"
-                onClick={() => {
-                  pick("changes");
-                }}
-              >
-                <DiffIcon width={13} height={13} />
-                {t("tab.changes")}
-              </button>
-              {/* Offered but disabled rather than hidden: a machine without a
-                  prebuilt node-pty still wants to know the tab exists and why it
-                  is not there, and the reason is one hover away. */}
-              <button
-                type="button"
-                className={styles.menuItem}
-                role="menuitem"
-                disabled={terminalOff}
-                title={
-                  terminalOff
-                    ? support?.reason
-                    : shortcutTitle(t, t("tab.terminal"), "rightbar.terminal")
-                }
-                onClick={openShells}
-              >
-                <Glyph name="terminal" size={13} />
-                {t("tab.terminal")}
-              </button>
-              <button
-                type="button"
-                className={styles.menuItem}
-                role="menuitem"
-                title={shortcutTitle(t, t("tab.browser"), "rightbar.browser")}
-                onClick={() => {
-                  pick("browser");
-                }}
-              >
-                <Glyph name="browse" size={13} />
-                {t("tab.browser")}
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className={styles.menuItem}
+            role="menuitem"
+            title={shortcutTitle(t, t("tab.files"), "rightbar.files")}
+            onClick={() => pick("files")}
+          >
+            <Glyph name="checklist" size={13} />
+            {t("tab.files")}
+          </button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            role="menuitem"
+            onClick={() => pick("changes")}
+          >
+            <DiffIcon width={13} height={13} />
+            {t("tab.changes")}
+          </button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            role="menuitem"
+            title={shortcutTitle(t, t("tab.browser"), "rightbar.browser")}
+            onClick={() => pick("browser")}
+          >
+            <Glyph name="browse" size={13} />
+            {t("tab.browser")}
+          </button>
         </div>
       ) : null}
     </div>

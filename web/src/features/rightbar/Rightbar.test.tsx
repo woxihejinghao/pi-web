@@ -95,19 +95,6 @@ describe("Rightbar", () => {
     expect(html).toContain("读取改动");
   });
 
-  it("gives a terminal tab a chip, and loads its screen on demand", () => {
-    selectSession("sess-1");
-    rightbarActions.openTerminalTab("sess-1");
-    const html = renderToStaticMarkup(<Rightbar />);
-    // The strip is in the main chunk and names the tab straight away...
-    expect(html).toContain('title="终端"');
-    // ...while the body is behind a `lazy` boundary, so a static render — which
-    // never resolves one — draws the fallback. That is the whole point of the
-    // split: xterm is ~340 kB and only a terminal tab ever needs it.
-    // `TerminalTab.test.tsx` covers what the body draws once it arrives.
-    expect(html).toContain("加载中");
-  });
-
   it("prints the keys a control also answers to", () => {
     selectSession("sess-1");
     rightbarActions.open("sess-1");
@@ -144,7 +131,7 @@ describe("Rightbar", () => {
     // The half the split made holds nothing, and offers the thing it can open
     // rather than drawing a blank box.
     expect(html).toContain('data-rb-empty="true"');
-    expect(html).toContain("新建终端");
+    expect(html).toContain("空面板");
   });
 
   it("puts the seam between the two panes, not after them", () => {
