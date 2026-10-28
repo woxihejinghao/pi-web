@@ -15,6 +15,7 @@ import type {
   TranscriptDisplay,
   UserMessage,
 } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { ImageThumb } from "../../components/ImageLightbox.tsx";
 import { imageBlocksOf } from "../../lib/image-attachments.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -121,6 +122,7 @@ function BlockView({
   /** Whether a process row's own body starts open — the verbose display. */
   defaultOpen: boolean;
 } & PathContext) {
+  if (!isContentBlock(block)) return null;
   if (block.type === "text") {
     const text = (block as TextBlock).text;
     // `streaming` is the whole gate on file chips: a half-written path is not a
@@ -423,6 +425,7 @@ function assistantTextOf(messages: AgentMessage[]): string {
   return messages
     .filter((message) => message.role === "assistant")
     .flatMap((message) => (message as AssistantMessage).content ?? [])
+    .filter(isContentBlock)
     .filter((block): block is TextBlock => block.type === "text")
     .map((block) => block.text)
     .join("\n\n");
@@ -571,7 +574,7 @@ function endsWithReply(messages: AgentMessage[]): boolean {
   const content = (last as AssistantMessage).content;
   for (let index = content.length - 1; index >= 0; index -= 1) {
     const block = content[index];
-    if (block === undefined) continue;
+    if (!isContentBlock(block)) continue;
     // Reasoning is not the answer, and a blank text block is a streaming
     // placeholder: neither decides, so keep looking backwards.
     if (block.type === "thinking") continue;
@@ -1277,7 +1280,11 @@ export function MessageList({
   }, [tailCount, landOnTurn]);
 
   const partial = view.partial;
-  const hasPartial = partial !== null && partial.length > 0;
+  let lastPartialIndex = -1;
+  partial?.forEach((block, index) => {
+    if (isContentBlock(block)) lastPartialIndex = index;
+  });
+  const hasPartial = lastPartialIndex >= 0;
   const lastTurn = railItems.at(-1)?.turn ?? null;
   /**
    * The turn still being produced. Its rail mark pulses, and its changed-files
@@ -1348,6 +1355,7 @@ export function MessageList({
             if (message.role === "user") return;
             const content = (message as AssistantMessage).content ?? [];
             content.forEach((block, blockIndex) => {
+              if (!isContentBlock(block)) return;
               // A committed tool call carries no `live` flag, so a turn whose
               // current work is a tool — nothing streaming right now — would
               // otherwise read as settled. The execution's own running state is
@@ -1372,15 +1380,16 @@ export function MessageList({
            * have (pi appends it), so the keys line up exactly.
            */
           const isLiveTurn = group.turn === liveTurn;
-          if (isLiveTurn && hasPartial) {
+          if (isLiveTurn && partial !== null && hasPartial) {
             const messageIndex = group.messages.length;
             partial.forEach((block, blockIndex) => {
+              if (!isContentBlock(block)) return;
               steps.push({
                 block,
                 messageIndex,
                 blockIndex,
                 live: true,
-                tail: blockIndex === partial.length - 1,
+                tail: blockIndex === lastPartialIndex,
               });
             });
           }
@@ -1542,15 +1551,19 @@ export function MessageList({
          * whose first event is an assistant message, before any prompt is in
          * the transcript. Everything else is rendered by the live turn above.
          */}
-        {hasPartial && !partialMerged ? (
+        {hasPartial && partial !== null && !partialMerged ? (
           <TurnBody
-            steps={partial.map((block, blockIndex) => ({
-              block,
-              messageIndex: -1,
-              blockIndex,
-              live: true,
-              tail: blockIndex === partial.length - 1,
-            }))}
+            steps={partial.flatMap((block, blockIndex) =>
+              !isContentBlock(block)
+                ? []
+                : [{
+                    block,
+                    messageIndex: -1,
+                    blockIndex,
+                    live: true,
+                    tail: blockIndex === lastPartialIndex,
+                  }],
+            )}
             executions={view.toolExecutions}
             results={results}
             streaming={view.isStreaming}

@@ -21,6 +21,7 @@ import type {
   ToolCallBlock,
   ToolResultMessage,
 } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { basename } from "./file-ref.ts";
 import { classify } from "./row-model.ts";
 import { relativeToProject } from "./turn-files.ts";
@@ -83,6 +84,7 @@ export function turnRefPaths(
   const found = new Map<string, TurnRefPath>();
 
   for (const block of blocks) {
+    if (!isContentBlock(block)) continue;
     if (block.type !== "toolCall") continue;
     const call = block as ToolCallBlock;
     const raw = pathArgument(call.arguments);

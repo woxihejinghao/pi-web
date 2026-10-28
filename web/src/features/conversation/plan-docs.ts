@@ -1,4 +1,5 @@
 import type { AgentMessage, AssistantMessage, ToolCallBlock } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 
 /**
  * A plan's text, however it reached the client.
@@ -68,6 +69,7 @@ export function planDocsOf(messages: readonly AgentMessage[]): PlanDoc[] {
   for (const message of messages) {
     if (message.role !== "assistant") continue;
     for (const block of (message as AssistantMessage).content ?? []) {
+      if (!isContentBlock(block)) continue;
       if (block.type !== "toolCall") continue;
       const call = block as ToolCallBlock;
       if (call.name !== EXIT_PLAN_MODE_TOOL) continue;

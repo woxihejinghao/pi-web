@@ -49,6 +49,7 @@ vi.mock("../../lib/app-state.ts", () => ({
 
 const { getMessages, prompt, steer, followUp } = mocks;
 
+import { sessionEvents } from "../../lib/app-state.ts";
 import { useConversation } from "./useConversation.ts";
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void };
@@ -158,6 +159,80 @@ describe("useConversation generation and targeted rollback regressions", () => {
     await Promise.resolve();
 
     expect(getMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves content indexes when streaming resumes partway through a message", async () => {
+    resetHarness();
+    getMessages.mockResolvedValue({ messages: [loaded("history")], forkPoints: [] });
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    expect(listener).toBeDefined();
+    listener?.({
+      sessionPath: "session",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", contentIndex: 2, delta: "resumed" },
+      },
+    });
+    const partial = render("session").partial;
+    expect(partial).toHaveLength(3);
+    expect(0 in partial).toBe(false);
+    expect(1 in partial).toBe(false);
+    expect(partial[2]).toEqual({ type: "text", text: "resumed" });
+
+    listener?.({
+      sessionPath: "session",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "earlier" },
+      },
+    });
+    const updated = render("session").partial;
+    expect(0 in partial).toBe(false);
+    expect(updated[0]).toEqual({ type: "text", text: "earlier" });
+    expect(updated[2]).toEqual({ type: "text", text: "resumed" });
+  });
+
+  it("skips missing tool result blocks in streamed updates and final results", async () => {
+    resetHarness();
+    getMessages.mockResolvedValue({ messages: [], forkPoints: [] });
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    expect(listener).toBeDefined();
+    listener?.({
+      sessionPath: "session",
+      event: {
+        type: "tool_execution_update",
+        toolCallId: "tool-1",
+        toolName: "read",
+        partialResult: { content: [undefined, null, { type: "text", text: "partial" }] },
+      },
+    });
+    const running = render("session").toolExecutions["tool-1"];
+    expect(running.output).toBe("partial");
+    expect(running.result).toEqual([{ type: "text", text: "partial" }]);
+    expect(running.running).toBe(true);
+
+    listener?.({
+      sessionPath: "session",
+      event: {
+        type: "tool_execution_end",
+        toolCallId: "tool-1",
+        toolName: "read",
+        result: { content: [null, { type: "text", text: "finished" }] },
+      },
+    });
+    const finished = render("session").toolExecutions["tool-1"];
+    expect(finished.result).toEqual([{ type: "text", text: "finished" }]);
+    expect(finished.running).toBe(false);
   });
 
   it("rolls back only the failed optimistic send when sends run concurrently", async () => {

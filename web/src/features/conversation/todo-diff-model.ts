@@ -13,6 +13,7 @@
 
 import type { Translate } from "../../lib/i18n/index.ts";
 import type { AgentMessage } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { parseTodoSnapshot, type TodoItem } from "./todo-model.ts";
 
 /** One task plus how this write touched it, as the diff card reads it. */
@@ -157,6 +158,7 @@ export function todoBaselinesOf(messages: readonly AgentMessage[]): Map<string, 
       const content = (message as { content?: unknown }).content;
       if (!Array.isArray(content)) continue;
       for (const block of content) {
+        if (!isContentBlock(block)) continue;
         const call = block as { type?: string; name?: string; id?: string };
         if (call.type === "toolCall" && call.name === "todo" && typeof call.id === "string") {
           baselines.set(call.id, last);

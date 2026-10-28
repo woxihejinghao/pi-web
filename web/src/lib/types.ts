@@ -118,6 +118,13 @@ export type ContentBlock =
   | ImageBlock
   | { type: string; [key: string]: unknown };
 
+/** Runtime guard for content arrays arriving from JSON or streaming events. */
+export function isContentBlock(value: unknown): value is ContentBlock {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as { type?: unknown }).type === "string";
+}
+
 export interface UserMessage {
   role: "user";
   content: string | ContentBlock[];

@@ -14,6 +14,7 @@ import type {
   ThinkingBlock,
   ToolCallBlock,
 } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { projectTodos, type TodoItem } from "./todo-model.ts";
 import { projectPendingQuestions, type PendingQuestion } from "./pending-questions.ts";
 import { parseStreamingJson } from "../../lib/streaming-json.ts";
@@ -422,6 +423,7 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
 function textFromContent(content: string | ContentBlock[]): string {
   if (typeof content === "string") return content;
   return content
+    .filter(isContentBlock)
     .map((block) => (block.type === "text" ? (block as TextBlock).text : ""))
     .join("");
 }
@@ -649,7 +651,9 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       // user messages already in the transcript, and a reply that arrived as a
       // new turn has to close its question on the frame that carries it.
       pendingQuestions: projectPendingQuestions(messagesRef.current),
-      partial: slot ? [...slot.content] : null,
+      // `slice()` copies without densifying a sparse contentIndex array. Spread
+      // would turn an as-yet-unseen block into explicit `undefined`.
+      partial: slot ? slot.content.slice() : null,
       // Recomputed rather than counted as it changes: the refs are the state,
       // and one pass over a few hundred messages is cheaper than a counter that
       // can drift from the list it describes.
@@ -853,8 +857,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           const id = asString(event.toolCallId);
           const previous = toolsRef.current[id];
           const partial = event.partialResult as { content?: ContentBlock[]; details?: unknown } | undefined;
-          const chunk = partial?.content
-            ? partial.content
+          const content = Array.isArray(partial?.content)
+            ? partial.content.filter(isContentBlock)
+            : null;
+          const chunk = content
+            ? content
                 .map((block) => (block.type === "text" ? (block as TextBlock).text : ""))
                 .join("")
             : "";
@@ -864,7 +871,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
               toolName: previous?.toolName ?? asString(event.toolName),
               args: previous?.args,
               output: chunk.length > 0 ? chunk : (previous?.output ?? ""),
-              result: partial?.content ?? previous?.result ?? null,
+              result: content ?? previous?.result ?? null,
               details: partial?.details ?? previous?.details,
               isError: previous?.isError ?? false,
               running: true,
@@ -885,13 +892,16 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           }
           const previous = toolsRef.current[id];
           const result = event.result as { content?: ContentBlock[]; details?: unknown } | undefined;
+          const content = Array.isArray(result?.content)
+            ? result.content.filter(isContentBlock)
+            : null;
           toolsRef.current = {
             ...toolsRef.current,
             [id]: {
               toolName: previous?.toolName ?? asString(event.toolName),
               args: previous?.args,
               output: previous?.output ?? "",
-              result: result?.content ?? previous?.result ?? null,
+              result: content ?? previous?.result ?? null,
               details: result?.details ?? previous?.details,
               isError: Boolean(event.isError),
               running: false,

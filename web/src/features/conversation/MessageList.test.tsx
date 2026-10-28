@@ -486,6 +486,32 @@ describe("MessageList streaming message", () => {
     expect(transcript("compact")).not.toContain("data-preview");
   });
 
+  it("skips missing blocks in a streaming content array", () => {
+    const partial = [undefined, text("流式输出仍然可见")] as unknown as ContentBlock[];
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("继续")], { partial, isStreaming: true })}
+        cwd={CWD}
+        home="/Users/dev"
+      />,
+    );
+
+    expect(html).toContain("流式输出仍然可见");
+  });
+
+  it("marks the last valid streamed block as running when later entries are missing", () => {
+    const partial = [undefined, thought("正在继续"), null] as unknown as ContentBlock[];
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([asked("继续")], { partial, isStreaming: true })}
+        transcriptView="verbose"
+      />,
+    );
+
+    expect(html).toContain("正在继续");
+    expect(html.match(/data-state="running"/g)).toHaveLength(1);
+  });
+
   it("still renders a streamed message with no turn to attach to", () => {
     const html = renderToStaticMarkup(
       <MessageList
@@ -496,6 +522,52 @@ describe("MessageList streaming message", () => {
     );
 
     expect(html).toContain("孤儿输出");
+  });
+
+  it("skips missing and sparse blocks in an orphaned stream", () => {
+    const sparse: ContentBlock[] = [];
+    sparse[2] = text("空槽之后");
+    const withUndefined = [undefined, text("缺失之后")] as unknown as ContentBlock[];
+    for (const [partial, expected] of [[sparse, "空槽之后"], [withUndefined, "缺失之后"]] as const) {
+      const html = renderToStaticMarkup(
+        <MessageList view={view([], { partial, isStreaming: true })} />,
+      );
+      expect(html).toContain(expected);
+    }
+  });
+
+  it("retains valid text in a user message with missing blocks", () => {
+    const content = [undefined, null, text("用户内容")] as unknown as ContentBlock[];
+    const html = renderToStaticMarkup(
+      <MessageList view={view([{ role: "user", content, timestamp: 0 }])} />,
+    );
+
+    expect(html).toContain("用户内容");
+  });
+
+  it("renders valid committed and tool result blocks despite malformed entries", () => {
+    const malformed = [
+      undefined,
+      null,
+      text("历史答复"),
+      wrote(`${CWD}/a.ts`),
+      { type: "toolCall", id: "read-1", name: "read", arguments: { path: `${CWD}/a.ts` } },
+    ] as unknown as ContentBlock[];
+    const result = [undefined, null, text("工具输出")] as unknown as ContentBlock[];
+    const html = renderToStaticMarkup(
+      <MessageList
+        view={view([
+          asked("检查"),
+          answered(malformed),
+          { role: "toolResult", toolCallId: "read-1", toolName: "read", content: result, timestamp: 2 },
+        ])}
+        cwd={CWD}
+        transcriptView="verbose"
+      />,
+    );
+    expect(html).toContain("历史答复");
+    expect(html).toContain("工具输出");
+    expect(html).toContain("已编辑 a.ts");
   });
 });
 

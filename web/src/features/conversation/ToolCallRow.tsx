@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Glyph, type GlyphName } from "../../components/dsh-icons.tsx";
 import { StateDot } from "../../components/StateDot.tsx";
 import type { ContentBlock, TextBlock, ToolCallBlock } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { DisclosureRow } from "./DisclosureRow.tsx";
 import { useDisclosureOpen } from "./use-disclosure-open.ts";
 import { ImageThumb } from "../../components/ImageLightbox.tsx";
@@ -34,6 +35,7 @@ const VARIANT_GLYPHS: Record<Variant, GlyphName> = {
 function blocksToText(blocks: ContentBlock[] | null): string {
   if (!blocks) return "";
   return blocks
+    .filter(isContentBlock)
     .filter((block) => block.type !== "image")
     .map((block) => (block.type === "text" ? (block as TextBlock).text : `[${block.type}]`))
     .join("\n");
