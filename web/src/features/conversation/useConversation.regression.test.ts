@@ -257,4 +257,164 @@ describe("useConversation generation and targeted rollback regressions", () => {
     expect(state.result.messages.map((message: any) => message.content)).toEqual(["second"]);
     expect(state.result.error).toBe("first failed");
   });
+
+  it("does not absorb a no-start message_end into a matching historical assistant", async () => {
+    resetHarness();
+    const historical = {
+      role: "assistant",
+      responseId: "response-1",
+      content: [{ type: "text", text: "same" }],
+      timestamp: 1,
+    };
+    getMessages.mockResolvedValue({ messages: [historical], forkPoints: [] });
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    listener?.({
+      sessionPath: "session",
+      event: { type: "message_end", message: { ...historical, timestamp: 2 } },
+    });
+    render("session");
+
+    expect(state.result.messages).toHaveLength(2);
+    expect(state.result.messages.map((message: any) => message.role)).toEqual(["assistant", "assistant"]);
+  });
+
+  it("does not replace an older assistant prefix from a different response", async () => {
+    resetHarness();
+    const historical = {
+      role: "assistant",
+      responseId: "old-response",
+      content: [{ type: "text", text: "hello" }],
+      timestamp: 1,
+    };
+    getMessages.mockResolvedValue({ messages: [historical], forkPoints: [] });
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    listener?.({
+      sessionPath: "session",
+      event: { type: "message_start", message: { role: "assistant", responseId: "new-response" } },
+    });
+    listener?.({
+      sessionPath: "session",
+      event: {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          responseId: "new-response",
+          content: [{ type: "text", text: "hello world" }],
+          timestamp: 2,
+        },
+      },
+    });
+    render("session");
+    expect(state.result.messages.map((message: any) => message.responseId)).toEqual([
+      "old-response",
+      "new-response",
+    ]);
+  });
+
+  it("consumes identical optimistic users one occurrence at a time", async () => {
+    resetHarness();
+    getMessages.mockResolvedValue({ messages: [], forkPoints: [] });
+    prompt.mockResolvedValue({ ok: true });
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+
+    await state.result.send("same", "prompt");
+    await state.result.send("same", "prompt");
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    const first = { role: "user", content: "same", timestamp: 10 };
+    const second = { role: "user", content: "same", timestamp: 11 };
+    listener?.({ sessionPath: "session", event: { type: "message_start", message: first } });
+    listener?.({ sessionPath: "session", event: { type: "message_start", message: second } });
+    listener?.({ sessionPath: "session", event: { type: "message_end", message: { ...first } } });
+    listener?.({ sessionPath: "session", event: { type: "message_end", message: { ...second } } });
+    render("session");
+
+    expect(state.result.messages.map((message: any) => message.content)).toEqual(["same", "same"]);
+  });
+
+  it("recovers mixed sparse thinking, text, and tool-call blocks", async () => {
+    resetHarness();
+    getMessages.mockResolvedValue({ messages: [], forkPoints: [] });
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    listener?.({ sessionPath: "session", event: { type: "message_start", message: { role: "assistant" } } });
+    listener?.({ sessionPath: "session", event: { type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 1, delta: "think" } } });
+    listener?.({ sessionPath: "session", event: { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 3, delta: "answer" } } });
+    listener?.({ sessionPath: "session", event: { type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 5, id: "call-1", toolName: "read" } } });
+    listener?.({ sessionPath: "session", event: { type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 5, toolCall: { type: "toolCall", id: "call-1", name: "read", arguments: { path: "a.ts" } } } } });
+    const partial = render("session").partial;
+
+    expect(partial?.[1]).toEqual({ type: "thinking", thinking: "think" });
+    expect(partial?.[3]).toEqual({ type: "text", text: "answer" });
+    expect(partial?.[5]).toEqual({ type: "toolCall", id: "call-1", name: "read", arguments: { path: "a.ts" } });
+  });
+
+  it("does not let a session switch callback repaint the next session", async () => {
+    resetHarness();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = nextFrame++;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    getMessages.mockResolvedValue({ messages: [], forkPoints: [] });
+    render("old");
+    flushEffects();
+    await Promise.resolve();
+    render("old");
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    listener?.({ sessionPath: "old", event: { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "old" } } });
+    const oldFrame = frames.get(1);
+    render("new");
+    flushEffects();
+    oldFrame?.(0);
+    expect(render("new").partial).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("invalidates a queued animation frame when message_end publishes", async () => {
+    resetHarness();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = nextFrame++;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    getMessages.mockResolvedValue({ messages: [], forkPoints: [] });
+    render("session");
+    flushEffects();
+    await Promise.resolve();
+    render("session");
+    const listener = vi.mocked(sessionEvents.subscribe).mock.lastCall?.[0];
+    listener?.({ sessionPath: "session", event: { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "old" } } });
+    const oldFrame = frames.get(1);
+    listener?.({ sessionPath: "session", event: { type: "message_end", message: { role: "assistant", responseId: "done", content: [{ type: "text", text: "complete" }], timestamp: 1 } } });
+    oldFrame?.(0);
+    render("session");
+    expect(state.result.messages.map((message: any) => message.content[0]?.text)).toEqual(["complete"]);
+
+    listener?.({ sessionPath: "session", event: { type: "message_start", message: { role: "assistant", responseId: "next" } } });
+    listener?.({ sessionPath: "session", event: { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "next" } } });
+    oldFrame?.(0);
+    expect(render("session").partial).toEqual([]);
+    vi.unstubAllGlobals();
+  });
 });

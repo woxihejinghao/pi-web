@@ -91,7 +91,9 @@ export interface ToolCallBlock {
   type: "toolCall";
   id: string;
   name: string;
-  arguments?: Record<string, unknown>;
+  arguments: Record<string, unknown>;
+  thoughtSignature?: string;
+  namespace?: string;
 }
 
 export interface ImageBlock {
@@ -138,6 +140,7 @@ export interface AssistantMessage {
   api?: string;
   provider?: string;
   model?: string;
+  responseId?: string;
   usage?: Usage;
   stopReason?: string;
   timestamp: number;
@@ -197,12 +200,13 @@ export type AgentMessage =
 /** Streaming deltas inside `message_update`. There is no cumulative snapshot:
  * clients assemble content by `contentIndex` and treat `message_end` as final. */
 export type AssistantStreamEvent =
+  | { type: "start" }
   | { type: "text_start"; contentIndex: number }
   | { type: "text_delta"; contentIndex: number; delta: string }
-  | { type: "text_end"; contentIndex: number; content?: string }
+  | { type: "text_end"; contentIndex: number; content: string }
   | { type: "thinking_start"; contentIndex: number }
   | { type: "thinking_delta"; contentIndex: number; delta: string }
-  | { type: "thinking_end"; contentIndex: number; content?: string }
+  | { type: "thinking_end"; contentIndex: number; content: string }
   | { type: "toolcall_start"; contentIndex: number; id: string; toolName: string }
   | { type: "toolcall_delta"; contentIndex: number; delta: string }
   | { type: "toolcall_end"; contentIndex: number; toolCall: ToolCallBlock }

@@ -191,6 +191,12 @@ export function compactionCheckpoint(
 
 interface StreamSlot {
   content: ContentBlock[];
+  /** The occurrence this slot belongs to, never reused by a later stream. */
+  occurrenceId: number;
+  /** Stable assistant identity when pi supplied responseId. */
+  identity: string | null;
+  /** True only when a current-lifecycle message_start opened this slot. */
+  started: boolean;
   /**
    * Raw `toolcall_delta` chunks.
    *
@@ -328,10 +334,149 @@ function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** Fold one streaming delta into the partial assistant message. */
-function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
-  const index = typeof delta.contentIndex === "number" ? delta.contentIndex : 0;
-  const blocks = slot.content;
+function normalizedValue(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `[${value.map(normalizedValue).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) =>
+      `${JSON.stringify(key)}:${normalizedValue((value as Record<string, unknown>)[key])}`,
+    ).join(",")}}`;
+  }
+  return typeof value;
+}
+
+function contentIdentity(content: unknown): string {
+  if (typeof content === "string") return `text:${content}`;
+  if (!Array.isArray(content)) return `content:${normalizedValue(content)}`;
+  return content.filter(isContentBlock).map((block) => {
+    if (block.type === "text") return `text:${(block as TextBlock).text}`;
+    if (block.type === "thinking") return `thinking:${(block as ThinkingBlock).thinking}`;
+    if (block.type === "toolCall") {
+      const call = block as ToolCallBlock;
+      return `tool:${call.id}:${call.name}:${normalizedValue(call.arguments)}`;
+    }
+    if (block.type === "image") {
+      const image = block as ImageBlock;
+      return `image:${image.mimeType}:${image.url ?? ""}:${image.data ?? ""}`;
+    }
+    return `block:${block.type}`;
+  }).join("|");
+}
+
+function messageIdentity(message: AgentMessage): string {
+  if (message.role === "assistant" && message.responseId) return `assistant:${message.responseId}`;
+  if (message.role === "toolResult") return `tool-result:${message.toolCallId}`;
+  if (message.role === "user") return `user:${contentIdentity(message.content)}`;
+  if (message.role === "bashExecution") return `bash:${message.command}:${message.timestamp}`;
+  if (message.role === "compactionSummary") return `compaction:${message.timestamp}:${message.summary}`;
+  if (message.role === "assistant") return `assistant:${contentIdentity(message.content)}:${message.timestamp}`;
+  return `${message.role}:${normalizedValue(message)}`;
+}
+
+function userMessageMatches(left: AgentMessage, right: AgentMessage): boolean {
+  return left.role === "user" && right.role === "user"
+    && contentIdentity(left.content) === contentIdentity(right.content);
+}
+
+function assistantContentIsPrefix(prefix: AssistantMessage, final: AssistantMessage): boolean {
+  if (prefix.content.length > final.content.length) return false;
+  return prefix.content.every((block, index) => {
+    const candidate = final.content[index];
+    if (!candidate || block.type !== candidate.type) return false;
+    if (block.type === "text" && candidate.type === "text") {
+      return (candidate as TextBlock).text.startsWith((block as TextBlock).text);
+    }
+    if (block.type === "thinking" && candidate.type === "thinking") {
+      return (candidate as ThinkingBlock).thinking.startsWith((block as ThinkingBlock).thinking);
+    }
+    if (block.type === "toolCall" && candidate.type === "toolCall") return block.id === candidate.id;
+    return normalizedValue(block) === normalizedValue(candidate);
+  });
+}
+
+function mergeHistoryWithLive(history: AgentMessage[], live: AgentMessage[]): AgentMessage[] {
+  const available = new Map<string, number>();
+  for (const message of history) {
+    const key = messageIdentity(message);
+    available.set(key, (available.get(key) ?? 0) + 1);
+  }
+  const merged = [...history];
+  for (const message of live) {
+    const key = messageIdentity(message);
+    const count = available.get(key) ?? 0;
+    if (count > 0) available.set(key, count - 1);
+    else merged.push(message);
+  }
+  return merged;
+}
+
+/**
+ * Reattach local user occurrences after a history read.
+ *
+ * The server returns freshly parsed objects, so object identity cannot be used
+ * to decide whether an optimistic row survived hydration. Match each local
+ * occurrence once, preferring its original content and then the newest unused
+ * user row. The fallback is intentional: pi may expand a slash command or
+ * template before writing the user message, changing the content entirely.
+ */
+function rebindUserOccurrences(
+  occurrences: Array<{ message: AgentMessage; started: boolean; ended: boolean; delivered: boolean }>,
+  messages: readonly AgentMessage[],
+): void {
+  const userIndexes = messages
+    .map((message, index) => (message.role === "user" ? index : -1))
+    .filter((index) => index >= 0);
+  const claimed = new Set<number>();
+  let newestAvailable = userIndexes.length - 1;
+  for (let occurrenceIndex = occurrences.length - 1; occurrenceIndex >= 0; occurrenceIndex -= 1) {
+    const occurrence = occurrences[occurrenceIndex];
+    let match = -1;
+    for (let index = userIndexes.length - 1; index >= 0; index -= 1) {
+      const candidateIndex = userIndexes[index];
+      if (!claimed.has(candidateIndex)
+        && userMessageMatches(occurrence.message, messages[candidateIndex]!)) {
+        match = candidateIndex;
+        break;
+      }
+    }
+    if (match < 0) {
+      while (newestAvailable >= 0 && claimed.has(userIndexes[newestAvailable]!)) newestAvailable -= 1;
+      match = newestAvailable >= 0 ? userIndexes[newestAvailable]! : -1;
+    }
+    if (match >= 0) {
+      claimed.add(match);
+      occurrence.message = messages[match]!;
+    }
+  }
+}
+
+function streamContentIsPrefix(slot: StreamSlot, final: AssistantMessage): boolean {
+  if (slot.content.length === 0) return false;
+  return slot.content.every((block, index) => {
+    const candidate = final.content[index];
+    if (!candidate || block.type !== candidate.type) return false;
+    if (block.type === "text" && candidate.type === "text") {
+      return (candidate as TextBlock).text.startsWith((block as TextBlock).text);
+    }
+    if (block.type === "thinking" && candidate.type === "thinking") {
+      return (candidate as ThinkingBlock).thinking.startsWith((block as ThinkingBlock).thinking);
+    }
+    if (block.type === "toolCall" && candidate.type === "toolCall") {
+      return block.id === candidate.id;
+    }
+    return normalizedValue(block) === normalizedValue(candidate);
+  });
+}
+
+/** Fold one streaming delta into a new partial assistant message. */
+function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): StreamSlot {
+  if (delta.type === "start") return slot;
+  const streamDelta = delta as Exclude<AssistantStreamEvent, { type: "start" }>;
+  const index = typeof streamDelta.contentIndex === "number" ? streamDelta.contentIndex : 0;
+  const blocks = slot.content.slice();
+  const rawArgs = { ...slot.rawArgs };
 
   switch (delta.type) {
     case "text_start":
@@ -340,36 +485,28 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
     case "text_delta": {
       const existing = blocks[index];
       const chunk = asString(delta.delta);
-      if (existing && existing.type === "text") {
-        (existing as TextBlock).text += chunk;
-      } else {
-        blocks[index] = { type: "text", text: chunk };
-      }
+      blocks[index] = existing?.type === "text"
+        ? { ...existing, text: existing.text + chunk }
+        : { type: "text", text: chunk };
       break;
     }
-    case "text_end": {
-      const final = delta.content;
-      blocks[index] = { type: "text", text: typeof final === "string" ? final : "" };
+    case "text_end":
+      blocks[index] = { type: "text", text: delta.content };
       break;
-    }
     case "thinking_start":
       blocks[index] = { type: "thinking", thinking: "" };
       break;
     case "thinking_delta": {
       const existing = blocks[index];
       const chunk = asString(delta.delta);
-      if (existing && existing.type === "thinking") {
-        (existing as ThinkingBlock).thinking += chunk;
-      } else {
-        blocks[index] = { type: "thinking", thinking: chunk };
-      }
+      blocks[index] = existing?.type === "thinking"
+        ? { ...existing, thinking: existing.thinking + chunk }
+        : { type: "thinking", thinking: chunk };
       break;
     }
-    case "thinking_end": {
-      const final = delta.content;
-      blocks[index] = { type: "thinking", thinking: typeof final === "string" ? final : "" };
+    case "thinking_end":
+      blocks[index] = { type: "thinking", thinking: delta.content };
       break;
-    }
     case "toolcall_start":
       blocks[index] = {
         type: "toolCall",
@@ -377,11 +514,11 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
         name: asString(delta.toolName),
         arguments: {},
       };
-      slot.rawArgs[index] = "";
+      rawArgs[index] = "";
       break;
     case "toolcall_delta": {
-      const raw = (slot.rawArgs[index] ?? "") + asString(delta.delta);
-      slot.rawArgs[index] = raw;
+      const raw = (rawArgs[index] ?? "") + asString(delta.delta);
+      rawArgs[index] = raw;
       // Read the arguments as they arrive, not when the call ends. A row's
       // summary and a live group's detail both come from `arguments`, and for a
       // long one (a pasted file, a big patch) waiting for the end means the
@@ -389,16 +526,16 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
       const existing = blocks[index];
       if (existing?.type === "toolCall") {
         const partial = parseStreamingJson(raw);
-        if (partial !== undefined) existing.arguments = partial;
+        if (partial !== undefined) blocks[index] = { ...existing, arguments: partial };
       }
       break;
     }
     case "toolcall_end": {
       const call = delta.toolCall as ToolCallBlock | undefined;
       if (call) {
-        blocks[index] = call;
+        blocks[index] = { ...call, arguments: { ...call.arguments } };
       } else {
-        const raw = slot.rawArgs[index] ?? "";
+        const raw = rawArgs[index] ?? "";
         const existing = blocks[index];
         let parsed: Record<string, unknown> = {};
         try {
@@ -418,6 +555,7 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
     default:
       break;
   }
+  return { ...slot, content: blocks, rawArgs };
 }
 
 function textFromContent(content: string | ContentBlock[]): string {
@@ -549,6 +687,20 @@ export function useConversation(sessionPath: string | null): ConversationApi {
    * echo is not what was typed.
    */
   const deliveredUsersRef = useRef(0);
+  interface UserOccurrence {
+    /** Internal identity survives history hydration, which replaces objects. */
+    id: number;
+    message: AgentMessage;
+    delivered: boolean;
+    started: boolean;
+    ended: boolean;
+  }
+  /** User occurrences are consumed strictly once, in send order. */
+  const userOccurrencesRef = useRef<UserOccurrence[]>([]);
+  /** Terminal frames are deduplicated only when the protocol supplies an ID. */
+  const assistantEndLedgerRef = useRef(new Set<string>());
+  const nextOccurrenceRef = useRef(0);
+  const streamGenerationRef = useRef(0);
   /**
    * The queued prompts this browser is waiting on — the queue dock's rows.
    *
@@ -624,15 +776,18 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const lastPublishRef = useRef(0);
   /** True while a delta has arrived that no publish has carried yet. */
   const dirtyRef = useRef(false);
+  /** Invalidates callbacks that were queued before a terminal publish. */
+  const frameTokenRef = useRef(0);
 
   const publish = useCallback(() => {
     // This publish supersedes any frame that was waiting to do the same thing.
+    frameTokenRef.current += 1;
     if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
-    lastPublishRef.current = Date.now();
     dirtyRef.current = false;
+    lastPublishRef.current = Date.now();
     const slot = slotRef.current;
     // Computed before the projection that consumes it: the plan is cleared when a
     // turn opens, and a prompt pi has not taken up yet has not opened one.
@@ -695,7 +850,12 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     // Keeps re-arming until the floor has passed and something is pending, so
     // the last delta of a burst is always painted — a dropped tail would leave
     // the transcript a few tokens short until the next event.
+    const token = frameTokenRef.current;
     const tick = (): void => {
+      if (token !== frameTokenRef.current) {
+        frameRef.current = null;
+        return;
+      }
       if (!dirtyRef.current) {
         frameRef.current = null;
         return;
@@ -714,10 +874,15 @@ export function useConversation(sessionPath: string | null): ConversationApi {
    * Fold one session frame into the refs.
    */
   const handleEvent = useCallback(
-    (event: SessionEvent) => {
+    (event: SessionEvent, generation = streamGenerationRef.current) => {
+      if (generation !== streamGenerationRef.current) return;
       switch (event.type) {
         case "agent_start":
           streamingRef.current = true;
+          // End identities are scoped to one agent lifecycle. A later run may
+          // legitimately reuse a provider response id, while duplicate frames
+          // within this run must still be ignored.
+          assistantEndLedgerRef.current.clear();
           // A fresh run: whatever the previous turn ended with is history now.
           retryAttemptRef.current = 0;
           failedAttemptsRef.current = 0;
@@ -755,18 +920,26 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         case "message_start": {
           const message = event.message as AgentMessage | undefined;
           if (message?.role === "assistant") {
-            slotRef.current = { content: [], rawArgs: {} };
+            const identity = message.responseId ?? null;
+            slotRef.current = {
+              content: [],
+              occurrenceId: nextOccurrenceRef.current++,
+              identity: identity as string | null,
+              started: true,
+              rawArgs: {},
+            };
             timingRef.current.stepStart = Date.now();
             timingRef.current.firstTokenAt = null;
           } else if (message?.role === "user") {
-            // pi has taken this message up. Only ever one at a time, and never
-            // more than the transcript holds: a message sent from the terminal
-            // or another tab has no row here to confirm.
+            const occurrence = userOccurrencesRef.current.find(
+              (candidate) => !candidate.started && userMessageMatches(candidate.message, message),
+            ) ?? userOccurrencesRef.current.find((candidate) => !candidate.started);
+            if (occurrence) {
+              occurrence.started = true;
+              occurrence.delivered = true;
+            }
             if (deliveredUsersRef.current < countUserMessages(messagesRef.current)) {
               deliveredUsersRef.current += 1;
-              // The same event consumes the queue dock's oldest row; gating on
-              // the delivery keeps a terminal-side take-up from eating a row
-              // this browser queued.
               queueRef.current = queueRef.current.slice(1);
             }
           }
@@ -776,7 +949,15 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         case "message_update": {
           const delta = event.assistantMessageEvent as AssistantStreamEvent | undefined;
           if (!delta) break;
-          if (!slotRef.current) slotRef.current = { content: [], rawArgs: {} };
+          if (!slotRef.current) {
+            slotRef.current = {
+              content: [],
+              occurrenceId: nextOccurrenceRef.current++,
+              identity: null,
+              started: false,
+              rawArgs: {},
+            };
+          }
           // TTFT runs to the first *non-empty* chunk: `text_start` frames land
           // with nothing in them, and counting one would report a first token
           // the model had not produced yet.
@@ -787,7 +968,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           ) {
             timingRef.current.firstTokenAt = Date.now();
           }
-          applyDelta(slotRef.current, delta);
+          slotRef.current = applyDelta(slotRef.current, delta);
           // One repaint per frame rather than one per token; see `frameRef`.
           schedulePublish();
           return;
@@ -797,7 +978,38 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           const message = event.message as AgentMessage | undefined;
           if (!message) break;
           if (message.role === "assistant") {
-            messagesRef.current = [...messagesRef.current, message];
+            const slot = slotRef.current;
+            const identity = message.responseId
+              ? `assistant:${message.responseId}`
+              : null;
+            // Only an explicit responseId is safe for transport-level duplicate
+            // suppression. Content/timestamp identity cannot distinguish two
+            // legitimate identical assistant occurrences.
+            if (identity !== null && assistantEndLedgerRef.current.has(identity)) break;
+            if (identity !== null) assistantEndLedgerRef.current.add(identity);
+            const history = messagesRef.current;
+            const last = history.at(-1);
+            // A partial stream is not inserted into `messages`, so replacing a
+            // history row is safe only when that row carries the same stable
+            // response identity as the active slot. A prefix alone is not
+            // evidence: a new response can legitimately start with the same
+            // words as the previous assistant turn.
+            const slotCanReplace = slot !== null
+              && slot.started
+              && slot.identity !== null
+              && message.responseId === slot.identity
+              && last?.role === "assistant"
+              && (last as AssistantMessage).responseId === slot.identity
+              && streamContentIsPrefix(slot, message as AssistantMessage);
+            if (
+              slotCanReplace
+              && last?.role === "assistant"
+              && assistantContentIsPrefix(last as AssistantMessage, message as AssistantMessage)
+            ) {
+              messagesRef.current = [...history.slice(0, -1), message];
+            } else {
+              messagesRef.current = [...history, message];
+            }
             slotRef.current = null;
 
             // Close the step here, where the assembled message (and therefore
@@ -819,11 +1031,21 @@ export function useConversation(sessionPath: string | null): ConversationApi {
             timing.stepStart = null;
             timing.firstTokenAt = null;
           } else if (message.role === "user") {
-            // An extension command's own message: the command steered it, so pi
-            // is the only party that wrote a row for it — the composer
-            // deliberately draws none (see `runCommand`).
-            if (adoptUserRef.current) {
+            const occurrence = userOccurrencesRef.current.find(
+              (candidate) => !candidate.ended && candidate.started && userMessageMatches(candidate.message, message),
+            ) ?? userOccurrencesRef.current.find(
+              (candidate) => !candidate.ended && candidate.started,
+            ) ?? userOccurrencesRef.current.find(
+              (candidate) => !candidate.ended && candidate.delivered,
+            );
+            if (occurrence) {
+              occurrence.ended = true;
+            } else if (adoptUserRef.current) {
               adoptUserRef.current = false;
+              messagesRef.current = [...messagesRef.current, message];
+            } else {
+              // Messages written by another tab or the terminal are real
+              // transcript occurrences, not duplicates of a local optimistic row.
               messagesRef.current = [...messagesRef.current, message];
             }
           } else if (message.role === "toolResult" || message.role === "bashExecution") {
@@ -970,10 +1192,14 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         // System messages replay the entire prompt and tool loadout; the UI
         // never shows them and they would dwarf the real conversation.
         const visible = messages.filter((message) => message.role !== "system");
-        messagesRef.current = visible;
+        // A disk read can race live frames. Keep live occurrences that are not
+        // in this snapshot; stable identities consume exactly one matching
+        // history occurrence, so legitimate repeated messages survive.
+        messagesRef.current = mergeHistoryWithLive(visible, messagesRef.current);
+        rebindUserOccurrences(userOccurrencesRef.current, messagesRef.current);
         // Everything in the file is a message pi already took up, so the
         // transcript starts with nothing queued behind it.
-        deliveredUsersRef.current = countUserMessages(visible);
+        deliveredUsersRef.current = countUserMessages(messagesRef.current);
         // The dock rows belonged to the browser that queued them; pi's
         // surviving queue re-reveals itself through deliveries instead.
         queueRef.current = [];
@@ -1006,6 +1232,9 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       const cached = sessionPath === null ? undefined : sessionCacheRef.current.get(sessionPath);
       messagesRef.current = cached?.messages ?? [];
       deliveredUsersRef.current = countUserMessages(messagesRef.current);
+      userOccurrencesRef.current = [];
+      streamGenerationRef.current += 1;
+      assistantEndLedgerRef.current.clear();
       queueRef.current = [];
       forkPointsRef.current = cached?.forkPoints ?? [];
       // A command's pending adoption belongs to the stream it was sent on.
@@ -1043,9 +1272,10 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     }
 
     if (!sameEffectPath) void load(sessionPath);
+    const eventGeneration = streamGenerationRef.current;
     const unsubscribe = sessionEvents.subscribe((payload) => {
       if (payload.sessionPath !== sessionPath) return;
-      handleEvent(payload.event);
+      handleEvent(payload.event, eventGeneration);
     });
     // A reconnect means the stream may have missed frames that will never be
     // replayed (the server sheds a client that falls too far behind). The file
@@ -1057,7 +1287,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     return () => {
       unsubscribe();
       unsubscribeRestored();
-      // A frame queued by this session must not repaint the next one.
+      // A frame queued by this session must not repaint the next one. Bump the
+      // token even when cancellation is unavailable or the callback was already
+      // dequeued by the host.
+      frameTokenRef.current += 1;
+      dirtyRef.current = false;
       if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
@@ -1082,6 +1316,16 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         timestamp: Date.now(),
       };
       messagesRef.current = [...messagesRef.current, optimisticMessage];
+      userOccurrencesRef.current = [
+        ...userOccurrencesRef.current,
+        {
+          id: nextOccurrenceRef.current++,
+          message: optimisticMessage,
+          delivered: mode === "prompt",
+          started: false,
+          ended: false,
+        },
+      ];
       if (mode === "prompt") streamingRef.current = true;
       // A prompt is sent as a prompt, so pi has taken it up the moment the call
       // returns; counting it here keeps the turn before it from looking live for
@@ -1120,6 +1364,9 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         if (optimisticIndex >= 0) {
           messagesRef.current = messagesRef.current.filter((_, index) => index !== optimisticIndex);
         }
+        userOccurrencesRef.current = userOccurrencesRef.current.filter(
+          (occurrence) => occurrence.message !== optimisticMessage,
+        );
         if (mode === "prompt") deliveredUsersRef.current -= 1;
         if (queueEntry) {
           queueRef.current = queueRef.current.filter((entry) => entry.id !== queueEntry.id);

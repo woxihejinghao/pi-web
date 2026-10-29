@@ -109,8 +109,11 @@ export class SessionWatcher {
     changed.add(name ?? "*");
     this.pending.set(projectPath, changed);
 
-    const existing = this.debounce.get(projectPath);
-    if (existing) clearTimeout(existing);
+    // This is a fixed debounce window, not a trailing debounce. A streaming
+    // session can append forever; resetting the timer for every append would
+    // postpone the notification forever and leave the sidebar stale until the
+    // model stops.
+    if (this.debounce.has(projectPath)) return;
     const timer = setTimeout(() => {
       this.debounce.delete(projectPath);
       const names = this.pending.get(projectPath);
@@ -126,6 +129,7 @@ export class SessionWatcher {
     // Any change we cannot attribute to a live process we own makes the
     // session list stale, so the UI refetches it.
     let sawUnattributed = false;
+    let sawSelfWrite = false;
 
     for (const name of names) {
       if (name === "*" || !name.endsWith(".jsonl")) {
@@ -139,6 +143,7 @@ export class SessionWatcher {
         continue;
       }
       if (Date.now() - handle.lastActivityAt <= SELF_WRITE_WINDOW_MS) {
+        sawSelfWrite = true;
         continue; // our own process is writing this session
       }
       // We own a live process for this session, yet the file moved long after
@@ -150,7 +155,11 @@ export class SessionWatcher {
       });
     }
 
-    if (sawUnattributed) {
+    // The session list metadata (modified time, preview, message count) is
+    // stale for our own writes too. The registry's event path is authoritative
+    // for the transcript, but it does not update the sidebar unless this event
+    // is published.
+    if (sawUnattributed || sawSelfWrite) {
       this.bus.publish({ type: "sessions_changed", projectPath });
     }
   }
