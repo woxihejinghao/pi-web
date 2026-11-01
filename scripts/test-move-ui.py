@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Run after pnpm build, with Python Playwright + Chromium installed.
+Uses a disposable server, store, session log and stub pi; never user history.
+"""
+import json
+import os
+import re
+from pathlib import Path
+import socket
+import subprocess
+import tempfile
+import time
+import urllib.request
+from playwright.sync_api import sync_playwright, expect
+
+REPO = Path(__file__).resolve().parents[1]
+with tempfile.TemporaryDirectory(prefix="piws-move-ui-") as tmp:
+    root = Path(tmp).resolve()
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    base = f"http://127.0.0.1:{port}"
+    env = {**os.environ, "PI_WEB_SIMPLE_HOME": str(root / "store"),
+           "PI_WEB_SIMPLE_SESSION_DIR": str(root / "sessions"),
+           "PI_WEB_SIMPLE_PORT": str(port), "PI_WEB_SIMPLE_SKIP_TITLE_MIGRATION": "1"}
+    (root / "sessions").mkdir()
+    log = open(root / "server.log", "w+")
+    process = subprocess.Popen(["pnpm", "exec", "tsx", "src/testing/move-ui-server.mts"],
+                               cwd=REPO / "server", env=env, stdout=log, stderr=log,
+                               start_new_session=True)
+
+    def api(path, body=None, method=None):
+        request = urllib.request.Request(base + path,
+                    data=None if body is None else json.dumps(body).encode(),
+                    headers={"Content-Type": "application/json"}, method=method)
+        with urllib.request.urlopen(request) as response:
+            return json.load(response)
+
+    try:
+        for _ in range(100):
+            try:
+                api("/api/health")
+                break
+            except OSError:
+                if process.poll() is not None:
+                    log.seek(0)
+                    raise RuntimeError(log.read())
+                time.sleep(.1)
+        else:
+            raise RuntimeError("fixture server did not start")
+        projects = []
+        for name in ["Source", "Destination"]:
+            folder = root / name
+            folder.mkdir()
+            projects.append(api("/api/projects", {"path": str(folder)}))
+        source, destination = projects
+        session_dir = root / "sessions" / ("--" + source["path"].lstrip("/").replace("/", "-") + "--")
+        session_dir.mkdir()
+        old = session_dir / "move-ui.jsonl"
+        old.write_text("\n".join(json.dumps(entry) for entry in [
+            {"type": "session", "version": 3, "id": "move-ui", "cwd": source["path"], "timestamp": "2026-01-01T00:00:00Z"},
+            {"type": "message", "id": "m1", "parentId": None, "timestamp": "2026-01-01T00:00:01Z",
+             "message": {"role": "user", "content": "Browser move test"}}
+        ]) + "\n")
+        api("/api/settings", {"language": "en"}, "PUT")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(base)
+            page.wait_for_load_state("networkidle")
+            source_button = page.locator("[data-workspace-row]").get_by_role("button", name="Source", exact=True)
+            if source_button.get_attribute("aria-expanded") != "true":
+                source_button.click()
+            row = page.locator(f'div[title="{old}"]')
+            expect(row).to_be_visible()
+            row.get_by_role("button", name="Browser move test", exact=True).click()
+            row.click(button="right")
+            page.get_by_role("menuitem", name="Move", exact=True).click()
+            picker = page.get_by_role("dialog")
+            expect(picker).to_be_visible()
+            # Inspect the rendered address field, then navigate with Enter.
+            expect(picker.get_by_role("button", name="Home", exact=True)).to_be_visible()
+            expect(picker.get_by_role("button", name="Root", exact=True)).to_be_visible()
+            expect(picker.get_by_role("button", name="Close", exact=True)).to_be_visible()
+            artifacts = os.environ.get("PI_WEB_UI_ARTIFACT_DIR")
+            if artifacts:
+                Path(artifacts).mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=str(Path(artifacts) / "move-picker-en.png"))
+            address = picker.locator("input").first
+            expect(picker.locator("footer span")).not_to_have_text("—")
+            expect(picker.get_by_role("button", name="Go", exact=True)).to_be_enabled()
+            address.fill(destination["path"])
+            with page.expect_response(lambda response: "/api/fs/list?path=" in response.url) as listing_response:
+                address.press("Enter")
+            assert listing_response.value.ok, listing_response.value.text()
+            expect(picker.locator("footer span")).to_have_text(destination["path"])
+            choose = picker.get_by_role("button", name="Choose this directory", exact=True)
+            expect(choose).to_be_enabled()
+            dialogs = []
+            def dismiss(dialog):
+                dialogs.append(dialog.message)
+                dialog.dismiss()
+            page.on("dialog", dismiss)
+            choose.click()
+            assert len(dialogs) == 1 and "Project files are not moved" in dialogs[0]
+            assert old.exists(), "cancel must preserve the source"
+            expect(picker).to_be_visible()
+            page.remove_listener("dialog", dismiss)
+            page.once("dialog", lambda dialog: dialog.accept())
+            choose.click()
+            expect(picker).not_to_be_visible()
+            assert not old.exists()
+            moved = api(f'/api/projects/{destination["id"]}/sessions')["sessions"]
+            assert len(moved) == 1 and moved[0]["cwd"] == destination["path"]
+            expect(page.locator(f'div[title="{moved[0]["path"]}"]')).to_have_class(re.compile("sessionRowActive"))
+            assert api(f'/api/projects/{source["id"]}/sessions')["sessions"] == []
+            page.reload()
+            page.wait_for_load_state("networkidle")
+            target_button = page.locator("[data-workspace-row]").get_by_role("button", name="Destination", exact=True)
+            if target_button.get_attribute("aria-expanded") != "true":
+                target_button.click()
+            expect(page.get_by_role("button", name="Browser move test", exact=True)).to_be_visible()
+            page.get_by_role("button", name="Settings", exact=True).click()
+            prompt = page.get_by_role("textbox", name="System Prompt", exact=True)
+            expect(prompt).to_be_visible()
+            prompt.fill("Browser-tested persistent instructions.")
+            with page.expect_response(lambda response: response.url.endswith("/api/settings") and response.request.method == "PUT"):
+                prompt.press("Tab")
+            assert api("/api/settings")["systemPrompt"] == "Browser-tested persistent instructions."
+            if artifacts:
+                page.screenshot(path=str(Path(artifacts) / "system-prompt-en.png"))
+            page.reload()
+            page.wait_for_load_state("networkidle")
+            if not prompt.is_visible():
+                page.get_by_role("button", name="Settings", exact=True).click()
+            expect(prompt).to_have_value("Browser-tested persistent instructions.")
+            page.set_viewport_size({"width": 390, "height": 844})
+            expect(prompt).to_be_visible()
+            bounds = prompt.bounding_box()
+            assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390
+            if artifacts:
+                page.screenshot(path=str(Path(artifacts) / "system-prompt-mobile-en.png"))
+            assert not errors, errors
+            browser.close()
+        print("PASS: context-menu move, English picker, cancel, confirm, workspace lists, reload and persistent system-prompt editor; no model calls")
+    finally:
+        import signal
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=15)
+        log.close()

@@ -130,6 +130,8 @@ export interface WebSettings {
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
+  /** Persistent system prompt for new sessions */
+  systemPrompt: string;
   /**
    * Whether a finished session task raises a browser notification. Off by
    * default: the browser only grants the permission behind a user gesture, so
@@ -162,6 +164,7 @@ export function defaultSettings(): WebSettings {
     // Queueing is the safe default: steering interrupts an in-flight run, so it
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
+    systemPrompt: "",
     browserNotifications: false,
     // Titles stay deterministic until someone opts in and names a model.
     titleModel: null,
@@ -248,6 +251,9 @@ function normalizeSettings(raw: unknown): WebSettings {
     (BUSY_SEND_VALUES as readonly string[]).includes(raw.busySendBehavior)
   ) {
     settings.busySendBehavior = raw.busySendBehavior as BusySendBehavior;
+  }
+  if (typeof raw.systemPrompt === "string") {
+    settings.systemPrompt = raw.systemPrompt;
   }
   if (typeof raw.browserNotifications === "boolean") {
     settings.browserNotifications = raw.browserNotifications;

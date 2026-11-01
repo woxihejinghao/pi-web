@@ -26,6 +26,7 @@ import {
   SettingsStepper,
   SettingsSwitch,
 } from "./SettingsRow.tsx";
+import settingsRowStyles from "./SettingsRow.module.css";
 import { UpdateSection } from "./UpdateSection.tsx";
 
 /**
@@ -126,6 +127,8 @@ function titleModelOptions(
 export function GeneralSection({ className }: { className?: string }) {
   const state = useStore(appStore);
   const t = useT();
+  const [systemPrompt, setSystemPrompt] = useState(state.settings.systemPrompt);
+  useEffect(() => setSystemPrompt(state.settings.systemPrompt), [state.settings.systemPrompt]);
   // Read once on mount rather than on every render: the permission only changes
   // in response to this page's own request, which updates it directly. Probing
   // the API during render would also make the page's output depend on a value
@@ -198,6 +201,20 @@ export function GeneralSection({ className }: { className?: string }) {
             }}
           />
         </SettingsRow>
+
+        <SettingsGroup title={t("settings.systemPrompt.title")}>
+          <p className={settingsRowStyles.description}>{t("settings.systemPrompt.description")}</p>
+          <textarea
+            className={settingsRowStyles.textarea}
+            aria-label={t("settings.systemPrompt.title")}
+            value={systemPrompt}
+            rows={3}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            onBlur={() => {
+              if (systemPrompt !== state.settings.systemPrompt) void actions.updateSettings({ systemPrompt });
+            }}
+          />
+        </SettingsGroup>
 
         <SettingsRow
           title={t("settings.fontSize.title")}

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { mkdir, realpath } from "node:fs/promises";
+import { moveSessionFile } from "./session-move.ts";
+import { basename, join, resolve, sep } from "node:path";
 import { approvalView, updateApproval } from "./approval.ts";
-import { createReadStream, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { pipeline } from "node:stream/promises";
@@ -898,6 +901,12 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
           "busySendBehavior",
         );
       }
+      if (patch.systemPrompt !== undefined) {
+        if (typeof patch.systemPrompt !== "string") {
+          throw badRequest("systemPrompt must be a string");
+        }
+        next.systemPrompt = patch.systemPrompt;
+      }
       if (patch.browserNotifications !== undefined) {
         if (typeof patch.browserNotifications !== "boolean") {
           throw badRequest("browserNotifications must be a boolean");
@@ -909,6 +918,12 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       }
       return next;
     });
+    if (patch.systemPrompt !== undefined) {
+      // Do not interrupt active chats. Unclaimed prewarms must not carry stale instructions.
+      for (const handle of registry.list()) {
+        if (handle.prewarmed) await registry.close(handle.sessionPath, "system-prompt-changed");
+      }
+    }
     json(res, 200, settings);
   });
 
@@ -1943,6 +1958,72 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     await setSessionTitle(sessionPath, trimmed, live && !live.dead ? live.client : undefined);
     bus.publish({ type: "sessions_changed", projectPath: "" });
     json(res, 200, { ok: true, name: trimmed });
+  });
+
+  /**
+   * Move a session (chat) to a different folder.
+   * Registered workspace paths map to pi's storage directory and update the
+   * session header's cwd. Storage-directory paths remain supported for API clients.
+   */
+  route("POST", "/api/sessions/:id/move", async ({ res, params, body }) => {
+    const sessionPath = allowedPath(params.id!);
+    const { targetFolder } = asObject(body);
+    if (typeof targetFolder !== "string") throw badRequest("targetFolder is required");
+
+    const sessionRootAbs = resolve(sessionRoot);
+    const requestedTarget = resolve(targetFolder);
+    const targetProject = (await listProjects()).find((project) => project.path === requestedTarget && project.exists);
+    const targetAbs = targetProject ? sessionDirFor(targetProject.path, sessionRoot) : requestedTarget;
+    if (targetAbs !== sessionRootAbs && !targetAbs.startsWith(sessionRootAbs + sep)) {
+      throw forbidden("targetFolder must be inside pi's session storage root");
+    }
+    if (targetProject) await mkdir(targetAbs, { recursive: true });
+    try {
+      const canonicalRoot = await realpath(sessionRootAbs);
+      const canonicalTarget = await realpath(targetAbs);
+      if (canonicalTarget !== canonicalRoot && !canonicalTarget.startsWith(canonicalRoot + sep)) {
+        throw forbidden("targetFolder resolves outside pi's session storage root");
+      }
+      const stats = statSync(targetAbs);
+      if (!stats.isDirectory()) throw badRequest("targetFolder must be a directory");
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw badRequest("targetFolder must be an existing directory");
+    }
+    // Prevent moving into a subdirectory of the session itself (cycle).
+    if (targetAbs.startsWith(sessionPath + sep)) {
+      throw badRequest("cannot move a session into its own sub-folder");
+    }
+
+    let sourceStats;
+    try {
+      sourceStats = statSync(sessionPath);
+    } catch {
+      throw notFound("session file does not exist on disk");
+    }
+    if (!sourceStats.isFile()) throw badRequest("session id must address a session file");
+    const canonicalRoot = await realpath(sessionRootAbs);
+    const canonicalSource = await realpath(sessionPath);
+    if (!canonicalSource.startsWith(canonicalRoot + sep)) throw forbidden("session resolves outside pi's session storage root");
+
+    const newPath = join(targetAbs, basename(sessionPath));
+    if (existsSync(newPath)) throw conflict("a session with that name already exists in the target folder");
+
+    // Close a resident process before moving its file, then let a later open
+    // re-attach at the new path. Validation above happens first, so a rejected
+    // move never inhibits a live session.
+    await registry.close(sessionPath, "session-moved");
+    try {
+      await moveSessionFile(sessionPath, newPath, targetProject?.path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw notFound("session file does not exist on disk");
+      }
+      throw error;
+    }
+
+    bus.publish({ type: "sessions_changed", projectPath: "" });
+    json(res, 200, { newPath, projectId: targetProject?.id });
   });
 
   route("POST", "/api/sessions/:id/hidden", async ({ res, params, body }) => {

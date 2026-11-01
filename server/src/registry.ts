@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import { IDLE_TIMEOUT_MS, MAX_ACTIVE_SESSIONS, SESSION_DIR_OVERRIDE } from "./config.ts";
 import { DEFAULT_PRESET_ID, presetSpawnArgs } from "./presets.ts";
+import { readStore } from "./store.ts";
 
 /**
  * `RpcClient` spawns `node <cliPath> --mode rpc ...` with `cwd` set to the
@@ -409,6 +410,7 @@ class SessionRegistry {
     prewarmed = false,
     presetId: string = DEFAULT_PRESET_ID,
   ): Promise<SessionHandle> {
+    const { systemPrompt } = (await readStore()).settings;
     const client = new RpcClient({
       cliPath: this.cliPath,
       cwd: projectPath,
@@ -416,6 +418,7 @@ class SessionRegistry {
         ...(this.sessionDir ? ["--session-dir", this.sessionDir] : []),
         ...(sessionPath ? ["--session", sessionPath] : []),
         ...presetSpawnArgs(presetId),
+        ...(systemPrompt.trim() ? ["--append-system-prompt", `\n${systemPrompt}`] : []),
       ],
     });
 

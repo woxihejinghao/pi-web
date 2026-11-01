@@ -234,7 +234,7 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
         ) : null}
         <header className={styles.header}>
           <h2 className={styles.title}>{t("picker.title")}</h2>
-          <button type="button" className={styles.close} onClick={onClose} aria-label={t("settings.autoCompaction.off")}>
+          <button type="button" className={styles.close} onClick={onClose} aria-label={t("common.close")}>
             <CloseIcon />
           </button>
         </header>
@@ -249,7 +249,7 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
                 title={location.path}
                 onClick={() => void load(location.path)}
               >
-                {location.label}
+                {location.kind ? t(`picker.location.${location.kind}`) : location.label}
               </button>
             ))}
           </div>

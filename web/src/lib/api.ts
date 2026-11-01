@@ -83,6 +83,12 @@ function imageField(images: ImageBlock[]): { images: ImageBlock[] } | Record<str
 
 export const api = {
   getApproval: () => request<import("../features/approvals/approval-store.ts").ApprovalView>("/api/approval"),
+  /** Move a session (chat) to a different folder. */
+  moveSession: (sessionPath: string, targetFolder: string) =>
+    request<{ newPath: string; projectId?: string }>(
+      `/api/sessions/${encodeURIComponent(sessionPath)}/move`,
+      { method: "POST", body: JSON.stringify({ targetFolder }) },
+    ),
   updateApproval: (patch: Partial<import("../features/approvals/approval-store.ts").ApprovalConfig> & { confirmOff?: boolean }) =>
     request<import("../features/approvals/approval-store.ts").ApprovalView>("/api/approval", { method: "PUT", body: JSON.stringify(patch) }),
   /** Convenience roots for the directory picker. */

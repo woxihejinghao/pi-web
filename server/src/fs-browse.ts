@@ -37,6 +37,7 @@ export interface DirListing {
 }
 
 export interface StartLocation {
+  kind?: "home" | "desktop" | "documents" | "downloads" | "root";
   label: string;
   path: string;
 }
@@ -53,11 +54,11 @@ async function isDirectory(path: string): Promise<boolean> {
 export async function startLocations(): Promise<StartLocation[]> {
   const home = homedir();
   const candidates: StartLocation[] = [
-    { label: "主目录", path: home },
-    { label: "桌面", path: join(home, "Desktop") },
-    { label: "文稿", path: join(home, "Documents") },
-    { label: "下载", path: join(home, "Downloads") },
-    { label: "根目录", path: sep },
+    { kind: "home", label: "主目录", path: home },
+    { kind: "desktop", label: "桌面", path: join(home, "Desktop") },
+    { kind: "documents", label: "文稿", path: join(home, "Documents") },
+    { kind: "downloads", label: "下载", path: join(home, "Downloads") },
+    { kind: "root", label: "根目录", path: sep },
   ];
   const available: StartLocation[] = [];
   for (const candidate of candidates) {

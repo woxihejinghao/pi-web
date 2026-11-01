@@ -409,6 +409,7 @@ export interface DirListing {
 }
 
 export interface StartLocation {
+  kind?: "home" | "desktop" | "documents" | "downloads" | "root";
   label: string;
   path: string;
 }
@@ -623,6 +624,8 @@ export interface WebSettings {
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
+  /** Persistent system prompt for new sessions */
+  systemPrompt: string;
   /**
    * Whether a finished session task raises a browser notification. Off by
    * default; turning it on is what requests the browser permission.

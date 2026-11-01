@@ -14,6 +14,7 @@ import styles from "../../layout/Sidebar.module.css";
 import { sessionRowsOf } from "./session-rows.ts";
 import { NO_DRAG, type RowDragHandlers, type SidebarDrag } from "./use-sidebar-drag.ts";
 import { SidebarMenu, anchorBelow, type MenuAnchor } from "./SidebarMenu.tsx";
+import { DirectoryPicker } from "./DirectoryPicker.tsx";
 
 /**
  * The workspace row's overflow menu: rename and remove, folded behind the `...`
@@ -133,6 +134,10 @@ export function SessionRow({
   canDelete?: boolean;
 }) {
   const t = useT();
+  const [moving, setMoving] = useState(false);
+  const [menuAt, setMenuAt] = useState<MenuAnchor | null>(null);
+  const moveButtonRef = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenuAt(null), []);
   const rename = async (): Promise<void> => {
     const next = window.prompt(t("session.renamePrompt"), title);
     if (next === null) return;
@@ -165,6 +170,10 @@ export function SessionRow({
       onDragEnd={drag.onDragEnd}
       onDragOver={drag.onDragOver}
       onDrop={drag.onDrop}
+      onContextMenu={canDelete ? (event) => {
+        event.preventDefault();
+        setMenuAt({ top: event.clientY, right: window.innerWidth - event.clientX });
+      } : undefined}
     >
       {/*
        * dsh's leading slot is always in the row: a session with no run-state
@@ -211,6 +220,18 @@ export function SessionRow({
         </button>
         {canDelete ? (
           <button
+            ref={moveButtonRef}
+            type="button"
+            className={styles.iconButton}
+            aria-label={t("session.moveLabel", { title })}
+            title={t("session.move")}
+            onClick={() => setMoving(true)}
+          >
+            <Glyph name="folderOpen" size={16} />
+          </button>
+        ) : null}
+        {canDelete ? (
+          <button
             type="button"
             className={styles.iconButton}
             aria-label={t("session.deleteLabel", { title })}
@@ -221,6 +242,22 @@ export function SessionRow({
           </button>
         ) : null}
       </div>
+      {menuAt === null ? null : (
+        <SidebarMenu anchor={menuAt} triggerRef={moveButtonRef} onClose={closeMenu} ariaLabel={t("session.move")}>
+          <button type="button" role="menuitem" className={styles.projectMenuItem} onClick={() => {
+            closeMenu();
+            setMoving(true);
+          }}>{t("session.move")}</button>
+        </SidebarMenu>
+      )}
+      <DirectoryPicker
+        open={moving}
+        onClose={() => setMoving(false)}
+        onSelect={async (path) => {
+          if (!window.confirm(t("session.moveConfirm", { title, dest: path }))) return;
+          if (await actions.moveChatSession(sessionPath, path)) setMoving(false);
+        }}
+      />
     </div>
   );
 }

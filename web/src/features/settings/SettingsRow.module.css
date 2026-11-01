@@ -118,6 +118,20 @@
 /* The cubes are one-per-row targets only when the panel is narrow; 180px is the
    flex basis dsh uses, so three fit across a comfortable desktop panel. */
 
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  min-height: 90px;
+  font: inherit;
+  font-size: 14px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-module);
+  color: var(--dsw-alias-label-primary);
+}
+
 .themeCube {
   box-sizing: border-box;
   border: 0.5px solid var(--dsw-alias-border-l4);

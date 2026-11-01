@@ -50,6 +50,7 @@ const DEFAULT_SETTINGS: WebSettings = {
   contentFontSize: 14,
   transcriptDisplay: "standard",
   busySendBehavior: "queue",
+  systemPrompt: "",
   browserNotifications: false,
   // Titles stay deterministic until someone opts in and names a model.
   titleModel: null,
@@ -1103,6 +1104,28 @@ export const actions = {
     // pi process for a workspace the user has only glanced at.
     if (owner !== null && changedWorkspace && before.sessions[owner] === undefined) {
       void actions.refreshSessions(owner);
+    }
+  },
+
+  /** Move only the chat log, then refresh both owners and follow the new path. */
+  async moveChatSession(sessionPath: string, targetFolder: string): Promise<boolean> {
+    try {
+      const before = appStore.get();
+      const sourceId = projectIdOfSession(before, sessionPath);
+      const result = await api.moveSession(sessionPath, targetFolder);
+      if (before.selectedSessionPath === sessionPath) actions.selectSession(null);
+      actions.clearExternalChanged(sessionPath);
+      actions.clearSessionActivity(sessionPath);
+      if (sourceId) await actions.refreshSessions(sourceId, { force: true });
+      if (result.projectId) {
+        actions.expandProject(result.projectId);
+        await actions.refreshSessions(result.projectId, { force: true });
+        if (before.selectedSessionPath === sessionPath) actions.selectSession(result.newPath, result.projectId);
+      }
+      return true;
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+      return false;
     }
   },
 

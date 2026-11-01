@@ -77,7 +77,8 @@ export const zhCN = {
   "settings.titleModel.description":
     "新会话发出第一条消息时，交给这个模型起一个名字；关闭时用消息本身的前几个词",
   "settings.titleModel.off": "关闭",
-
+  "settings.systemPrompt.title": "系统提示",
+  "settings.systemPrompt.description": "附加到新启动的代理进程的系统提示。离开输入框时保存；不影响正在运行的会话。",
   // --- notifications --------------------------------------------------------
   "notification.taskFinished": "会话任务已完成",
 
@@ -802,6 +803,11 @@ export const zhCN = {
   "notice.deletedForever": "已永久删除会话。",
 
   // --- projects / layout ----------------------------------------------------
+  "picker.location.home": "主目录",
+  "picker.location.desktop": "桌面",
+  "picker.location.documents": "文稿",
+  "picker.location.downloads": "下载",
+  "picker.location.root": "根目录",
   "picker.title": "选择项目目录",
   "picker.currentPath": "当前路径",
   "picker.go": "跳转",
@@ -840,6 +846,9 @@ export const zhCN = {
   "session.draft": "新会话",
   "session.preparing": "准备中",
   "session.unsaved": "未保存",
+  "session.move": "移动",
+  "session.moveLabel": "移动 {title}",
+  "session.moveConfirm": "将会话 \"{title}\" 移动到 \"{dest}\"？请选择已添加的工作区文件夹。项目文件不会移动。",
   "session.expandAll": "展开其余 {count} 个会话",
   "session.empty": "还没有会话。",
   "session.loading": "正在载入会话列表…",
@@ -928,6 +937,8 @@ export const en: Record<MessageKey, string> = {
   "settings.titleModel.description":
     "Name a new session with this model when its first message arrives; off uses the leading words of that message instead",
   "settings.titleModel.off": "Off",
+  "settings.systemPrompt.title": "System Prompt",
+  "settings.systemPrompt.description": "Additional instructions for newly started agent processes. Saved when you leave the field; running chats are unchanged.",
 
   "notification.taskFinished": "The session task has finished",
 
@@ -1613,6 +1624,11 @@ export const en: Record<MessageKey, string> = {
   "notice.trashed": "Moved the session to the trash.",
   "notice.deletedForever": "Deleted the session for good.",
 
+  "picker.location.home": "Home",
+  "picker.location.desktop": "Desktop",
+  "picker.location.documents": "Documents",
+  "picker.location.downloads": "Downloads",
+  "picker.location.root": "Root",
   "picker.title": "Choose a project directory",
   "picker.currentPath": "Current path",
   "picker.go": "Go",
@@ -1637,6 +1653,9 @@ export const en: Record<MessageKey, string> = {
   "session.renamePrompt": "Session name (leave blank to go back to automatic)",
   "session.rename": "Rename",
   "session.renameLabel": "Rename {title}",
+  "session.move": "Move",
+  "session.moveLabel": "Move {title}",
+  "session.moveConfirm": "Move chat \"{title}\" to \"{dest}\"? Choose an added workspace folder. Project files are not moved.",
   "session.hide": "Hide from the list (keeps the file)",
   "session.hideLabel": "Hide {title}",
   "session.delete": "Delete session",

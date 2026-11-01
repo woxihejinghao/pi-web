@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AddressInfo } from "node:net";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -697,6 +698,157 @@ describe("sessions api", () => {
       method: "DELETE",
     });
     expect(res.status).toBe(403);
+  });
+
+  describe("move session", () => {
+    const writeSessionFile = async (path: string, cwd: string): Promise<void> => {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(
+        path,
+        [
+          { type: "session", version: 3, id: "move-session", timestamp: "2026-01-01T00:00:00.000Z", cwd },
+          {
+            type: "message",
+            id: "m1",
+            parentId: null,
+            timestamp: "2026-01-01T00:00:01.000Z",
+            message: { role: "user", content: "move me" },
+          },
+        ]
+          .map((entry) => `${JSON.stringify(entry)}\n`)
+          .join(""),
+        "utf8",
+      );
+    };
+
+    it("moves a resident session to another folder and closes its process", async () => {
+      const project = await createProject("move-live");
+      const sessionDir = sessionDirFor(project.path, sessionRoot);
+      const oldPath = join(sessionDir, "live.jsonl");
+      await writeSessionFile(oldPath, project.path);
+      process.env.STUB_SESSION_FILE = oldPath;
+
+      try {
+        const created = await post("/api/sessions", { projectId: project.id });
+        expect(created.status).toBe(201);
+        expect(created.body.sessionPath).toBe(oldPath);
+        expect((await api("/api/health")).body.activeSessions).toBe(1);
+
+        const targetFolder = join(sessionDir, "subfolder");
+        await mkdir(targetFolder, { recursive: true });
+
+        const events: string[] = [];
+        bus.subscribe((event) => events.push(event.type));
+        const moved = await post(`/api/sessions/${encodeURIComponent(oldPath)}/move`, { targetFolder });
+        expect(moved.status).toBe(200);
+
+        const newPath = moved.body.newPath as string;
+        expect(existsSync(newPath)).toBe(true);
+        expect(existsSync(oldPath)).toBe(false);
+        expect((await api("/api/health")).body.activeSessions).toBe(0);
+        expect(events).toContain("sessions_changed");
+
+        const messages = await api<{ messages: Array<{ role: string }> }>(
+          `/api/sessions/${encodeURIComponent(newPath)}/messages`,
+        );
+        expect(messages.status).toBe(200);
+        expect(messages.body.messages.map((entry) => entry.role)).toEqual(["user"]);
+      } finally {
+        delete process.env.STUB_SESSION_FILE;
+      }
+    });
+
+    it("moves between registered workspaces and remains discoverable after reload", async () => {
+      const source = await createProject("move-workspace-source");
+      const target = await createProject("move-workspace-target");
+      const oldPath = join(sessionDirFor(source.path, sessionRoot), "workspace.jsonl");
+      await writeSessionFile(oldPath, source.path);
+      const original = await readFile(oldPath, "utf8");
+      const moved = await post(`/api/sessions/${encodeURIComponent(oldPath)}/move`, { targetFolder: target.path });
+      expect(moved.status).toBe(200);
+      expect(moved.body.projectId).toBe(target.id);
+      expect(existsSync(oldPath)).toBe(false);
+      const contents = await readFile(moved.body.newPath, "utf8");
+      expect(JSON.parse(contents.split("\n")[0]!).cwd).toBe(target.path);
+      expect(contents.slice(contents.indexOf("\n"))).toBe(original.slice(original.indexOf("\n")));
+      expect((await api(`/api/projects/${source.id}/sessions`)).body.sessions).toHaveLength(0);
+      const listed = await api(`/api/projects/${target.id}/sessions`);
+      expect(listed.body.sessions.map((session: { path: string }) => session.path)).toEqual([moved.body.newPath]);
+    });
+
+    it("does not close a resident session when validation fails", async () => {
+      const source = await createProject("move-rejected-live");
+      const oldPath = join(sessionDirFor(source.path, sessionRoot), "rejected.jsonl");
+      await writeSessionFile(oldPath, source.path);
+      process.env.STUB_SESSION_FILE = oldPath;
+      try {
+        expect((await post("/api/sessions", { projectId: source.id })).status).toBe(201);
+        const moved = await post(`/api/sessions/${encodeURIComponent(oldPath)}/move`, { targetFolder: source.path });
+        expect(moved.status).toBe(409);
+        expect((await api("/api/health")).body.activeSessions).toBe(1);
+        expect(existsSync(oldPath)).toBe(true);
+      } finally { delete process.env.STUB_SESSION_FILE; }
+    });
+
+    it("returns 404 when the session file is not on disk", async () => {
+      const missingPath = join(sessionRoot, "--move-missing--", "gone.jsonl");
+      const targetFolder = join(sessionRoot, "--move-target--");
+      await mkdir(targetFolder, { recursive: true });
+
+      const res = await post(`/api/sessions/${encodeURIComponent(missingPath)}/move`, { targetFolder });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 409 when the target already has a session with the same name", async () => {
+      const sourcePath = join(sessionRoot, "--move-source--", "same.jsonl");
+      const targetFolder = join(sessionRoot, "--move-conflict--");
+      const targetPath = join(targetFolder, "same.jsonl");
+      await writeSessionFile(sourcePath, projectRoot);
+      await writeSessionFile(targetPath, projectRoot);
+
+      const res = await post(`/api/sessions/${encodeURIComponent(sourcePath)}/move`, { targetFolder });
+      expect(res.status).toBe(409);
+      expect(existsSync(sourcePath)).toBe(true);
+      expect(existsSync(targetPath)).toBe(true);
+    });
+
+    it("returns 403 when the target folder is outside pi's storage root", async () => {
+      const sourcePath = join(sessionRoot, "--move-outside-source--", "session.jsonl");
+      const targetFolder = join(projectRoot, "move-outside-target");
+      await writeSessionFile(sourcePath, projectRoot);
+      await mkdir(targetFolder, { recursive: true });
+
+      const res = await post(`/api/sessions/${encodeURIComponent(sourcePath)}/move`, { targetFolder });
+      expect(res.status).toBe(403);
+      expect(existsSync(sourcePath)).toBe(true);
+    });
+
+    it("returns 400 when the target would put the session inside itself", async () => {
+      // A .jsonl directory is not a session, but it is the only way to make
+      // that impossible nested target exist on a filesystem where files and
+      // directories share a namespace. The route validates the cycle before
+      // checking that the source is a file.
+      const sessionPath = join(sessionRoot, "--move-cycle--", "session.jsonl");
+      const targetFolder = join(sessionPath, "nested");
+      await mkdir(targetFolder, { recursive: true });
+
+      const res = await post(`/api/sessions/${encodeURIComponent(sessionPath)}/move`, { targetFolder });
+      expect(res.status).toBe(400);
+    });
+  });
+});
+
+describe("system prompt process configuration", () => {
+  it("passes saved instructions to a newly started pi process", async () => {
+    const project = await createProject("system-prompt-spawn");
+    const argsFile = join(project.path, "spawn-args.json");
+    process.env.STUB_ARGS_FILE = argsFile;
+    try {
+      expect((await api("/api/settings", { method: "PUT", body: JSON.stringify({ systemPrompt: "Reply in Italian." }) })).status).toBe(200);
+      expect((await post("/api/sessions", { projectId: project.id })).status).toBe(201);
+      const args = JSON.parse(await readFile(argsFile, "utf8"));
+      expect(args[args.indexOf("--append-system-prompt") + 1]).toBe("\nReply in Italian.");
+    } finally { delete process.env.STUB_ARGS_FILE; }
   });
 });
 
@@ -1730,6 +1882,7 @@ describe("settings", () => {
       transcriptDisplay: "standard",
       busySendBehavior: "queue",
       browserNotifications: false,
+      systemPrompt: "",
       titleModel: null,
     });
   });
@@ -1769,11 +1922,24 @@ describe("settings", () => {
       transcriptDisplay: "standard",
       busySendBehavior: "queue",
       browserNotifications: false,
+      systemPrompt: "",
       titleModel: null,
     });
 
     const reread = await api("/api/settings");
     expect(reread.body.appearance).toBe("dark");
+  });
+
+  it("persists a standalone system prompt without touching other settings", async () => {
+    const patched = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ systemPrompt: "Answer in English." }),
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.systemPrompt).toBe("Answer in English.");
+    expect(patched.body.busySendBehavior).toBe("queue");
+    expect((await api("/api/settings")).body.systemPrompt).toBe("Answer in English.");
   });
 
   it("persists the browser-notification preference", async () => {
