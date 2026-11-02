@@ -15,6 +15,7 @@ import { sessionRowsOf } from "./session-rows.ts";
 import { NO_DRAG, type RowDragHandlers, type SidebarDrag } from "./use-sidebar-drag.ts";
 import { SidebarMenu, anchorBelow, type MenuAnchor } from "./SidebarMenu.tsx";
 import { DirectoryPicker } from "./DirectoryPicker.tsx";
+import { WorkFoldersDialog } from "./WorkFoldersDialog.tsx";
 
 /**
  * The workspace row's overflow menu: rename and remove, folded behind the `...`
@@ -135,6 +136,7 @@ export function SessionRow({
 }) {
   const t = useT();
   const [moving, setMoving] = useState(false);
+  const [editingFolders, setEditingFolders] = useState(false);
   const [menuAt, setMenuAt] = useState<MenuAnchor | null>(null);
   const moveButtonRef = useRef<HTMLButtonElement>(null);
   const closeMenu = useCallback(() => setMenuAt(null), []);
@@ -248,6 +250,10 @@ export function SessionRow({
             closeMenu();
             setMoving(true);
           }}>{t("session.move")}</button>
+          <button type="button" role="menuitem" className={styles.projectMenuItem} onClick={() => {
+            closeMenu();
+            setEditingFolders(true);
+          }}>{t("session.workFolders.title")}</button>
         </SidebarMenu>
       )}
       <DirectoryPicker
@@ -255,10 +261,10 @@ export function SessionRow({
         initialPath="~/pi/workspace"
         onClose={() => setMoving(false)}
         onSelect={async (path) => {
-          if (!window.confirm(t("session.moveConfirm", { title, dest: path }))) return;
           if (await actions.moveChatSession(sessionPath, path)) setMoving(false);
         }}
       />
+      <WorkFoldersDialog open={editingFolders} sessionPath={sessionPath} onClose={() => setEditingFolders(false)} />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, realpath } from "node:fs/promises";
 import { moveSessionFile } from "./session-move.ts";
+import { getWorkFolderRoot, moveWorkFolders, planWorkFolderMoves, saveWorkFolders, withWorkFolderLock } from "./session-work-folders.ts";
 import { basename, join, resolve, sep } from "node:path";
 import { approvalView, updateApproval } from "./approval.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -666,7 +667,17 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     routes.push({ method, segments: path.split("/").filter(Boolean), handler });
   };
 
-  const allowedPath = (raw: string): string => assertAllowedSessionPath(raw, sessionRoot);
+  const movingSessions = new Set<string>();
+  const allowedPath = (raw: string): string => {
+    const path = assertAllowedSessionPath(raw, sessionRoot);
+    if (movingSessions.has(path)) throw conflict("session move is in progress; retry when it finishes");
+    return path;
+  };
+  const withMoveGuard = async <T>(paths: string[], run: () => Promise<T>): Promise<T> => {
+    for (const path of paths) movingSessions.add(path);
+    try { return await run(); }
+    finally { for (const path of paths) movingSessions.delete(path); }
+  };
 
   /**
    * Whether this id names a session file this process may read.
@@ -688,6 +699,7 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
    * sessions are already registered by path, so they resolve without disk I/O.
    */
   const openSession = async (sessionPath: string): Promise<SessionHandle> => {
+    if (movingSessions.has(sessionPath)) throw conflict("session move is in progress");
     const live = registry.get(sessionPath);
     if (live && !live.dead) {
       registry.touch(sessionPath);
@@ -703,7 +715,9 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     } catch (err) {
       throw notFound(`cannot open session: ${(err as Error).message}`);
     }
-    return registry.open(manager.getCwd(), sessionPath, presetIdOfSession(manager));
+    const handle = await registry.open(manager.getCwd(), sessionPath, presetIdOfSession(manager));
+    if (movingSessions.has(sessionPath)) throw conflict("session move is in progress");
+    return handle;
   };
 
   /** Any RPC failure marks the handle dead so the next request respawns it. */
@@ -1960,14 +1974,22 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(res, 200, { ok: true, name: trimmed });
   });
 
-  /**
-   * Move a session (chat) to a different folder.
-   * Registered workspace paths map to pi's storage directory and update the
-   * session header's cwd. Storage-directory paths remain supported for API clients.
-   */
-  route("POST", "/api/sessions/:id/move", async ({ res, params, body }) => {
+  route("GET", "/api/sessions/:id/work-folders", async ({ res, params }) => {
     const sessionPath = allowedPath(params.id!);
-    const { targetFolder } = asObject(body);
+    json(res, 200, { workFolders: (await readStore()).sessionOverrides[sessionPath]?.workFolders ?? [], root: getWorkFolderRoot() });
+  });
+
+  route("PUT", "/api/sessions/:id/work-folders", async ({ res, params, body }) => {
+    const sessionPath = allowedPath(params.id!);
+    if (!existsSync(sessionPath)) throw notFound("session file does not exist on disk");
+    const workFolders = await withWorkFolderLock(() => saveWorkFolders(sessionPath, asObject(body).workFolders, sessionRoot));
+    json(res, 200, { workFolders, root: getWorkFolderRoot() });
+  });
+
+  // One preflight is shared by preview and commit. Confirmation never grants
+  // permission to skip revalidation of associations, destinations or conflicts.
+  const prepareMove = async (sessionPath: string, input: Record<string, unknown>) => {
+    const { targetFolder } = input;
     if (typeof targetFolder !== "string") throw badRequest("targetFolder is required");
 
     const sessionRootAbs = resolve(sessionRoot);
@@ -2007,23 +2029,79 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     if (!canonicalSource.startsWith(canonicalRoot + sep)) throw forbidden("session resolves outside pi's session storage root");
 
     const newPath = join(targetAbs, basename(sessionPath));
-    if (existsSync(newPath)) throw conflict("a session with that name already exists in the target folder");
-
-    // Close a resident process before moving its file, then let a later open
-    // re-attach at the new path. Validation above happens first, so a rejected
-    // move never inhibits a live session.
-    await registry.close(sessionPath, "session-moved");
-    try {
-      await moveSessionFile(sessionPath, newPath, targetProject?.path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw notFound("session file does not exist on disk");
-      }
-      throw error;
+    if (newPath !== sessionPath && (await readStore()).sessionOverrides[newPath]?.workFolders?.length) {
+      throw conflict("destination session already has working-folder metadata");
     }
+    const folders = await planWorkFolderMoves(sessionPath, targetProject?.path ?? targetAbs, sessionRoot);
+    if (folders.workFolders.length && !targetProject) throw badRequest("work folders require a registered destination workspace");
+    if (existsSync(newPath) && (newPath !== sessionPath || folders.moves.length === 0)) {
+      throw conflict("a session with that name already exists in the target folder");
+    }
+    return { newPath, targetProject, ...folders };
+  };
 
+  route("POST", "/api/sessions/:id/move-preview", async ({ res, params, body }) => {
+    const sessionPath = allowedPath(params.id!);
+    const plan = await withWorkFolderLock(() => prepareMove(sessionPath, asObject(body)));
+    json(res, 200, { newPath: plan.newPath, projectId: plan.targetProject?.id, workFolders: plan.workFolders, moves: plan.moves });
+  });
+
+  route("POST", "/api/sessions/:id/move", async ({ res, params, body }) => {
+    const sessionPath = allowedPath(params.id!);
+    const input = asObject(body);
+    const result = await withWorkFolderLock(async () => {
+      const plan = await prepareMove(sessionPath, input);
+      if ((plan.workFolders.length || input.expectedWorkFolders !== undefined)
+        && JSON.stringify(input.expectedWorkFolders) !== JSON.stringify(plan.workFolders)) {
+        throw conflict("working-folder associations changed; preview and confirm the move again");
+      }
+      return withMoveGuard([sessionPath, plan.newPath], async () => {
+        const live = registry.get(sessionPath);
+        if (live && !live.dead) {
+          const state = await live.client.getState();
+          if (state.isStreaming || state.isCompacting) throw conflict("wait for the active chat to finish before moving it");
+        }
+        // All path/conflict checks precede closing a resident process.
+        const store = await readStore();
+        await registry.close(sessionPath, "session-moved");
+        terminals.closeForSession(sessionPath);
+        const rollbackFolders = await moveWorkFolders(plan.moves);
+        const oldOverride = store.sessionOverrides[sessionPath];
+        const previousTargetOverride = store.sessionOverrides[plan.newPath];
+        let metadataWritten = false;
+        const persistAssociations = async () => {
+          await mutateStore((draft) => {
+            const workFolders = plan.workFolders.map((source) => plan.moves.find((move) => move.source === source)?.destination ?? source);
+            delete draft.sessionOverrides[sessionPath];
+            delete draft.sessionOverrides[plan.newPath];
+            if (oldOverride || workFolders.length) draft.sessionOverrides[plan.newPath] = { ...oldOverride, workFolders };
+          });
+          metadataWritten = true;
+        };
+        try {
+          if (plan.newPath === sessionPath) await persistAssociations();
+          else await moveSessionFile(sessionPath, plan.newPath, plan.targetProject?.path, persistAssociations);
+        } catch (error) {
+          const failures: unknown[] = [error];
+          if (metadataWritten) {
+            try {
+              await mutateStore((draft) => {
+                if (previousTargetOverride) draft.sessionOverrides[plan.newPath] = previousTargetOverride;
+                else delete draft.sessionOverrides[plan.newPath];
+                if (oldOverride) draft.sessionOverrides[sessionPath] = oldOverride;
+                else delete draft.sessionOverrides[sessionPath];
+              });
+            } catch (recovery) { failures.push(recovery); }
+          }
+          try { await rollbackFolders(); } catch (recovery) { failures.push(recovery); }
+          if (failures.length > 1) throw new AggregateError(failures, "move failed; retained files require recovery");
+          throw error;
+        }
+        return { newPath: plan.newPath, projectId: plan.targetProject?.id, movedFolders: plan.moves };
+      });
+    });
     bus.publish({ type: "sessions_changed", projectPath: "" });
-    json(res, 200, { newPath, projectId: targetProject?.id });
+    json(res, 200, result);
   });
 
   route("POST", "/api/sessions/:id/hidden", async ({ res, params, body }) => {

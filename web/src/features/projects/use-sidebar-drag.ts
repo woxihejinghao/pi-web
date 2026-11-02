@@ -10,7 +10,7 @@
  * `RowDragProps`.
  */
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
-import { actions, appStore, isDraftSession, useT } from "../../lib/app-state.ts";
+import { actions, appStore, isDraftSession } from "../../lib/app-state.ts";
 import { flattenProjectTree, type ProjectNode } from "../../lib/project-tree.ts";
 import { FLAT_ORDER_KEY, rowHalf } from "../../lib/sidebar-view.ts";
 import { flatSessionRowsOf, sessionRowsOf } from "./session-rows.ts";
@@ -85,7 +85,6 @@ export const NO_DRAG: SidebarDrag = {
  * @returns the per-row wiring.
  */
 export function useSidebarDrag(tree: readonly ProjectNode[]): SidebarDrag {
-  const t = useT();
   const [drag, setDrag] = useState<DragState | null>(null);
   /**
    * The live drag, which is the ref rather than the state.
@@ -299,9 +298,7 @@ export function useSidebarDrag(tree: readonly ProjectNode[]): SidebarDrag {
           committed.current = true;
           put(null);
           const { session, target } = destination;
-          if (window.confirm(t("session.moveConfirm", { title: session.title, dest: target.path }))) {
-            void actions.moveChatSession(session.path, target.path);
-          }
+          void actions.moveChatSession(session.path, target.path);
           return;
         }
         if (!accepts()) return;

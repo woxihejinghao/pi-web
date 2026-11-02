@@ -1107,12 +1107,19 @@ export const actions = {
     }
   },
 
-  /** Move only the chat log, then refresh both owners and follow the new path. */
+  /** Preview and confirm chat + explicitly associated folders for every UI entry point. */
   async moveChatSession(sessionPath: string, targetFolder: string): Promise<boolean> {
     try {
       const before = appStore.get();
       const sourceId = projectIdOfSession(before, sessionPath);
-      const result = await api.moveSession(sessionPath, targetFolder);
+      const title = sourceId ? before.sessions[sourceId]?.find((session) => session.path === sessionPath)?.title ?? sessionPath : sessionPath;
+      const plan = await api.previewSessionMove(sessionPath, targetFolder);
+      const t = tr();
+      const folders = plan.moves.length
+        ? t("session.workFolders.moveSummary", { folders: plan.moves.map((move) => `${move.source} → ${move.destination}`).join("\n") })
+        : t(plan.workFolders.length ? "session.workFolders.alreadyAtDestination" : "session.workFolders.noneAssociated");
+      if (!window.confirm(`${t("session.moveConfirm", { title, dest: targetFolder })}\n\n${folders}`)) return false;
+      const result = await api.moveSession(sessionPath, targetFolder, plan.workFolders);
       if (before.selectedSessionPath === sessionPath) actions.selectSession(null);
       actions.clearExternalChanged(sessionPath);
       actions.clearSessionActivity(sessionPath);

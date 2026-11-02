@@ -341,6 +341,10 @@ class SessionRegistry {
 
   async close(sessionPath: string, reason = "closed"): Promise<void> {
     const key = resolve(sessionPath);
+    // A move/delete must also retire an open already in flight, not just the
+    // handles that happened to finish their startup before close() was called.
+    const inflight = this.pending.get(key);
+    if (inflight) await inflight.catch(() => undefined);
     const handle = this.handles.get(key);
     if (!handle) return;
     this.handles.delete(key);

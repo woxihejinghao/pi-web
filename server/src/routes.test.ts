@@ -823,6 +823,148 @@ describe("sessions api", () => {
       expect(existsSync(sourcePath)).toBe(true);
     });
 
+    describe("associated working folders", () => {
+      let previousRoot: string | undefined;
+      let sequence = 0;
+      beforeEach(() => {
+        previousRoot = process.env.PI_WEB_SIMPLE_WORKSPACE_DIR;
+        process.env.PI_WEB_SIMPLE_WORKSPACE_DIR = projectRoot;
+      });
+      afterEach(() => {
+        if (previousRoot === undefined) delete process.env.PI_WEB_SIMPLE_WORKSPACE_DIR;
+        else process.env.PI_WEB_SIMPLE_WORKSPACE_DIR = previousRoot;
+      });
+      const foldersApi = (path: string) => `/api/sessions/${encodeURIComponent(path)}/work-folders`;
+      const moveApi = (path: string) => `/api/sessions/${encodeURIComponent(path)}/move`;
+      const associate = (path: string, workFolders: string[]) => api(foldersApi(path), { method: "PUT", body: JSON.stringify({ workFolders }) });
+      const fixture = async () => {
+        const index = ++sequence;
+        const source = await createProject(`working-source-${index}`);
+        const target = await createProject(`working-target-${index}`);
+        const path = join(sessionDirFor(source.path, sessionRoot), "working.jsonl");
+        await writeSessionFile(path, source.path);
+        const folder = join(source.path, "reports");
+        await mkdir(join(folder, ".nested"), { recursive: true });
+        await writeFile(join(folder, ".nested", "report.txt"), "keep all report bytes");
+        expect((await associate(path, [folder])).status).toBe(200);
+        return { source, target, path, folder, destination: join(target.path, "reports") };
+      };
+
+      it("previews exact paths, moves nested files, and persists the association at the new chat path", async () => {
+        const f = await fixture();
+        const preview = await post(`${moveApi(f.path)}-preview`, { targetFolder: f.target.path });
+        expect(preview.status).toBe(200);
+        expect(preview.body.moves).toEqual([{ source: f.folder, destination: f.destination }]);
+        const moved = await post(moveApi(f.path), { targetFolder: f.target.path, expectedWorkFolders: preview.body.workFolders });
+        expect(moved.status).toBe(200);
+        expect(existsSync(f.folder)).toBe(false);
+        expect(await readFile(join(f.destination, ".nested", "report.txt"), "utf8")).toBe("keep all report bytes");
+        expect(existsSync(f.path)).toBe(false);
+        const store = await import("./store.ts");
+        store.resetStoreCache();
+        expect((await api(foldersApi(moved.body.newPath))).body.workFolders).toEqual([f.destination]);
+        expect((await api(foldersApi(f.path))).body.workFolders).toEqual([]);
+        expect((await api(`/api/projects/${f.target.id}/sessions`)).body.sessions).toHaveLength(1);
+      });
+
+      it("can relocate folders when the chat is already in the destination workspace, without rewriting its log", async () => {
+        const f = await fixture();
+        const path = join(sessionDirFor(f.target.path, sessionRoot), "already-moved.jsonl");
+        await writeSessionFile(path, f.target.path);
+        await associate(f.path, []);
+        expect((await associate(path, [f.folder])).status).toBe(200);
+        const original = await readFile(path, "utf8");
+        const moved = await post(moveApi(path), { targetFolder: f.target.path, expectedWorkFolders: [f.folder] });
+        expect(moved.status).toBe(200);
+        expect(moved.body.newPath).toBe(path);
+        expect(await readFile(path, "utf8")).toBe(original);
+        expect(await readFile(join(f.destination, ".nested", "report.txt"), "utf8")).toBe("keep all report bytes");
+      });
+
+      it("rejects an unconfirmed or stale association snapshot before touching files", async () => {
+        const f = await fixture();
+        expect((await post(moveApi(f.path), { targetFolder: f.target.path })).status).toBe(409);
+        const preview = await post(`${moveApi(f.path)}-preview`, { targetFolder: f.target.path });
+        const extra = join(f.source.path, "extra");
+        await mkdir(extra);
+        await associate(f.path, [f.folder, extra]);
+        expect((await post(moveApi(f.path), { targetFolder: f.target.path, expectedWorkFolders: preview.body.workFolders })).status).toBe(409);
+        expect(existsSync(f.folder)).toBe(true);
+        expect(existsSync(f.destination)).toBe(false);
+        expect(existsSync(f.path)).toBe(true);
+      });
+
+      it("rejects shared/overlapping associations and registered or outside-root folders", async () => {
+        const f = await fixture();
+        const otherPath = join(sessionDirFor(f.source.path, sessionRoot), "other.jsonl");
+        await writeSessionFile(otherPath, f.source.path);
+        expect((await associate(otherPath, [f.folder])).status).toBe(409);
+        expect((await associate(f.path, [f.folder, join(f.folder, ".nested")])).status).toBe(409);
+        expect((await associate(f.path, [f.source.path])).status).toBe(409);
+        expect((await associate(f.path, [projectRoot])).status).toBe(403);
+        expect((await associate(f.path, [sessionRoot])).status).toBe(403);
+        expect((await associate(f.path, ["relative-path"])).status).toBe(400);
+        const metadata = join(f.source.path, ".git");
+        await mkdir(metadata);
+        expect((await associate(f.path, [metadata])).status).toBe(403);
+      });
+
+      it("does not merge an existing destination or close the resident chat on a rejected move", async () => {
+        const f = await fixture();
+        await mkdir(f.destination);
+        process.env.STUB_SESSION_FILE = f.path;
+        try {
+          expect((await post("/api/sessions", { projectId: f.source.id })).status).toBe(201);
+          const moved = await post(moveApi(f.path), { targetFolder: f.target.path, expectedWorkFolders: [f.folder] });
+          expect(moved.status).toBe(409);
+          expect((await api("/api/health")).body.activeSessions).toBe(1);
+          expect(existsSync(f.folder)).toBe(true);
+        } finally { delete process.env.STUB_SESSION_FILE; }
+      });
+
+      it("rolls work folders back if committing session metadata fails", async () => {
+        const f = await fixture();
+        const store = await import("./store.ts");
+        const failure = vi.spyOn(store, "mutateStore").mockRejectedValueOnce(new Error("simulated disk full"));
+        try {
+          const moved = await post(moveApi(f.path), { targetFolder: f.target.path, expectedWorkFolders: [f.folder] });
+          expect(moved.status).toBe(500);
+          expect(existsSync(f.path)).toBe(true);
+          expect(existsSync(f.destination)).toBe(false);
+          expect(await readFile(join(f.folder, ".nested", "report.txt"), "utf8")).toBe("keep all report bytes");
+          expect((await api(foldersApi(f.path))).body.workFolders).toEqual([f.folder]);
+        } finally { failure.mockRestore(); }
+      });
+
+      it("blocks reopening or prompting either session path while folders are in transit", async () => {
+        const f = await fixture();
+        const operations = await import("./session-work-folders.ts");
+        const original = operations.moveWorkFolders;
+        let release!: () => void;
+        const barrier = new Promise<void>((resolve) => { release = resolve; });
+        const delayed = vi.spyOn(operations, "moveWorkFolders").mockImplementation(async (moves) => {
+          await barrier;
+          return original(moves);
+        });
+        const moving = post(moveApi(f.path), { targetFolder: f.target.path, expectedWorkFolders: [f.folder] });
+        try {
+          await vi.waitFor(() => expect(delayed).toHaveBeenCalled());
+          expect((await post(`/api/sessions/${encodeURIComponent(f.path)}/prompt`, { message: "do not start" })).status).toBe(409);
+          const newPath = join(sessionDirFor(f.target.path, sessionRoot), "working.jsonl");
+          expect((await api(`/api/sessions/${encodeURIComponent(newPath)}/state`)).status).toBe(409);
+          release();
+          expect((await moving).status).toBe(200);
+        } finally { release(); await moving; delayed.mockRestore(); }
+      });
+
+      it("unlinking an association never deletes or moves files", async () => {
+        const f = await fixture();
+        expect((await associate(f.path, [])).status).toBe(200);
+        expect((await api(foldersApi(f.path))).body.workFolders).toEqual([]);
+        expect(await readFile(join(f.folder, ".nested", "report.txt"), "utf8")).toBe("keep all report bytes");
+      });
+    });
+
     it("returns 400 when the target would put the session inside itself", async () => {
       // A .jsonl directory is not a session, but it is the only way to make
       // that impossible nested target exist on a filesystem where files and

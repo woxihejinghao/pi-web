@@ -20,6 +20,16 @@ it("never overwrites a destination created after preflight validation", async ()
   expect((await readdir(root)).sort()).toEqual(["source.jsonl", "target.jsonl"]);
 });
 
+it("keeps the original session if committing web metadata fails", async () => {
+  const source = join(root, "source.jsonl");
+  const target = join(root, "target.jsonl");
+  const contents = JSON.stringify({ type: "session", cwd: "/source" }) + "\n";
+  await writeFile(source, contents);
+  await expect(moveSessionFile(source, target, "/target", async () => { throw new Error("disk full"); })).rejects.toThrow("disk full");
+  expect(await readFile(source, "utf8")).toBe(contents);
+  expect(await readdir(root)).toEqual(["source.jsonl"]);
+});
+
 it("leaves the original untouched when a workspace move has an invalid header", async () => {
   const source = join(root, "source.jsonl");
   await writeFile(source, "not json\n");

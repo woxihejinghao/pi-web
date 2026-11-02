@@ -2,7 +2,7 @@
 
 > This branch adds web-only **Ask / Smart / Off** action approvals, defaulting to **Ask**.
 > Build and launch this checkout to use them; see [Web action approvals](docs/web-approvals.md).
-> Saved chats can also be moved between workspaces, and Settings includes persistent additional system instructions: [Session management](docs/session-management.md).
+> Saved chats can also be moved between workspaces together with explicitly associated working folders. Settings includes persistent additional system instructions: [Session management](docs/session-management.md).
 
 **English** · [简体中文](https://github.com/woxihejinghao/pi-web/blob/main/docs/README.zh-CN.md)
 

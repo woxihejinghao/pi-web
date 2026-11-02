@@ -6,7 +6,7 @@ import { conflict } from "./errors.ts";
  * Keep the original intact until the destination is complete; roll back the
  * new link if removing the original fails. Workspace files are never touched.
  */
-export async function moveSessionFile(source: string, destination: string, cwd?: string): Promise<void> {
+export async function moveSessionFile(source: string, destination: string, cwd?: string, beforeSourceRemoval?: () => Promise<void>): Promise<void> {
   let staged: string | undefined;
   try {
     if (cwd !== undefined) {
@@ -24,6 +24,7 @@ export async function moveSessionFile(source: string, destination: string, cwd?:
       throw error;
     }
     try {
+      await beforeSourceRemoval?.();
       await unlink(source);
     } catch (error) {
       await unlink(destination);

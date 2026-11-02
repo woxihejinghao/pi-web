@@ -95,7 +95,7 @@ describe("chat drops onto workspace headers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("confirms and moves once to an empty workspace, not its ordering action", () => {
+  it("dispatches once to the shared preview/confirmation action, not the ordering action", () => {
     wiring.sessionRow(source.id, path).onDragStart(event());
     const destination = wiring.projectRow(target.id);
     const hover = event();
@@ -104,20 +104,20 @@ describe("chat drops onto workspace headers", () => {
     destination.onDrop(event());
     destination.onDrop(event());
     wiring.sessionRow(source.id, path).onDragEnd();
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(confirm.mock.calls[0]?.[0]).toContain(target.path);
+    // The action, rather than individual entry points, owns preview/confirmation.
+    expect(confirm).not.toHaveBeenCalled();
     expect(actions.moveChatSession).toHaveBeenCalledTimes(1);
     expect(actions.moveChatSession).toHaveBeenCalledWith(path, target.path);
     expect(actions.moveProject).not.toHaveBeenCalled();
     expect(actions.moveSession).not.toHaveBeenCalled();
   });
 
-  it("does nothing after cancellation", () => {
-    confirm.mockReturnValue(false);
+  it("does not dispatch a duplicate move when the shared action declines", () => {
+    vi.mocked(actions.moveChatSession).mockResolvedValue(false);
     wiring.sessionRow(source.id, path).onDragStart(event());
     wiring.projectRow(target.id).onDrop(event());
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(actions.moveChatSession).not.toHaveBeenCalled();
+    wiring.projectRow(target.id).onDrop(event());
+    expect(actions.moveChatSession).toHaveBeenCalledTimes(1);
   });
 
   it("rejects the source workspace, unsaved chats and missing destination folders", () => {
