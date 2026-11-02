@@ -14,6 +14,10 @@ The chat log moves to pi's session storage for the destination workspace, and it
 
 For example, associating `~/pi/workspace/multiriskcast-review` with **MULTIRISK PROJECT**, then moving it to **EPOS**, relocates the folder to `~/pi/workspace/EPOS/multiriskcast-review`—not its individual files directly into EPOS. If the chat is already in EPOS, use **Move** and select EPOS again: only the still-external associated folders move, with no rewrite or relocation of that chat log.
 
+![Explicit working-folder association dialog, using disposable browser-test data](images/working-folders.en.png)
+
+[Mobile association dialog](images/working-folders-mobile.en.png)
+
 Only **explicitly associated** folders travel with the chat. Shared files elsewhere, external symlink targets, and unrelated workspace contents stay where they are. Symlinks are preserved, not followed. Historical messages, absolute paths in existing documents, and symlink targets are not rewritten; old absolute links may need manual updates. The pre-existing session-log relocation is unchanged; no migration of pi's settings, credentials or other internal files is introduced.
 
 An active streaming/compacting chat cannot be moved. A resident idle process and its terminals are stopped only after validation, and the chat can restart at its new path.
