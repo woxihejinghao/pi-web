@@ -803,6 +803,9 @@ export const zhCN = {
   "notice.deletedForever": "已永久删除会话。",
 
   // --- projects / layout ----------------------------------------------------
+  "picker.loadNotFound": "目录不存在：{path}",
+  "picker.loadDenied": "没有权限访问目录：{path}",
+  "picker.loadFailed": "无法打开目录：{path}",
   "picker.location.home": "主目录",
   "picker.location.desktop": "桌面",
   "picker.location.documents": "文稿",
@@ -1624,6 +1627,9 @@ export const en: Record<MessageKey, string> = {
   "notice.trashed": "Moved the session to the trash.",
   "notice.deletedForever": "Deleted the session for good.",
 
+  "picker.loadNotFound": "Directory does not exist: {path}",
+  "picker.loadDenied": "Permission denied for directory: {path}",
+  "picker.loadFailed": "Could not open directory: {path}",
   "picker.location.home": "Home",
   "picker.location.desktop": "Desktop",
   "picker.location.documents": "Documents",

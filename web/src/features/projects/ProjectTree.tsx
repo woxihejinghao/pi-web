@@ -252,6 +252,7 @@ export function SessionRow({
       )}
       <DirectoryPicker
         open={moving}
+        initialPath="~/pi/workspace"
         onClose={() => setMoving(false)}
         onSelect={async (path) => {
           if (!window.confirm(t("session.moveConfirm", { title, dest: path }))) return;
@@ -367,14 +368,17 @@ export function ProjectTreeItem({
           menuAt !== null && styles.menuOpen,
           projectDrag.marker === "before" && styles.dropBefore,
           projectDrag.marker === "after" && styles.dropAfter,
+          projectDrag.receivingSession && styles.dropIntoWorkspace,
         )}
         data-workspace-row=""
+        data-session-drop-target={projectDrag.receivingSession || undefined}
         style={{ paddingLeft: 8 + indent }}
         title={project.path}
         draggable={projectDrag.draggable}
         onDragStart={projectDrag.onDragStart}
         onDragEnd={projectDrag.onDragEnd}
         onDragOver={projectDrag.onDragOver}
+        onDragLeave={projectDrag.onDragLeave}
         onDrop={projectDrag.onDrop}
       >
         <button

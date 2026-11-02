@@ -29,6 +29,8 @@ const DRAFT_FOLLOW_MS = 250;
 
 export interface DirectoryPickerProps {
   open: boolean;
+  /** Server-resolved path (including ~); omitted by the add-workspace picker. */
+  initialPath?: string;
   onClose(): void;
   /** Called with an absolute path. The caller decides whether to close. */
   onSelect(path: string): void | Promise<void>;
@@ -52,7 +54,7 @@ export interface DirectoryPickerProps {
  * directory part after a short rest, so typing a path and walking the list are
  * one gesture rather than two.
  */
-export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProps) {
+export function DirectoryPicker({ open, initialPath, onClose, onSelect }: DirectoryPickerProps) {
   const t = useT();
   const [listing, setListing] = useState<DirListing | null>(null);
   const [locations, setLocations] = useState<StartLocation[]>([]);
@@ -87,14 +89,23 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
       setListing(next);
       if (syncAddress) setAddress(next.path);
     } catch (err) {
-      if (seq === requestSeq.current) setError((err as Error).message);
+      if (seq === requestSeq.current) {
+        const status = err instanceof ApiError ? err.status : 0;
+        setError(t(status === 404 ? "picker.loadNotFound" : status === 403 ? "picker.loadDenied" : "picker.loadFailed", { path: path ?? "~" }));
+      }
     } finally {
       if (seq === requestSeq.current) setBusy(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // Discard the previous location and in-flight reads before the next opening.
+      requestSeq.current += 1;
+      setListing(null);
+      setAddress("");
+      return;
+    }
     setListing(null);
     setError(null);
     setChoosing(false);
@@ -103,9 +114,10 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
     setDropping(false);
     scanned.current = null;
     requestSeq.current += 1;
-    void load();
+    setAddress(initialPath ?? "");
+    void load(initialPath);
     void api.startLocations().then(setLocations).catch(() => setLocations([]));
-  }, [open, load]);
+  }, [open, initialPath, load]);
 
   // The listing follows the draft's directory part once typing rests. A level
   // the text already answers is left alone — it is either the level on screen

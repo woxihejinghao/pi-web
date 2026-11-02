@@ -16,11 +16,13 @@ from playwright.sync_api import sync_playwright, expect
 REPO = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix="piws-move-ui-") as tmp:
     root = Path(tmp).resolve()
+    workspace = root / "pi" / "workspace"
+    workspace.mkdir(parents=True)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     base = f"http://127.0.0.1:{port}"
-    env = {**os.environ, "PI_WEB_SIMPLE_HOME": str(root / "store"),
+    env = {**os.environ, "HOME": str(root), "PI_WEB_SIMPLE_HOME": str(root / "store"),
            "PI_WEB_SIMPLE_SESSION_DIR": str(root / "sessions"),
            "PI_WEB_SIMPLE_PORT": str(port), "PI_WEB_SIMPLE_SKIP_TITLE_MIGRATION": "1"}
     (root / "sessions").mkdir()
@@ -37,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="piws-move-ui-") as tmp:
             return json.load(response)
 
     try:
-        for _ in range(100):
+        for _ in range(300):
             try:
                 api("/api/health")
                 break
@@ -47,10 +49,11 @@ with tempfile.TemporaryDirectory(prefix="piws-move-ui-") as tmp:
                     raise RuntimeError(log.read())
                 time.sleep(.1)
         else:
-            raise RuntimeError("fixture server did not start")
+            log.seek(0)
+            raise RuntimeError("fixture server did not start: " + log.read())
         projects = []
         for name in ["Source", "Destination"]:
-            folder = root / name
+            folder = workspace / name
             folder.mkdir()
             projects.append(api("/api/projects", {"path": str(folder)}))
         source, destination = projects
@@ -80,6 +83,12 @@ with tempfile.TemporaryDirectory(prefix="piws-move-ui-") as tmp:
             page.get_by_role("menuitem", name="Move", exact=True).click()
             picker = page.get_by_role("dialog")
             expect(picker).to_be_visible()
+            expect(picker.locator("footer span")).to_have_text(str(workspace))
+            # Reopening always starts at the workspace root, not the last location or home.
+            picker.get_by_role("button", name="Close", exact=True).click()
+            row.hover()
+            row.get_by_role("button", name="Move Browser move test", exact=True).click()
+            expect(picker.locator("footer span")).to_have_text(str(workspace))
             # Inspect the rendered address field, then navigate with Enter.
             expect(picker.get_by_role("button", name="Home", exact=True)).to_be_visible()
             expect(picker.get_by_role("button", name="Root", exact=True)).to_be_visible()
@@ -116,12 +125,65 @@ with tempfile.TemporaryDirectory(prefix="piws-move-ui-") as tmp:
             assert len(moved) == 1 and moved[0]["cwd"] == destination["path"]
             expect(page.locator(f'div[title="{moved[0]["path"]}"]')).to_have_class(re.compile("sessionRowActive"))
             assert api(f'/api/projects/{source["id"]}/sessions')["sessions"] == []
+            # Native mouse drag onto an empty, collapsed workspace; first cancel, then accept.
+            if source_button.get_attribute("aria-expanded") == "true":
+                source_button.click()
+            target_row = page.locator(f'[data-workspace-row][title="{source["path"]}"]')
+            moved_row = page.locator(f'div[title="{moved[0]["path"]}"]')
+            cancelled_drops = []
+            def cancel_drop(dialog):
+                cancelled_drops.append(dialog.message)
+                dialog.dismiss()
+            page.on("dialog", cancel_drop)
+            origin = moved_row.bounding_box()
+            target_bounds = target_row.bounding_box()
+            assert origin and target_bounds
+            page.mouse.move(origin["x"] + 60, origin["y"] + origin["height"] / 2)
+            page.mouse.down()
+            page.mouse.move(origin["x"] + 75, origin["y"] + origin["height"] / 2, steps=5)
+            page.mouse.move(target_bounds["x"] + 80, target_bounds["y"] + target_bounds["height"] / 2, steps=10)
+            page.mouse.move(target_bounds["x"] + 81, target_bounds["y"] + target_bounds["height"] / 2)
+            expect(target_row).to_have_attribute("data-session-drop-target", "true")
+            if artifacts:
+                page.screenshot(path=str(Path(artifacts) / "drag-workspace-target-en.png"))
+            page.mouse.up()
+            assert len(cancelled_drops) == 1
+            assert Path(moved[0]["path"]).exists()
+            page.remove_listener("dialog", cancel_drop)
+            page.once("dialog", lambda dialog: dialog.accept())
+            with page.expect_response(lambda response: response.url.endswith("/move") and response.request.method == "POST") as drag_response:
+                moved_row.drag_to(target_row)
+            assert drag_response.value.ok, drag_response.value.text()
+            returned = api(f'/api/projects/{source["id"]}/sessions')["sessions"]
+            assert len(returned) == 1 and returned[0]["cwd"] == source["path"]
+            expect(page.locator(f'div[title="{returned[0]["path"]}"]')).to_be_visible()
+            page.once("dialog", lambda dialog: dialog.accept())
+            with page.expect_response(lambda response: response.url.endswith("/move") and response.request.method == "POST") as drag_response:
+                page.locator(f'div[title="{returned[0]["path"]}"]').drag_to(
+                    page.locator(f'[data-workspace-row][title="{destination["path"]}"]'))
+            assert drag_response.value.ok, drag_response.value.text()
+            assert api(f'/api/projects/{source["id"]}/sessions')["sessions"] == []
             page.reload()
             page.wait_for_load_state("networkidle")
             target_button = page.locator("[data-workspace-row]").get_by_role("button", name="Destination", exact=True)
             if target_button.get_attribute("aria-expanded") != "true":
                 target_button.click()
             expect(page.get_by_role("button", name="Browser move test", exact=True)).to_be_visible()
+            # A missing preferred root is reported in English; never silently switch to home.
+            hidden_workspace = root / "temporarily-hidden-workspace"
+            workspace.rename(hidden_workspace)
+            try:
+                page.get_by_role("button", name="Browser move test", exact=True).hover()
+                page.get_by_role("button", name="Move Browser move test", exact=True).click()
+                expect(picker.get_by_text("Directory does not exist: ~/pi/workspace", exact=True)).to_be_visible()
+                expect(picker.get_by_role("button", name="Choose this directory", exact=True)).to_be_disabled()
+                picker.get_by_role("button", name="Close", exact=True).click()
+            finally:
+                hidden_workspace.rename(workspace)
+            # Other uses of the picker keep their original default.
+            page.get_by_role("button", name="Add workspace", exact=True).click()
+            expect(picker.locator("footer span")).to_have_text(str(root))
+            picker.get_by_role("button", name="Close", exact=True).click()
             page.get_by_role("button", name="Settings", exact=True).click()
             prompt = page.get_by_role("textbox", name="System Prompt", exact=True)
             expect(prompt).to_be_visible()
@@ -144,7 +206,7 @@ with tempfile.TemporaryDirectory(prefix="piws-move-ui-") as tmp:
                 page.screenshot(path=str(Path(artifacts) / "system-prompt-mobile-en.png"))
             assert not errors, errors
             browser.close()
-        print("PASS: context-menu move, English picker, cancel, confirm, workspace lists, reload and persistent system-prompt editor; no model calls")
+        print("PASS: context-menu and native mouse drag moves, cancel/confirm, collapsed empty destination, English picker, workspace lists, reload and persistent system-prompt editor; no model calls")
     finally:
         import signal
         os.killpg(process.pid, signal.SIGTERM)

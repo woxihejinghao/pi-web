@@ -4,8 +4,10 @@
 
 1. Add the destination folder as a workspace using the sidebar's directory picker.
 2. Right-click a saved chat and choose **Move**, or use its folder action. This works in workspace and single-list views. Unsaved drafts cannot be moved.
-3. In the directory picker, navigate to that workspace folder and choose **Choose this directory**.
+3. The Move picker opens at **`~/pi/workspace`** (resolved by the server), including on reopening. Navigate to the destination workspace folder and choose **Choose this directory**. If the preferred root is missing, an error is shown rather than silently falling back to the home directory; you can still enter another path. The Add workspace picker retains its existing home-directory default.
 4. Review the confirmation and accept. Cancel leaves the chat unchanged.
+
+Alternatively, in a workspace-grouped sidebar, **drag a saved chat onto another workspace's header**. The destination gains an inset highlight; release the mouse and confirm the move. Closed and empty workspaces are valid targets. Dropping onto the current workspace, a missing folder, or dragging an unsaved draft does not move a chat. Dragging within a workspace still reorders chats, and dragging a workspace header still reorders workspaces.
 
 The chat log moves to pi's session storage for the destination workspace, and its session header is updated to use that workspace as its working directory. Messages and their IDs are preserved. Refreshing the page still shows the chat under its new workspace. If it was selected, the UI follows its new path.
 
@@ -43,4 +45,4 @@ uv run --with playwright python -m playwright install chromium
 uv run --with playwright python scripts/test-move-ui.py
 ```
 
-The browser check starts its own disposable server with stub pi and isolated settings/session directories. It exercises the context menu, folder picker, cancellation, confirmation, destination listing, and reload without model calls or access to real chat history.
+The browser check starts its own disposable server with stub pi and isolated settings/session directories. It exercises the context menu, native mouse drag-and-drop (including cancellation and an empty collapsed destination), the preferred initial folder and reopening, missing-folder errors, confirmation, destination listing, reload and persistent instructions without model calls or access to real chat history.
