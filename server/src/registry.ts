@@ -8,6 +8,7 @@ import type { Writable } from "node:stream";
 import { IDLE_TIMEOUT_MS, MAX_ACTIVE_SESSIONS, SESSION_DIR_OVERRIDE } from "./config.ts";
 import { DEFAULT_PRESET_ID, presetSpawnArgs } from "./presets.ts";
 import { LiveImageStore, type SessionImage } from "./session-images.ts";
+import { readStore } from "./store.ts";
 
 /**
  * `RpcClient` spawns `node <cliPath> --mode rpc ...` with `cwd` set to the
@@ -383,6 +384,10 @@ class SessionRegistry {
 
   async close(sessionPath: string, reason = "closed"): Promise<void> {
     const key = resolve(sessionPath);
+    // A move/delete must also retire an open already in flight, not just the
+    // handles that happened to finish their startup before close() was called.
+    const inflight = this.pending.get(key);
+    if (inflight) await inflight.catch(() => undefined);
     const handle = this.handles.get(key);
     if (!handle) return;
     this.handles.delete(key);
@@ -453,6 +458,7 @@ class SessionRegistry {
     prewarmed = false,
     presetId: string = DEFAULT_PRESET_ID,
   ): Promise<SessionHandle> {
+    const { systemPrompt } = (await readStore()).settings;
     const client = new RpcClient({
       cliPath: this.cliPath,
       cwd: projectPath,
@@ -460,6 +466,7 @@ class SessionRegistry {
         ...(this.sessionDir ? ["--session-dir", this.sessionDir] : []),
         ...(sessionPath ? ["--session", sessionPath] : []),
         ...presetSpawnArgs(presetId),
+        ...(systemPrompt.trim() ? ["--append-system-prompt", `\n${systemPrompt}`] : []),
       ],
     });
 

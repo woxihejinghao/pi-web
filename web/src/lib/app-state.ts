@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS: WebSettings = {
   contentFontSize: 14,
   transcriptDisplay: "standard",
   busySendBehavior: "queue",
+  systemPrompt: "",
   browserNotifications: false,
   // Titles stay deterministic until someone opts in and names a model.
   titleModel: null,
@@ -1139,6 +1140,35 @@ export const actions = {
     // pi process for a workspace the user has only glanced at.
     if (owner !== null && changedWorkspace && before.sessions[owner] === undefined) {
       void actions.refreshSessions(owner);
+    }
+  },
+
+  /** Preview and confirm chat + explicitly associated folders for every UI entry point. */
+  async moveChatSession(sessionPath: string, targetFolder: string): Promise<boolean> {
+    try {
+      const before = appStore.get();
+      const sourceId = projectIdOfSession(before, sessionPath);
+      const title = sourceId ? before.sessions[sourceId]?.find((session) => session.path === sessionPath)?.title ?? sessionPath : sessionPath;
+      const plan = await api.previewSessionMove(sessionPath, targetFolder);
+      const t = tr();
+      const folders = plan.moves.length
+        ? t("session.workFolders.moveSummary", { folders: plan.moves.map((move) => `${move.source} → ${move.destination}`).join("\n") })
+        : t(plan.workFolders.length ? "session.workFolders.alreadyAtDestination" : "session.workFolders.noneAssociated");
+      if (!window.confirm(`${t("session.moveConfirm", { title, dest: targetFolder })}\n\n${folders}`)) return false;
+      const result = await api.moveSession(sessionPath, targetFolder, plan.workFolders);
+      if (before.selectedSessionPath === sessionPath) actions.selectSession(null);
+      actions.clearExternalChanged(sessionPath);
+      actions.clearSessionActivity(sessionPath);
+      if (sourceId) await actions.refreshSessions(sourceId, { force: true });
+      if (result.projectId) {
+        actions.expandProject(result.projectId);
+        await actions.refreshSessions(result.projectId, { force: true });
+        if (before.selectedSessionPath === sessionPath) actions.selectSession(result.newPath, result.projectId);
+      }
+      return true;
+    } catch (err) {
+      actions.setNotice((err as Error).message);
+      return false;
     }
   },
 

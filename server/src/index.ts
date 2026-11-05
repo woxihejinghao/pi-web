@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { initializeApprovals } from "./approval.ts";
 import { createServer } from "node:http";
 import type { JsonAgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { bus } from "./bus.ts";
@@ -62,6 +63,7 @@ registry.onClosed((handle, reason) => {
 
 // Null when there is no build to serve: the API then runs on its own, which is
 // exactly what the dev setup wants, and what an unbuilt checkout gets.
+initializeApprovals();
 const staticHandler = createStaticHandler(STATIC_DIR);
 // Owned here rather than by the route handler so shutdown can reach it: a PTY
 // outliving the server would leave a shell attached to a terminal nobody can

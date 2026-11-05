@@ -17,7 +17,7 @@ const problems = [];
 // `extensions/ask-user.ts`、`extensions/todo.ts` 与 `extensions/plan-mode.ts` 都不在 pi 的
 // 包清单里，而是被服务端作为 `--extension` 启动参数指向的文件——少发了不会报错，只是每个
 // Web 会话静默地失去 ask_user_question、todo 和 plan mode。
-const mustExist = ["bin/pi-web-simple.js", "extensions/index.js", "extensions/ask-user.ts", "extensions/todo.ts", "extensions/plan-mode.ts", "server/build/index.js", "web/dist/index.html"];
+const mustExist = ["extensions/approval-gate.ts", "extensions/approval-policy.js", "extensions/approval-policy.d.ts", "bin/pi-web-simple.js", "extensions/index.js", "extensions/ask-user.ts", "extensions/todo.ts", "extensions/plan-mode.ts", "server/build/index.js", "web/dist/index.html"];
 for (const p of mustExist) {
   if (!existsSync(p)) problems.push(`缺少 ${p}`);
 }

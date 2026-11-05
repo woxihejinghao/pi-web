@@ -27,12 +27,27 @@ describe("presetSpawnArgs", () => {
     const args = presetSpawnArgs(DEFAULT_PRESET_ID);
     expect(args).toEqual([
       "--extension",
+      expect.stringMatching(/approval-gate\.ts$/),
+      "--extension",
       expect.stringMatching(/extensions[/\\]ask-user\.ts$/),
       "--extension",
       expect.stringMatching(/extensions[/\\]todo\.ts$/),
       "--extension",
       expect.stringMatching(/extensions[/\\]plan-mode\.ts$/),
     ]);
+  });
+
+  it("retains the gate when a globally installed todo replaces the bundled one", () => {
+    const previous = process.env.PI_WEB_SIMPLE_EXTERNAL_TODO;
+    process.env.PI_WEB_SIMPLE_EXTERNAL_TODO = "1";
+    try {
+      const args = presetSpawnArgs("standard");
+      expect(args.some(arg => arg.endsWith("/todo.ts"))).toBe(false);
+      expect(args.some(arg => arg.endsWith("/approval-gate.ts"))).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.PI_WEB_SIMPLE_EXTERNAL_TODO;
+      else process.env.PI_WEB_SIMPLE_EXTERNAL_TODO = previous;
+    }
   });
 
   it("falls back to the default when no usable id was given", () => {
@@ -51,15 +66,16 @@ describe("presetSpawnArgs", () => {
     expect(args).toContain("--no-extensions");
   });
 
-  it("puts only the /web extension back after discovery is disabled", () => {
+  it("restores the approval gate even when minimal disables discovery", () => {
     // `--no-extensions` drops the manifest's one entry, `/web`, and nothing
     // else: the tools this deployment adds are not in the manifest, and the
     // minimal roster keeps none of them — so `/web` is the one extension
     // restored.
     const args = presetSpawnArgs("minimal");
     const restored = args.slice(args.indexOf("--extension") + 1);
-    expect(restored).toHaveLength(1);
-    expect(restored[0]).toMatch(/extensions[/\\]index\.js$/);
+    expect(restored).toHaveLength(3);
+    expect(restored[0]).toMatch(/approval-gate\.ts$/);
+    expect(restored[2]).toMatch(/extensions[/\\]index\.js$/);
   });
 });
 

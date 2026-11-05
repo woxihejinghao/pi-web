@@ -16,6 +16,7 @@ import { useStore } from "../../lib/store.ts";
 import { AttachmentInput, AttachmentStrip, AttachButton } from "./AttachmentStrip.tsx";
 import { DraftMirror } from "./DraftMirror.tsx";
 import { useReferenceDraft } from "./useReferenceDraft.ts";
+import { ApprovalControl } from "../approvals/ApprovalControl.tsx";
 import { ModelThinkingPicker } from "./ModelThinkingPicker.tsx";
 import { SlashMenu } from "./SlashMenu.tsx";
 import { FileMenu } from "./FileMenu.tsx";
@@ -421,6 +422,7 @@ export function NewSessionHero() {
             <span className={styles.toolbarHint}>
               {t(isCoarsePointer() ? "hero.keyboardHintTouch" : "hero.keyboardHint")}
             </span>
+            <ApprovalControl />
             {project ? (
               <ModelThinkingPicker
                 model={composer.state?.model ?? null}

@@ -570,6 +570,12 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* A full-row inset target distinguishes moving into a workspace from reordering. */
+.projectRow.dropIntoWorkspace {
+  background: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary);
+}
+
 .projectMain {
   display: flex;
   align-items: center;

@@ -13,6 +13,7 @@ import { useImageDraft } from "./useImageDraft.ts";
 import { useReferenceDraft } from "./useReferenceDraft.ts";
 import { ContextMeter } from "./ContextMeter.tsx";
 import { PlanChip } from "./PlanChip.tsx";
+import { ApprovalControl } from "../approvals/ApprovalControl.tsx";
 import { ModelThinkingPicker } from "./ModelThinkingPicker.tsx";
 import { SlashMenu } from "./SlashMenu.tsx";
 import { FileMenu } from "./FileMenu.tsx";
@@ -352,6 +353,7 @@ function SessionComposer({
           {plan?.active === true ? <PlanChip compact={narrow} onExit={plan.onExit} /> : null}
 
           <span className={styles.spacer} />
+          <ApprovalControl />
 
           {session ? (
             <ModelThinkingPicker

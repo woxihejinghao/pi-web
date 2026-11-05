@@ -1,5 +1,9 @@
 # pi-web-simple
 
+> This branch adds web-only **Ask / Smart / Off** action approvals, defaulting to **Ask**.
+> Build and launch this checkout to use them; see [Web action approvals](docs/web-approvals.md).
+> Saved chats can also be moved between workspaces together with explicitly associated working folders. Settings includes persistent additional system instructions: [Session management](docs/session-management.md).
+
 **English** · [简体中文](https://github.com/woxihejinghao/pi-web/blob/main/docs/README.zh-CN.md)
 
 A local web UI for the [pi](https://github.com/earendil-works/pi-coding-agent) coding agent: **one local directory = one project**, each project holding that directory's sessions, with the agent core attached over `pi --mode rpc` subprocesses. The project model and the visual language follow [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness).

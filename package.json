@@ -56,6 +56,7 @@
     "icons:desktop": "pnpm --filter pi-web-simple-desktop run icons",
     "typecheck": "pnpm -r run typecheck && pnpm exec tsc -p tsconfig.extensions.json",
     "test": "pnpm -r run test",
+    "test:approvals": "pnpm --filter @pi-web-simple/server exec tsx src/testing/approval-e2e.mts && pnpm --filter @pi-web-simple/server exec tsx src/testing/approval-model-e2e.mts",
     "test:ask-user": "pnpm --filter @pi-web-simple/server exec tsx src/testing/ask-user-e2e.mts",
     "test:plan-mode": "pnpm --filter @pi-web-simple/server exec tsx src/testing/plan-mode-e2e.mts",
     "test:file-refs": "pnpm --filter @pi-web-simple/server exec tsx ../bench/verify-file-refs.ts",
@@ -71,7 +72,7 @@
   },
   "//devDependencies": "上面那些包在仓库里同样被非扩展代码用到（bench/scenario-a-processes.mjs 直接跑 pi 的 RPC，desktop 的打包脚本要找到 pi 的 cli.js），所以本地开发仍要一份真依赖；发布出去的那份由宿主提供。typescript 只为了能对 extensions/ 跑一遍类型检查（它们不归属任何子包）。",
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@earendil-works/pi-coding-agent": "^1.3.0",
     "typescript": "^5.7.2"
   }
 }

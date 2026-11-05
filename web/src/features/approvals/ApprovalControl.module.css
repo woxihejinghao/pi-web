@@ -1,0 +1,17 @@
+.inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.control { display: inline-flex; align-items: center; gap: 6px; font: inherit; }
+.settings > select, .model input, .model button {
+  font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 8px; padding: 5px 8px; max-width: 100%;
+}
+.control[data-off], .warning { color: var(--dsw-static-red-600); }
+.warning { font-size: 11px; }
+.settings { width: 100%; }
+.model { display: flex; gap: 8px; }
+.model input { width: 200px; min-width: 80px; }
+@media (max-width: 700px) {
+  .inline .control > span { display: none; }
+  .settings > div { flex-wrap: wrap; }
+  .settings > div > :first-child { flex-basis: 100%; padding-right: 0; }
+  .model { flex-wrap: wrap; }
+}

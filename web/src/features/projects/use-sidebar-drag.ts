@@ -26,7 +26,8 @@ type DragSource =
 /** Where the insertion marker currently sits. */
 type DragOver =
   | { kind: "session"; accountKey: string; path: string; half: Half }
-  | { kind: "project"; projectId: string; half: Half };
+  | { kind: "project"; projectId: string; half: Half }
+  | { kind: "session-workspace"; projectId: string };
 
 interface DragState {
   source: DragSource;
@@ -39,6 +40,9 @@ export interface RowDragHandlers {
   draggable: boolean;
   /** The insert marker this row is drawing right now, or null. */
   marker: Half | null;
+  /** A chat is being dropped into this workspace, not reordered beside it. */
+  receivingSession?: boolean;
+  onDragLeave?: (event: ReactDragEvent<HTMLElement>) => void;
   onDragStart: (event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   onDragOver: (event: ReactDragEvent<HTMLElement>) => void;
@@ -216,6 +220,18 @@ export function useSidebarDrag(tree: readonly ProjectNode[]): SidebarDrag {
 
   const projectRow = (projectId: string): RowDragHandlers => {
     const parentId = parentOf.get(projectId) ?? null;
+    const sessionDestination = () => {
+      const current = live.current;
+      if (current?.source.kind !== "session" || committed.current) return null;
+      const sourcePath = current.source.path;
+      const state = appStore.get();
+      const target = state.projects.find((project) => project.id === projectId && project.exists);
+      const owner = state.projects.find((project) =>
+        state.sessions[project.id]?.some((session) => session.path === sourcePath));
+      if (!target || !owner || owner.id === target.id) return null;
+      const session = state.sessions[owner.id]?.find((session) => session.path === sourcePath);
+      return session ? { target, session } : null;
+    };
     /**
      * A workspace only moves among its siblings: dropping one into another
      * subtree would change the path model, not the order, so it is refused
@@ -233,6 +249,14 @@ export function useSidebarDrag(tree: readonly ProjectNode[]): SidebarDrag {
     return {
       draggable: true,
       marker,
+      receivingSession: drag?.over?.kind === "session-workspace" && drag.over.projectId === projectId,
+      onDragLeave: (event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        const current = live.current;
+        if (current?.over?.kind === "session-workspace" && current.over.projectId === projectId) {
+          put({ ...current, over: null });
+        }
+      },
       onDragStart: (event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", projectId);
@@ -244,6 +268,16 @@ export function useSidebarDrag(tree: readonly ProjectNode[]): SidebarDrag {
         put(null);
       },
       onDragOver: (event) => {
+        if (sessionDestination()) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+          const current = live.current!;
+          if (current.over?.kind !== "session-workspace" || current.over.projectId !== projectId) {
+            put({ ...current, over: { kind: "session-workspace", projectId } });
+          }
+          return;
+        }
         if (!accepts()) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
@@ -257,6 +291,16 @@ export function useSidebarDrag(tree: readonly ProjectNode[]): SidebarDrag {
         if (current !== null) put({ ...current, over: { kind: "project", projectId, half } });
       },
       onDrop: (event) => {
+        const destination = sessionDestination();
+        if (destination) {
+          event.preventDefault();
+          event.stopPropagation();
+          committed.current = true;
+          put(null);
+          const { session, target } = destination;
+          void actions.moveChatSession(session.path, target.path);
+          return;
+        }
         if (!accepts()) return;
         event.preventDefault();
         commitProject(projectId, rowHalf(event));

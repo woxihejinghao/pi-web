@@ -92,8 +92,26 @@ function imageField(images: ImageBlock[]): { images: ImageBlock[] } | Record<str
 }
 
 export const api = {
+  getApproval: () => request<import("../features/approvals/approval-store.ts").ApprovalView>("/api/approval"),
+  getWorkFolders: (sessionPath: string) =>
+    request<{ workFolders: string[]; root: string }>(`/api/sessions/${sessionId(sessionPath)}/work-folders`),
+  setWorkFolders: (sessionPath: string, workFolders: string[]) =>
+    request<{ workFolders: string[]; root: string }>(`/api/sessions/${sessionId(sessionPath)}/work-folders`, { method: "PUT", body: JSON.stringify({ workFolders }) }),
+  previewSessionMove: (sessionPath: string, targetFolder: string) =>
+    request<{ workFolders: string[]; moves: Array<{ source: string; destination: string }> }>(`/api/sessions/${sessionId(sessionPath)}/move-preview`, { method: "POST", body: JSON.stringify({ targetFolder }) }),
+  /** Commit only the association snapshot the user reviewed. */
+  moveSession: (sessionPath: string, targetFolder: string, expectedWorkFolders?: string[]) =>
+    request<{ newPath: string; projectId?: string }>(
+      `/api/sessions/${encodeURIComponent(sessionPath)}/move`,
+      { method: "POST", body: JSON.stringify({ targetFolder, expectedWorkFolders }) },
+    ),
+  updateApproval: (patch: Partial<import("../features/approvals/approval-store.ts").ApprovalConfig> & { confirmOff?: boolean }) =>
+    request<import("../features/approvals/approval-store.ts").ApprovalView>("/api/approval", { method: "PUT", body: JSON.stringify(patch) }),
   /** Convenience roots for the directory picker. */
   startLocations: () => request<StartLocation[]>("/api/fs/locations"),
+
+  createDirectory: (parent: string, name: string) =>
+    request<{ path: string }>("/api/fs/directories", { method: "POST", body: JSON.stringify({ parent, name }) }),
 
   /** Lists sub-directories so the picker can return a real absolute path. */
   listDirectories: (path?: string) =>

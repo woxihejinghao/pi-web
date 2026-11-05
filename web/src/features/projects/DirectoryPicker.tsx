@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import clsx from "clsx";
 import { ArrowUpIcon, CloseIcon, FolderIcon } from "../../components/icons.tsx";
-import { api } from "../../lib/api.ts";
+import { api, ApiError } from "../../lib/api.ts";
 import { pathForFile } from "../../lib/desktop.ts";
 import type { DirListing, StartLocation } from "../../lib/types.ts";
 import { droppedFolder } from "./drop-path.ts";
@@ -29,6 +29,8 @@ const DRAFT_FOLLOW_MS = 250;
 
 export interface DirectoryPickerProps {
   open: boolean;
+  /** Server-resolved path (including ~); omitted by the add-workspace picker. */
+  initialPath?: string;
   onClose(): void;
   /** Called with an absolute path. The caller decides whether to close. */
   onSelect(path: string): void | Promise<void>;
@@ -52,7 +54,7 @@ export interface DirectoryPickerProps {
  * directory part after a short rest, so typing a path and walking the list are
  * one gesture rather than two.
  */
-export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProps) {
+export function DirectoryPicker({ open, initialPath, onClose, onSelect }: DirectoryPickerProps) {
   const t = useT();
   const [listing, setListing] = useState<DirListing | null>(null);
   const [locations, setLocations] = useState<StartLocation[]>([]);
@@ -60,6 +62,9 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [choosing, setChoosing] = useState(false);
+  const [newFolderName, setNewFolderName] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   /** A folder is being held over the dialog; the drop target lights up. */
   const [dropping, setDropping] = useState(false);
   /** The last draft-following scan, so the text that produced a level is read as its own. */
@@ -86,24 +91,36 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
       setListing(next);
       if (syncAddress) setAddress(next.path);
     } catch (err) {
-      if (seq === requestSeq.current) setError((err as Error).message);
+      if (seq === requestSeq.current) {
+        const status = err instanceof ApiError ? err.status : 0;
+        setError(t(status === 404 ? "picker.loadNotFound" : status === 403 ? "picker.loadDenied" : "picker.loadFailed", { path: path ?? "~" }));
+      }
     } finally {
       if (seq === requestSeq.current) setBusy(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // Discard the previous location and in-flight reads before the next opening.
+      requestSeq.current += 1;
+      setListing(null);
+      setAddress("");
+      return;
+    }
     setListing(null);
     setError(null);
     setChoosing(false);
+    setNewFolderName(null);
+    setCreateError(null);
     setDropping(false);
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     scanned.current = null;
     requestSeq.current += 1;
-    void load();
+    setAddress(initialPath ?? "");
+    void load(initialPath);
     void api.startLocations().then(setLocations).catch(() => setLocations([]));
-  }, [open, load]);
+  }, [open, initialPath, load]);
 
   // The listing follows the draft's directory part once typing rests. A level
   // the text already answers is left alone — it is either the level on screen
@@ -215,6 +232,20 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
     void openDropped(event.dataTransfer);
   };
 
+  const createFolder = async (): Promise<void> => {
+    if (!listing || creating || busy || address.trim() !== listing.path || !newFolderName?.trim()) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const created = await api.createDirectory(listing.path, newFolderName.trim());
+      setNewFolderName(null);
+      await load(created.path);
+    } catch (error) {
+      const status = error instanceof ApiError ? error.status : 0;
+      setCreateError(t(status === 409 ? "picker.createExists" : status === 403 ? "picker.createDenied" : status === 400 ? "picker.createInvalid" : "picker.createFailed"));
+    } finally { setCreating(false); }
+  };
+
   const choose = async (): Promise<void> => {
     if (!listing) return;
     setChoosing(true);
@@ -252,7 +283,7 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
         ) : null}
         <header className={styles.header}>
           <h2 className={styles.title}>{t("picker.title")}</h2>
-          <button type="button" className={styles.close} data-focus-first onClick={onClose} aria-label={t("settings.autoCompaction.off")}>
+          <button type="button" className={styles.close} data-focus-first onClick={onClose} aria-label={t("common.close")}>
             <CloseIcon />
           </button>
         </header>
@@ -267,7 +298,7 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
                 title={location.path}
                 onClick={() => void load(location.path)}
               >
-                {location.label}
+                {location.kind ? t(`picker.location.${location.kind}`) : location.label}
               </button>
             ))}
           </div>
@@ -290,6 +321,22 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
             disabled={busy}
           >{t("picker.go")}</button>
         </div>
+
+        {newFolderName !== null ? (
+          <form onSubmit={event => { event.preventDefault(); void createFolder(); }}>
+            <div className={styles.addressRow}>
+              <input className={styles.address} autoFocus value={newFolderName} disabled={creating}
+                aria-label={t("picker.folderName")} placeholder={t("picker.folderName")}
+                onChange={event => setNewFolderName(event.currentTarget.value)}
+                onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setNewFolderName(null); setCreateError(null); } }} />
+              <button className={styles.go} type="submit" disabled={creating || busy || address.trim() !== listing?.path || !newFolderName.trim()}>
+                {t(creating ? "picker.creating" : "picker.create")}
+              </button>
+              <button className={styles.go} type="button" disabled={creating} onClick={() => { setNewFolderName(null); setCreateError(null); }}>{t("common.cancel")}</button>
+            </div>
+            {createError ? <p className={styles.error} role="alert">{createError}</p> : null}
+          </form>
+        ) : null}
 
         <div className={styles.list} role="listbox" aria-label={t("picker.subdirs")}>
           {listing?.parent ? (
@@ -342,11 +389,13 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
             {listing ? listing.path : "—"}
           </span>
           <div className={styles.footerActions}>
+            <button type="button" className={styles.secondary} disabled={!listing || busy || creating || address.trim() !== listing.path}
+              onClick={() => { setNewFolderName(""); setCreateError(null); }}>{t("picker.newFolder")}</button>
             <button type="button" className={styles.secondary} onClick={onClose}>{t("common.cancel")}</button>
             <button
               type="button"
               className={styles.primary}
-              disabled={!listing || choosing || busy}
+              disabled={!listing || choosing || busy || creating}
               onClick={() => void choose()}
             >
               {choosing ? t("picker.adding") : t("picker.choose")}

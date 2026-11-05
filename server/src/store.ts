@@ -23,7 +23,8 @@ export interface ProjectRecord {
 /**
  * UI-only state for a session, keyed by absolute session file path.
  *
- * `hidden` is the only field still written. A rename goes into pi's own JSONL
+ * Hidden state and explicit work-folder associations belong to this UI.
+ * A rename goes into pi's own JSONL
  * instead (see `session-title.ts`), so the CLI and this UI agree about a
  * session's name. A `name` left behind by an older store is still parsed — the
  * one-time migration reads it to move the name into the session file — but it
@@ -33,6 +34,8 @@ export interface SessionOverride {
   /** Legacy: read only, and only so a pre-migration rename can be moved out. */
   name?: string;
   hidden?: boolean;
+  /** Explicitly associated work folders. Never inferred from transcript text. */
+  workFolders?: string[];
 }
 
 /** What a caller may still write; the rename half moved into pi's own file. */
@@ -130,6 +133,8 @@ export interface WebSettings {
   contentFontSize: number;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
+  /** Persistent system prompt for new sessions */
+  systemPrompt: string;
   /**
    * Whether a finished session task raises a browser notification. Off by
    * default: the browser only grants the permission behind a user gesture, so
@@ -162,6 +167,7 @@ export function defaultSettings(): WebSettings {
     // Queueing is the safe default: steering interrupts an in-flight run, so it
     // should be the deliberate choice rather than what happens to a stray Enter.
     busySendBehavior: "queue",
+    systemPrompt: "",
     browserNotifications: false,
     // Titles stay deterministic until someone opts in and names a model.
     titleModel: null,
@@ -202,6 +208,9 @@ function normalize(raw: unknown): StoreData {
       const override: SessionOverride = {};
       if (typeof value.name === "string") override.name = value.name;
       if (typeof value.hidden === "boolean") override.hidden = value.hidden;
+      if (Array.isArray(value.workFolders) && value.workFolders.every((path) => typeof path === "string")) {
+        override.workFolders = [...new Set(value.workFolders as string[])];
+      }
       if (Object.keys(override).length > 0) sessionOverrides[key] = override;
     }
   }
@@ -248,6 +257,9 @@ function normalizeSettings(raw: unknown): WebSettings {
     (BUSY_SEND_VALUES as readonly string[]).includes(raw.busySendBehavior)
   ) {
     settings.busySendBehavior = raw.busySendBehavior as BusySendBehavior;
+  }
+  if (typeof raw.systemPrompt === "string") {
+    settings.systemPrompt = raw.systemPrompt;
   }
   if (typeof raw.browserNotifications === "boolean") {
     settings.browserNotifications = raw.browserNotifications;

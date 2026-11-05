@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { PACKAGE_ROOT } from "./config.ts";
 
 /**
@@ -34,6 +34,7 @@ import { PACKAGE_ROOT } from "./config.ts";
  * `extensions/` directory stripped still boots; it just loses `/web`.
  */
 const WEB_EXTENSION = join(PACKAGE_ROOT, "extensions", "index.js");
+const APPROVAL_EXTENSION = join(PACKAGE_ROOT, "extensions", "approval-gate.ts");
 
 /**
  * The tools and the plan mode this deployment loads into the pi processes it
@@ -168,17 +169,20 @@ export function findPreset(id: string): AgentPreset | null {
  */
 export function presetSpawnArgs(id: string | undefined): string[] {
   const preset = (id === undefined ? null : findPreset(id)) ?? PRESETS[0]!;
+  if (!existsSync(APPROVAL_EXTENSION)) throw new Error("Required approval gate is missing");
+  const gate = ["--extension", APPROVAL_EXTENSION];
   if (preset.id !== "minimal") {
     const loaded: string[] = [];
     for (const file of SESSION_EXTENSIONS) {
+      if (process.env.PI_WEB_SIMPLE_EXTERNAL_TODO === "1" && basename(file) === "todo.ts") continue;
       if (existsSync(file)) loaded.push("--extension", file);
     }
-    return [...preset.args, ...loaded];
+    return [...preset.args, ...gate, ...loaded];
   }
   // `--extension` is omitted rather than pointed at a missing file: pi treats an
   // explicit path that does not load as a startup error, and losing `/web` is a
   // far better outcome than losing the session.
-  return existsSync(WEB_EXTENSION) ? [...preset.args, "--extension", WEB_EXTENSION] : [...preset.args];
+  return existsSync(WEB_EXTENSION) ? [...preset.args, ...gate, "--extension", WEB_EXTENSION] : [...preset.args, ...gate];
 }
 
 /** The declared text of a system message, one string per part. */

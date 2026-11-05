@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { listDirectories, startLocations } from "./fs-browse.ts";
+import { createDirectory, listDirectories, startLocations } from "./fs-browse.ts";
 
 let root: string;
 
@@ -85,6 +85,29 @@ describe("listDirectories", () => {
     await mkdir(empty, { recursive: true });
     const listing = await listDirectories(empty);
     expect(listing.entries).toEqual([]);
+  });
+});
+
+describe("createDirectory", () => {
+  it("creates a child with spaces and Unicode and opens its canonical path", async () => {
+    const made = await createDirectory(root, "  New workspace 项目  ");
+    expect(made.path).toBe(join(root, "New workspace 项目"));
+    expect((await listDirectories(made.path)).entries).toEqual([]);
+  });
+  it.each(["", " ", ".", "..", "../escape", "a/b", "a\\\\b", "/absolute", "bad\\0name", "x".repeat(256)])("rejects invalid name %j", async name => {
+    await expect(createDirectory(root, name)).rejects.toMatchObject({ status: 400 });
+  });
+  it("never overwrites an existing directory, file or symlink", async () => {
+    for (const name of ["alpha", "a-file.txt", "link-to-alpha"]) {
+      await expect(createDirectory(root, name)).rejects.toMatchObject({ status: 409 });
+    }
+  });
+  it("requires an existing directory parent", async () => {
+    await expect(createDirectory(join(root, "missing-parent"), "child")).rejects.toMatchObject({ status: 404 });
+    await expect(createDirectory(join(root, "a-file.txt"), "child")).rejects.toMatchObject({ status: 400 });
+  });
+  it("resolves a deliberately selected parent symlink", async () => {
+    expect((await createDirectory(join(root, "link-to-alpha"), "new-child")).path).toBe(join(root, "alpha", "new-child"));
   });
 });
 

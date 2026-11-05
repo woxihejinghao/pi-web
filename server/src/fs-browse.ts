@@ -1,8 +1,27 @@
-import { readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
+import { badRequest, conflict, forbidden, HttpError, notFound } from "./errors.ts";
 import { expandHome } from "./projects.ts";
+
+/** Create exactly one child, never overwrite or recursively create a path. */
+export async function createDirectory(parent: string, rawName: string): Promise<{ path: string }> {
+  const name = rawName.trim();
+  if (!name || name === "." || name === ".." || /[<>:"|?*\\\\/\u0000-\u001f]/.test(name) || Buffer.byteLength(name, "utf8") > 255) {
+    throw badRequest("Enter a single valid folder name, not a path");
+  }
+  const listing = await listDirectories(parent);
+  const path = join(listing.path, name);
+  try { await mkdir(path, { recursive: false }); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") throw conflict("A file or folder with this name already exists");
+    if (code === "EACCES" || code === "EPERM") throw forbidden("Permission denied when creating the folder");
+    if (code === "ENOENT") throw notFound("Parent folder no longer exists");
+    throw new HttpError(500, "Could not create the folder");
+  }
+  return { path };
+}
 
 export interface DirEntry {
   name: string;
@@ -18,6 +37,7 @@ export interface DirListing {
 }
 
 export interface StartLocation {
+  kind?: "home" | "desktop" | "documents" | "downloads" | "root";
   label: string;
   path: string;
 }
@@ -34,11 +54,11 @@ async function isDirectory(path: string): Promise<boolean> {
 export async function startLocations(): Promise<StartLocation[]> {
   const home = homedir();
   const candidates: StartLocation[] = [
-    { label: "主目录", path: home },
-    { label: "桌面", path: join(home, "Desktop") },
-    { label: "文稿", path: join(home, "Documents") },
-    { label: "下载", path: join(home, "Downloads") },
-    { label: "根目录", path: sep },
+    { kind: "home", label: "主目录", path: home },
+    { kind: "desktop", label: "桌面", path: join(home, "Desktop") },
+    { kind: "documents", label: "文稿", path: join(home, "Documents") },
+    { kind: "downloads", label: "下载", path: join(home, "Downloads") },
+    { kind: "root", label: "根目录", path: sep },
   ];
   const available: StartLocation[] = [];
   for (const candidate of candidates) {

@@ -143,6 +143,26 @@ describe("PendingUiRequests", () => {
  * the indirection invisible to the browser: what it is shown, and what goes
  * back to pi.
  */
+describe("approval response integrity", () => {
+  it("refuses late approval without a preceding list read", async () => {
+    vi.useFakeTimers();
+    try {
+      const table = new PendingUiRequests(); const { session, write } = handle("/a");
+      table.add(session, { id: "approval", method: "confirm", timeout: 1000 });
+      vi.advanceTimersByTime(2000);
+      expect(await table.answer("approval", { confirmed: true })).toBe("unknown");
+      expect(write).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+  it("validates confirmations and cannot replace the RPC type or id", async () => {
+    const table = new PendingUiRequests(); const { session, write } = handle("/a");
+    table.add(session, { id: "approval", method: "confirm" });
+    expect(await table.answer("approval", { confirmed: "true" })).toBe("invalid");
+    expect(await table.answer("approval", { confirmed: true, type: "bash", id: "other", command: "bad" })).toBe("answered");
+    expect(JSON.parse(write.mock.calls[0][0])).toEqual({ type: "extension_ui_response", id: "approval", confirmed: true });
+  });
+});
+
 describe("ask_user batches", () => {
   function batchDialog(id: string, extra: Record<string, unknown> = {}) {
     const { timeoutMs, ...rest } = extra;

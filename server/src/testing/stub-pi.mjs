@@ -9,11 +9,12 @@
  * pi's framing rule.
  */
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const args = process.argv.slice(2);
+if (process.env.STUB_ARGS_FILE) writeFileSync(process.env.STUB_ARGS_FILE, JSON.stringify(args));
 const sessionIndex = args.indexOf("--session");
 const sessionFile =
   sessionIndex >= 0 && args[sessionIndex + 1]

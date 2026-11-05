@@ -46,6 +46,15 @@ describe("open", () => {
     expect(registry.list()).toHaveLength(1);
   });
 
+  it("closes an open already in flight so it cannot revive a moved session", async () => {
+    const path = sessionPathFor("close-inflight");
+    const opening = registry.open(projectPath, path);
+    await registry.close(path, "session-moved");
+    const handle = await opening;
+    expect(handle.dead).toBe(true);
+    expect(registry.list()).toHaveLength(0);
+  });
+
   it("reuses the live handle for a known session path", async () => {
     const path = sessionPathFor("reuse");
     const first = await registry.open(projectPath, path);

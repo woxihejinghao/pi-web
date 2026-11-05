@@ -15,6 +15,8 @@ import styles from "../../layout/Sidebar.module.css";
 import { sessionRowsOf } from "./session-rows.ts";
 import { NO_DRAG, type RowDragHandlers, type SidebarDrag } from "./use-sidebar-drag.ts";
 import { SidebarMenu, anchorBelow, type MenuAnchor } from "./SidebarMenu.tsx";
+import { DirectoryPicker } from "./DirectoryPicker.tsx";
+import { WorkFoldersDialog } from "./WorkFoldersDialog.tsx";
 
 /**
  * The workspace row's overflow menu: rename and remove, folded behind the `...`
@@ -134,6 +136,11 @@ export function SessionRow({
   canDelete?: boolean;
 }) {
   const t = useT();
+  const [moving, setMoving] = useState(false);
+  const [editingFolders, setEditingFolders] = useState(false);
+  const [menuAt, setMenuAt] = useState<MenuAnchor | null>(null);
+  const moveButtonRef = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenuAt(null), []);
   const hasDraft = useStoreSelector(composerDraftPaths, (paths) => paths.has(sessionPath));
   const rename = async (): Promise<void> => {
     const next = window.prompt(t("session.renamePrompt"), title);
@@ -167,6 +174,10 @@ export function SessionRow({
       onDragEnd={drag.onDragEnd}
       onDragOver={drag.onDragOver}
       onDrop={drag.onDrop}
+      onContextMenu={canDelete ? (event) => {
+        event.preventDefault();
+        setMenuAt({ top: event.clientY, right: window.innerWidth - event.clientX });
+      } : undefined}
     >
       {/*
        * dsh's leading slot is always in the row: a session with no run-state
@@ -218,6 +229,18 @@ export function SessionRow({
         </button>
         {canDelete ? (
           <button
+            ref={moveButtonRef}
+            type="button"
+            className={styles.iconButton}
+            aria-label={t("session.moveLabel", { title })}
+            title={t("session.move")}
+            onClick={() => setMoving(true)}
+          >
+            <Glyph name="folderOpen" size={16} />
+          </button>
+        ) : null}
+        {canDelete ? (
+          <button
             type="button"
             className={styles.iconButton}
             aria-label={t("session.deleteLabel", { title })}
@@ -228,6 +251,27 @@ export function SessionRow({
           </button>
         ) : null}
       </div>
+      {menuAt === null ? null : (
+        <SidebarMenu anchor={menuAt} triggerRef={moveButtonRef} onClose={closeMenu} ariaLabel={t("session.move")}>
+          <button type="button" role="menuitem" className={styles.projectMenuItem} onClick={() => {
+            closeMenu();
+            setMoving(true);
+          }}>{t("session.move")}</button>
+          <button type="button" role="menuitem" className={styles.projectMenuItem} onClick={() => {
+            closeMenu();
+            setEditingFolders(true);
+          }}>{t("session.workFolders.title")}</button>
+        </SidebarMenu>
+      )}
+      <DirectoryPicker
+        open={moving}
+        initialPath="~/pi/workspace"
+        onClose={() => setMoving(false)}
+        onSelect={async (path) => {
+          if (await actions.moveChatSession(sessionPath, path)) setMoving(false);
+        }}
+      />
+      <WorkFoldersDialog open={editingFolders} sessionPath={sessionPath} onClose={() => setEditingFolders(false)} />
     </div>
   );
 }
@@ -337,14 +381,17 @@ export function ProjectTreeItem({
           menuAt !== null && styles.menuOpen,
           projectDrag.marker === "before" && styles.dropBefore,
           projectDrag.marker === "after" && styles.dropAfter,
+          projectDrag.receivingSession && styles.dropIntoWorkspace,
         )}
         data-workspace-row=""
+        data-session-drop-target={projectDrag.receivingSession || undefined}
         style={{ paddingLeft: 8 + indent }}
         title={project.path}
         draggable={projectDrag.draggable}
         onDragStart={projectDrag.onDragStart}
         onDragEnd={projectDrag.onDragEnd}
         onDragOver={projectDrag.onDragOver}
+        onDragLeave={projectDrag.onDragLeave}
         onDrop={projectDrag.onDrop}
       >
         <button
