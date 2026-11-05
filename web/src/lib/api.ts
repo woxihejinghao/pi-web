@@ -5,6 +5,7 @@ import type {
   ComposerState,
   DirListing,
   ExtensionsView,
+  FileApplications,
   FileSearchResult,
   ForkPoint,
   ForkResult,
@@ -16,15 +17,24 @@ import type {
   McpServerDraft,
   McpView,
   ModelsView,
+  OpenFileResult,
   PendingUiDialog,
   ProjectView,
+  PromptDocument,
+  PromptsView,
   ProviderInput,
   ProviderModelEntry,
   RpcSessionState,
   SessionListPage,
+  SkillItem,
+  SkillsView,
   SlashCommandList,
   StartLocation,
+  TerminalCleanupFailure,
+  TerminalEnvironment,
   TerminalInfo,
+  TerminalSnapshot,
+  TerminalShell,
   TerminalSupport,
   UpdatesView,
   WebSettings,
@@ -136,9 +146,10 @@ export const api = {
     ),
 
   /** One file's content, for the right sidebar's preview tab. */
-  readWorkspaceFile: (projectId: string, path: string) =>
+  readWorkspaceFile: (projectId: string, path: string, sessionPath?: string) =>
     request<WorkspaceFileContent>(
-      `/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}`,
+      `/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}` +
+        (sessionPath === undefined ? "" : `&session=${encodeURIComponent(sessionPath)}`),
     ),
 
   /**
@@ -168,8 +179,40 @@ export const api = {
    * because it lets the answer be streamed, type-tagged and cached by the
    * browser instead of being inflated into JSON.
    */
-  workspaceRawUrl: (projectId: string, path: string): string =>
-    `/api/projects/${encodeURIComponent(projectId)}/raw?path=${encodeURIComponent(path)}`,
+  workspaceRawUrl: (projectId: string, path: string, sessionPath?: string): string =>
+    `/api/projects/${encodeURIComponent(projectId)}/raw?path=${encodeURIComponent(path)}` +
+    (sessionPath === undefined ? "" : `&session=${encodeURIComponent(sessionPath)}`),
+
+  /**
+   * What this machine can open one file with.
+   *
+   * `desktop: false` means there is no desktop to hand the path to — an ssh
+   * session, a container — and the preview draws no open control at all. An
+   * empty list is a different answer: the host has a desktop but no association
+   * query for it, so opening and revealing still work and the menu is those two
+   * actions rather than a list of applications.
+   */
+  fileApplications: (projectId: string, path: string) =>
+    request<FileApplications>(
+      `/api/projects/${encodeURIComponent(projectId)}/file/applications?path=${encodeURIComponent(path)}`,
+    ),
+
+  /**
+   * Open one file in the system's default application (or a named one), or show
+   * where it is.
+   *
+   * A refusal is an answer, not a failure: the desktop is allowed to say no, and
+   * the answer says so in words the reader can act on rather than as a broken
+   * panel.
+   */
+  openWorkspaceFile: (
+    projectId: string,
+    body: { path: string; action: "open" | "reveal"; application?: string },
+  ) =>
+    request<OpenFileResult>(`/api/projects/${encodeURIComponent(projectId)}/file/open`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   /**
    * What the terminal tab can offer, and the shells already open for a session.
@@ -179,32 +222,76 @@ export const api = {
    * An empty `sessionPath` asks only about the host.
    */
   terminalState: (sessionPath: string) =>
-    request<{ support: TerminalSupport; terminals: TerminalInfo[] }>(
-      `/api/terminal?sessionPath=${encodeURIComponent(sessionPath)}`,
-    ),
+    request<{
+      support: TerminalSupport;
+      environment: TerminalEnvironment;
+      terminals: TerminalInfo[];
+    }>(`/api/terminal?sessionPath=${encodeURIComponent(sessionPath)}`),
+
+  /** The picker's choices: installed shells, the execution default first. */
+  terminalShells: () =>
+    request<{ shells: TerminalShell[]; default: TerminalShell | null }>("/api/terminal/shells"),
+
+  /** Closes whose process outlived the request, and can still be retried. */
+  terminalCleanup: () =>
+    request<{ failures: TerminalCleanupFailure[] }>("/api/terminal/cleanup"),
+
+  retryTerminalCleanup: (id: string) =>
+    request<{ retried: boolean }>(`/api/terminal/${encodeURIComponent(id)}/cleanup/retry`, {
+      method: "POST",
+    }),
 
   openTerminal: (body: {
+    /** Client-minted so a retried create cannot open a second shell. */
+    id?: string;
     sessionPath: string;
     /** The workspace to start in; the server checks it is a registered one. */
     cwd?: string;
     cols: number;
     rows: number;
+    /** A path from `terminalShells`; omitted means the host's default. */
+    shellPath?: string;
   }) => request<TerminalInfo>("/api/terminal", { method: "POST", body: JSON.stringify(body) }),
 
-  /** The screen so far, for a tab mounting onto a shell that kept running. */
-  terminalScrollback: (id: string) =>
-    request<{ scrollback: string }>(`/api/terminal/${encodeURIComponent(id)}`),
-
-  writeTerminal: (id: string, data: string) =>
-    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/input`, {
+  /** Take input control and answer with the screen as of `sequence`. */
+  attachTerminal: (id: string, attachmentId: string) =>
+    request<TerminalSnapshot>(`/api/terminal/${encodeURIComponent(id)}/attach`, {
       method: "POST",
-      body: JSON.stringify({ data }),
+      body: JSON.stringify({ attachmentId }),
     }),
 
-  resizeTerminal: (id: string, cols: number, rows: number) =>
+  detachTerminal: (id: string, attachmentId: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/detach`, {
+      method: "POST",
+      body: JSON.stringify({ attachmentId }),
+    }),
+
+  /** The screen without taking control — used to repair a sequence gap. */
+  terminalSnapshot: (id: string) =>
+    request<TerminalSnapshot>(`/api/terminal/${encodeURIComponent(id)}/snapshot`),
+
+  writeTerminal: (id: string, attachmentId: string, data: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/input`, {
+      method: "POST",
+      body: JSON.stringify({ attachmentId, data }),
+    }),
+
+  resizeTerminal: (id: string, attachmentId: string, cols: number, rows: number) =>
     request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/resize`, {
       method: "POST",
-      body: JSON.stringify({ cols, rows }),
+      body: JSON.stringify({ attachmentId, cols, rows }),
+    }),
+
+  renameTerminal: (id: string, title: string) =>
+    request<TerminalInfo>(`/api/terminal/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+
+  heartbeatTerminal: (id: string, attachmentId: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/heartbeat`, {
+      method: "POST",
+      body: JSON.stringify({ attachmentId }),
     }),
 
   closeTerminal: (id: string) =>
@@ -446,6 +533,13 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  /** Read pi's global context and the current workspace context file. */
+  getPrompts: (projectPath: string | null) =>
+    request<PromptsView>(`/api/prompts${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`),
+
+  savePrompt: (input: { scope: PromptDocument["scope"]; content: string; projectPath: string | null }) =>
+    request<PromptsView>("/api/prompts", { method: "PUT", body: JSON.stringify(input) }),
+
   /**
    * Installed extensions, resolved by pi's own package manager from the
    * settings and package files on disk. There is no RPC for this: a running
@@ -471,6 +565,17 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+
+  /** Skills discovered by pi in the global and current workspace skill roots. */
+  getSkills: (projectPath: string | null) =>
+    request<SkillsView>(`/api/skills${projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : ""}`),
+
+  getSkill: (path: string, projectPath: string | null) =>
+    request<SkillItem>(`/api/skills/detail?path=${encodeURIComponent(path)}` +
+      (projectPath ? `&projectPath=${encodeURIComponent(projectPath)}` : "")),
+
+  setSkillEnabled: (input: { path: string; projectPath: string | null; enabled: boolean }) =>
+    request<SkillsView>("/api/skills", { method: "PUT", body: JSON.stringify(input) }),
 
   /**
    * Update notices: whether a newer pi is published, and which installed pi

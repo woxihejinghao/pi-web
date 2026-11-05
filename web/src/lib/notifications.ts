@@ -11,6 +11,7 @@
  * process, so those three jobs have a second implementation the rest of the UI
  * should not have to know about.
  */
+import { PI_MARK_URL } from "./brand.ts";
 import { desktopBridge, type PiWebDesktopBridge } from "./desktop.ts";
 
 /**
@@ -63,6 +64,28 @@ export async function requestNotificationPermission(): Promise<NotificationCapab
 }
 
 /**
+ * Whether this page is in front of the user right now.
+ *
+ * Both halves are asked because they fail apart: a hidden tab — switched away
+ * from or minimised, the two things the browser reports as hidden, since it
+ * does not judge whether a window is covered — cannot be being read, and a
+ * window that does not hold focus is one the user has left for something else
+ * even while the tab stays visible on screen. A session being the selected one
+ * says nothing about either.
+ *
+ * Without a document — the store is imported in tests, and in any non-DOM host
+ * — the answer is "attended": nothing can observe the user, but the finish
+ * being announced is real either way, so the tie goes to the notice. An extra
+ * banner is dismissed in a second; a finish held back is the whole reason this
+ * path exists.
+ */
+export function pageIsAttended(): boolean {
+  if (typeof document === "undefined") return true;
+  if (document.visibilityState !== "visible") return false;
+  return typeof document.hasFocus === "function" ? document.hasFocus() : true;
+}
+
+/**
  * Show one notification, reusing `tag` so a session's newer notice replaces its
  * older rather than stacking. Silently does nothing without permission — the
  * caller has already checked the preference, and a toast is never worth an
@@ -85,7 +108,12 @@ export function showNotification(
   const api = notificationApi();
   if (api === null || api.permission !== "granted") return;
   try {
-    const notification = new api(title, { body, tag });
+    // The mark is passed in because nothing else puts one on the notice: the
+    // platform's own line above it carries the origin (`127.0.0.1` for a server
+    // on this machine), and without an icon the banner falls back to the
+    // browser's. Same file the tab is wearing — full-bleed square, the platform
+    // scales it.
+    const notification = new api(title, { body, tag, icon: PI_MARK_URL });
     notification.onclick = () => {
       // Focusing is the whole point: the notice arrives because the user was
       // looking somewhere else. Guarded because the store is imported in test

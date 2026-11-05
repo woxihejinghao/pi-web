@@ -1,4 +1,4 @@
-import { actions, appStore, streamRestored, workspaceChanged } from "./app-state.ts";
+import { actions, appStore, seatOwns, streamRestored, workspaceChanged } from "./app-state.ts";
 // The one upward import in `lib/`: shell frames have to be fanned out at the
 // single point that demultiplexes the stream, and the fan-out lives with the
 // rest of the terminal state. It is a leaf (api + store + types), so this does
@@ -33,6 +33,26 @@ let opened = false;
 export function setEventSession(sessionPath: string | null): void {
   wantedSession = sessionPath;
   void pushSubscription();
+}
+
+/**
+ * Whether a frame from `sessionPath` is one this tab is in a position to answer.
+ *
+ * A notice is the one frame with nothing behind it: no card, no waiting mark, no
+ * row in the server's pending table, so a notice for a session the reader is not
+ * looking at costs them the interruption and buys them nothing they can act on.
+ * It is dropped for the same reason that session's dialog is kept out of the
+ * composer seat (`pendingUiForSession`) — and, unlike the dialog, dropping it
+ * loses nothing at all, since the server keeps no copy of a notice either.
+ *
+ * `undefined` means the shell has not declared a session yet and the server is
+ * still fanning everything out, so a frame cannot be judged foreign; anything
+ * else is the seat this tab holds (`seatOwns`).
+ */
+export function sessionInView(sessionPath: string): boolean {
+  const declared = wantedSession;
+  if (declared === undefined) return true;
+  return seatOwns(declared, sessionPath);
 }
 
 async function pushSubscription(): Promise<void> {
@@ -72,6 +92,7 @@ export function connectEvents(): () => void {
 
   source.addEventListener("open", () => {
     void actions.refreshProjects();
+    void actions.loadPendingUiRequests();
     const selected = appStore.get().selectedProjectId;
     if (selected) void actions.refreshSessions(selected, { force: true });
     // The stream dropped and came back: frames were missed while it was away.
@@ -110,12 +131,15 @@ export function connectEvents(): () => void {
     if (!data) return;
     actions.emitSessionEvent(data.sessionPath, data.event);
 
-    // pi extensions can block on a dialog; surface it or the run stalls.
+    // pi extensions can block on a dialog; surface it or the run stalls. The
+    // dialog is recorded whoever asked it — the waiting mark belongs on that
+    // session's row — while the notice, which has no mark to fall back on, is
+    // only raised for the session in view.
     if (data.event.type === "extension_ui_request") {
       const request = data.event as unknown as ExtensionUiRequest;
       if (request.method === "notify") {
         const text = typeof request.message === "string" ? request.message : "";
-        if (text.length > 0) actions.setNotice(text);
+        if (text.length > 0 && sessionInView(data.sessionPath)) actions.setNotice(text);
       } else if (["confirm", "select", "input", "editor", "ask_user"].includes(request.method)) {
         actions.enqueueUiRequest({ sessionPath: data.sessionPath, request });
       }
@@ -143,7 +167,7 @@ export function connectEvents(): () => void {
   // deliberately does not touch React state — see `terminal-state.ts`.
   source.addEventListener("terminal_output", (raw) => {
     const data = parse<Extract<BusEvent, { type: "terminal_output" }>>(raw);
-    if (data) emitTerminalOutput(data.terminalId, data.data);
+    if (data) emitTerminalOutput(data.terminalId, { sequence: data.sequence, data: data.data });
   });
 
   // Exit after output, always: the server flushes buffered frames before it
@@ -151,7 +175,12 @@ export function connectEvents(): () => void {
   // line on screen when the notice appears.
   source.addEventListener("terminal_state", (raw) => {
     const data = parse<Extract<BusEvent, { type: "terminal_state" }>>(raw);
-    if (data) terminalActions.noteExit(data.terminalId, data.exitCode);
+    if (data) terminalActions.noteState(data.info);
+  });
+
+  source.addEventListener("terminal_cleanup_failed", (raw) => {
+    const data = parse<Extract<BusEvent, { type: "terminal_cleanup_failed" }>>(raw);
+    if (data) void terminalActions.refreshCleanup().catch(() => {});
   });
 
   source.addEventListener("terminal_closed", (raw) => {
@@ -164,7 +193,17 @@ export function connectEvents(): () => void {
     if (data) workspaceChanged.emit({ projectPath: data.projectPath, paths: data.paths ?? null });
   });
 
+  // pi does not publish dialog settlement events. Reconcile even questions in
+  // background sessions, whose cards are unmounted and have no countdown.
+  let syncingDialogs = false;
+  const dialogTimer = setInterval(() => {
+    if (syncingDialogs || appStore.get().pendingUiRequests.length === 0) return;
+    syncingDialogs = true;
+    void actions.loadPendingUiRequests().finally(() => { syncingDialogs = false; });
+  }, 5_000);
+
   return () => {
+    clearInterval(dialogTimer);
     source.close();
     connectionId = null;
   };

@@ -3,7 +3,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, realpath } from "node:fs/promises";
 import { moveSessionFile } from "./session-move.ts";
 import { getWorkFolderRoot, moveWorkFolders, planWorkFolderMoves, saveWorkFolders, withWorkFolderLock } from "./session-work-folders.ts";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { approvalView, updateApproval } from "./approval.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { homedir } from "node:os";
@@ -24,6 +24,15 @@ import {
   updateApp,
   updateExtension,
 } from "./updates.ts";
+import {
+  readPrompts,
+  savePrompt,
+} from "./prompts.ts";
+import {
+  readSkills,
+  readSkill,
+  setSkillEnabled,
+} from "./skills.ts";
 import {
   McpConfigError,
   deleteMcpServer,
@@ -49,8 +58,17 @@ import {
   readWorkspaceFile,
   readWorkspaceRaw,
   readWorkspaceTextPage,
+  resolveWorkspaceFile,
   listWorkspaceDirectory,
 } from "./workspace-files.ts";
+import {
+  canOpenNatively,
+  listFileApplications,
+  openFileWithApplication,
+  openFileWithDefault,
+  revealFile,
+  type NativeApplication,
+} from "./open-with.ts";
 import { DEFAULT_LIMIT, searchWorkspaceFiles } from "./file-search.ts";
 import { TerminalManager, type TerminalHost } from "./terminal.ts";
 import { pendingUiRequests, type PendingUiRequests } from "./ui-requests.ts";
@@ -102,9 +120,12 @@ import { readSessionPlanActive, planActiveOfEntries } from "./session-plan.ts";
 import { assertAllowedSessionPath, getSessionRoot, sessionDirFor } from "./session-path.ts";
 import { readSessionSnapshot } from "./session-reader.ts";
 import {
+  collectSessionImages,
+  isLiveImageVersion,
   readSessionImage,
   sessionImageVersion,
   withToolResultImageUrls,
+  type SessionImage,
 } from "./session-images.ts";
 import { setSessionTitle } from "./session-title.ts";
 import { listSessions } from "./sessions.ts";
@@ -119,7 +140,7 @@ import {
   type TitleModelChoice,
   type TranscriptDisplay,
 } from "./store.ts";
-import { SSE_MAX_BUFFERED_BYTES } from "./config.ts";
+import { REQUEST_BODY_MAX_BYTES, SSE_MAX_BUFFERED_BYTES } from "./config.ts";
 
 export interface RequestContext {
   req: IncomingMessage;
@@ -130,6 +151,34 @@ export interface RequestContext {
 }
 
 type Handler = (ctx: RequestContext) => Promise<void> | void;
+
+/**
+ * The host-side half of "open with": what this machine's desktop can do with
+ * one file.
+ *
+ * An interface rather than four imports at the call sites, because a route test
+ * has to be able to say what was launched without launching it — the same
+ * reason the terminal routes take a host.
+ */
+export interface OpenWithHost {
+  /** Whether a desktop can take a launch at all. */
+  canOpen(): boolean;
+  /** The applications registered for this file, in the operating system's order. */
+  applications(absolutePath: string): Promise<NativeApplication[]>;
+  /** Open with the default application, or with the named one. */
+  open(absolutePath: string, application: string | null): Promise<void>;
+  /** Show the file in the desktop's file manager. */
+  reveal(absolutePath: string): Promise<void>;
+}
+
+/** The real desktop, which is what the server and the app both want. */
+const nativeOpenWith: OpenWithHost = {
+  canOpen: canOpenNatively,
+  applications: (absolutePath) => listFileApplications(absolutePath),
+  open: (absolutePath, application) =>
+    application === null ? openFileWithDefault(absolutePath) : openFileWithApplication(absolutePath, application),
+  reveal: (absolutePath) => revealFile(absolutePath),
+};
 
 interface Route {
   method: string;
@@ -155,6 +204,8 @@ export interface RouteDeps {
    * `SSE_MAX_BUFFERED_BYTES`; tests lower it to reach the limit in a few writes.
    */
   sseMaxBufferedBytes?: number;
+  /** Maximum JSON request body size. Tests lower it to exercise 413 handling. */
+  requestBodyMaxBytes?: number;
   /**
    * The shells behind `/api/terminal`. Defaults to a manager owned by this
    * handler, which is what the server and every test want: one handler means
@@ -162,6 +213,12 @@ export interface RouteDeps {
    * cares about which shell the routes ask for rather than about the shell.
    */
   terminals?: TerminalHost;
+  /**
+   * The desktop behind `/api/projects/:id/file/open`. Defaults to this host's
+   * own opener; a test supplies a stand-in when it cares about what was
+   * launched rather than about launching it.
+   */
+  openWith?: OpenWithHost;
 }
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
@@ -173,7 +230,26 @@ function json(res: ServerResponse, status: number, payload: unknown): void {
   res.end(text);
 }
 
-async function readJsonBody(req: IncomingMessage, limit = 32 * 1024 * 1024): Promise<unknown> {
+/**
+ * One image's bytes on the wire, under a URL that names them.
+ *
+ * The URL carries the version the bytes were current for, so they cannot change
+ * under it and the browser may keep them as long as it likes. The type header is
+ * a promise about the body, so a body that is not really that image must not be
+ * allowed to claim otherwise.
+ */
+function sendImage(res: ServerResponse, image: SessionImage): void {
+  const bytes = Buffer.from(image.data, "base64");
+  res.writeHead(200, {
+    "content-type": image.mimeType,
+    "content-length": bytes.byteLength,
+    "cache-control": "private, max-age=31536000, immutable",
+    "x-content-type-options": "nosniff",
+  });
+  res.end(bytes);
+}
+
+async function readJsonBody(req: IncomingMessage, limit = REQUEST_BODY_MAX_BYTES): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -618,6 +694,13 @@ function toHttpError(err: unknown): HttpError {
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function declaredBodyTooLarge(req: IncomingMessage, limit: number): boolean {
+  const contentLength = req.headers["content-length"];
+  if (typeof contentLength !== "string") return false;
+  const size = Number(contentLength);
+  return Number.isFinite(size) && size > limit;
+}
+
 const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 /**
@@ -656,11 +739,17 @@ function assertLocalRequest(req: IncomingMessage): void {
  * tests can drive a stub pi process and a private storage root.
  */
 export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { registry, bus, staticHandler = null, sseMaxBufferedBytes = SSE_MAX_BUFFERED_BYTES } =
-    deps;
+  const {
+    registry,
+    bus,
+    staticHandler = null,
+    sseMaxBufferedBytes = SSE_MAX_BUFFERED_BYTES,
+    requestBodyMaxBytes = REQUEST_BODY_MAX_BYTES,
+  } = deps;
   const sessionRoot = deps.sessionRoot ?? getSessionRoot();
   const uiRequests = deps.uiRequests ?? pendingUiRequests;
   const terminals = deps.terminals ?? new TerminalManager({ bus });
+  const openWith = deps.openWith ?? nativeOpenWith;
   const routes: Route[] = [];
 
   const route = (method: string, path: string, handler: Handler): void => {
@@ -677,6 +766,66 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     for (const path of paths) movingSessions.add(path);
     try { return await run(); }
     finally { for (const path of paths) movingSessions.delete(path); }
+  };
+
+  /** External absolute image paths are allowed only when the session itself named them. */
+  const externalImagePath = async (raw: string, sessionRaw: string | null, projectPath: string): Promise<string | null> => {
+    if (!raw.startsWith("/") || sessionRaw === null) return null;
+    const sessionPath = allowedPath(sessionRaw);
+    const live = registry.get(sessionPath);
+    let cwd = projectPath;
+    let messages: unknown;
+    if (live && !live.dead) {
+      cwd = live.projectPath;
+      messages = await callClient(live, () => live.client.getMessages());
+    } else {
+      try {
+        const manager = openSessionForRead(sessionPath);
+        cwd = manager.getCwd();
+        messages = manager.buildSessionContext().messages;
+      } catch {
+        throw notFound("无法读取会话");
+      }
+    }
+    // The project route must be the same project that owns the session.
+    if (resolve(cwd) !== resolve(projectPath)) throw forbidden("会话不属于此项目");
+    const target = resolve(raw);
+    const hasPathToken = (text: string): boolean => {
+      let at = text.indexOf(target);
+      while (at >= 0) {
+        const before = at === 0 ? "" : text[at - 1]!;
+        const afterAt = at + target.length;
+        const after = afterAt === text.length ? "" : text[afterAt]!;
+        const boundary = (char: string): boolean => char === "" || /[\s\"'`()\[\]<>,;:!?]/.test(char);
+        if (boundary(before) && boundary(after)) return true;
+        at = text.indexOf(target, at + 1);
+      }
+      return false;
+    };
+    let referenced = false;
+    const visit = (value: unknown): void => {
+      if (referenced) return;
+      if (typeof value === "string") {
+        if (hasPathToken(value)) referenced = true;
+        return;
+      }
+      if (Array.isArray(value)) { for (const item of value) visit(item); return; }
+      if (typeof value === "object" && value !== null) {
+        for (const item of Object.values(value as Record<string, unknown>)) visit(item);
+      }
+    };
+    visit(messages);
+    if (!referenced) throw forbidden("外部文件未被会话引用");
+    const extension = extname(target).slice(1).toLowerCase();
+    if (!new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]).has(extension)) {
+      throw forbidden("只允许预览图片");
+    }
+    // Refuse symlinks escaping the named file's canonical location.
+    const canonicalTarget = await realpath(target);
+    if (extname(canonicalTarget).toLowerCase() !== extname(target).toLowerCase()) {
+      throw forbidden("不允许通过符号链接读取非图片文件");
+    }
+    return target;
   };
 
   /**
@@ -1047,6 +1196,27 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     json(res, 200, { models: await fetchProviderModels(input) });
   });
 
+  // --- prompts --------------------------------------------------------------
+
+  route("GET", "/api/prompts", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readPrompts(projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  route("PUT", "/api/prompts", async ({ res, body }) => {
+    const payload = asObject(body);
+    const scope = requireString(payload, "scope");
+    if (scope !== "global" && scope !== "workspace") throw badRequest("scope must be global or workspace");
+    if (typeof payload.content !== "string") throw badRequest("content must be a string");
+    const projectPath = optionalProjectPath(payload);
+    if (scope === "workspace" && projectPath === null) throw badRequest("projectPath is required for workspace prompts");
+    const view = await savePrompt(scope, payload.content, projectPath);
+    // Context files are loaded when pi starts. Retire resident sessions so the
+    // next session observes the edited instructions instead of stale state.
+    await registry.closeAllExcept(null, "prompts-changed");
+    json(res, 200, view);
+  });
+
   // --- extensions -----------------------------------------------------------
 
   /**
@@ -1084,6 +1254,33 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       enabled: payload.enabled,
     });
     await registry.closeAllExcept(null, "extensions-changed");
+    json(res, 200, view);
+  });
+
+  // --- skills ---------------------------------------------------------------
+
+  route("GET", "/api/skills", async ({ res, query }) => {
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readSkills(projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  route("GET", "/api/skills/detail", async ({ res, query }) => {
+    const path = query.get("path");
+    if (!path) throw badRequest("path is required");
+    const projectPath = query.get("projectPath");
+    json(res, 200, await readSkill(path, projectPath && projectPath.length > 0 ? projectPath : null));
+  });
+
+  route("PUT", "/api/skills", async ({ res, body }) => {
+    const payload = asObject(body);
+    const path = requireString(payload, "path");
+    if (typeof payload.enabled !== "boolean") throw badRequest("enabled must be a boolean");
+    const view = await setSkillEnabled({
+      path,
+      enabled: payload.enabled,
+      projectPath: optionalProjectPath(payload),
+    });
+    await registry.closeAllExcept(null, "skills-changed");
     json(res, 200, view);
   });
 
@@ -1369,6 +1566,11 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     const project = await getProject(params.id!);
     const path = query.get("path") ?? "";
     if (path.length === 0) throw badRequest("path is required");
+    const external = await externalImagePath(path, query.get("session"), project.path);
+    if (external !== null) {
+      json(res, 200, await readWorkspaceFile(dirname(external), basename(external)));
+      return;
+    }
     json(res, 200, await readWorkspaceFile(project.path, path));
   });
 
@@ -1408,7 +1610,10 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     const project = await getProject(params.id!);
     const path = query.get("path") ?? "";
     if (path.length === 0) throw badRequest("path is required");
-    const file = await readWorkspaceRaw(project.path, path);
+    const external = await externalImagePath(path, query.get("session"), project.path);
+    const file = external === null
+      ? await readWorkspaceRaw(project.path, path)
+      : await readWorkspaceRaw(dirname(external), basename(external));
     res.writeHead(200, {
       "content-type": file.mimeType,
       "content-length": file.size,
@@ -1426,6 +1631,71 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       "x-content-type-options": "nosniff",
     });
     await pipeline(createReadStream(file.absolutePath), res);
+  });
+
+  /**
+   * The applications this machine can open one workspace file with.
+   *
+   * `desktop: false` is the headless answer — an ssh session, a container — and
+   * the one case where the preview hides its controls: a button that would spawn
+   * an opener into nothing is worse than no button, which is the line dsh draws
+   * too. An empty `applications` list is *not* that case: a platform with no
+   * association query still opens and still reveals, so the list is empty and
+   * the menu is the rest of what the buttons do.
+   */
+  route("GET", "/api/projects/:id/file/applications", async ({ res, params, query }) => {
+    const project = await getProject(params.id!);
+    const path = query.get("path") ?? "";
+    if (path.length === 0) throw badRequest("path is required");
+    const file = await resolveWorkspaceFile(project.path, path);
+    if (!openWith.canOpen()) {
+      json(res, 200, { desktop: false, applications: [] });
+      return;
+    }
+    json(res, 200, {
+      desktop: true,
+      applications: await openWith.applications(file.absolutePath),
+    });
+  });
+
+  /**
+   * Open one workspace file, or show where it is.
+   *
+   * A launch the desktop refused answers 200 with `ok: false` rather than an
+   * HTTP error: the gesture arrived and the desktop said no, which is a sentence
+   * for the reader where a failed request would be a broken panel. The path goes
+   * through the same resolver the preview reads through, so the file the
+   * operating system is handed is the file the API already agreed to serve.
+   */
+  route("POST", "/api/projects/:id/file/open", async ({ res, params, body }) => {
+    const project = await getProject(params.id!);
+    const payload = asObject(body);
+    const path = payload.path;
+    if (typeof path !== "string" || path.length === 0) throw badRequest("path is required");
+    const action = payload.action;
+    if (action !== "open" && action !== "reveal") {
+      throw badRequest("action must be open or reveal");
+    }
+    const application = payload.application;
+    if (application !== undefined && typeof application !== "string") {
+      throw badRequest("application must be a string");
+    }
+    if (action === "reveal" && application !== undefined) {
+      throw badRequest("reveal does not take an application");
+    }
+    if (!openWith.canOpen()) {
+      json(res, 200, { ok: false, error: "这台主机没有可以打开的桌面" });
+      return;
+    }
+
+    const file = await resolveWorkspaceFile(project.path, path);
+    try {
+      if (action === "reveal") await openWith.reveal(file.absolutePath);
+      else await openWith.open(file.absolutePath, application ?? null);
+      json(res, 200, { ok: true });
+    } catch (err) {
+      json(res, 200, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   /**
@@ -1589,26 +1859,43 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   });
 
   /**
-   * The transcript, served from disk when no process is running.
+   * The transcript, served from the file whenever the file can answer it.
    *
    * Switching to a session is the single most latency-sensitive action in the
-   * UI, and it used to spawn pi (1.5–3.2s) just to read a file. A resident
-   * session still answers from memory — it is authoritative there, and may hold
-   * turns that have not been flushed yet — but everything else is read directly.
+   * UI, and it used to spawn pi (1.5–3.2s) just to read a file. Only a process
+   * that is *mid-turn* is asked now: memory is authoritative while the agent
+   * runs, but pi appends each committed entry to the session file as it lands,
+   * so a settled session's file already holds the same transcript — and hauling
+   * tens of megabytes of base64 back out of pi costs hundreds of milliseconds
+   * where reading the file costs a few.
    */
   route("GET", "/api/sessions/:id/messages", async ({ res, params }) => {
     const sessionPath = allowedPath(params.id!);
     const live = registry.get(sessionPath);
 
-    if (live && !live.dead) {
+    // A process with nothing on disk yet — a session pi has not written its
+    // first message for, or an unclaimed prewarm — is the other case memory has
+    // to answer, because there is no file to read.
+    if (live && !live.dead && (live.running || !existsSync(sessionPath))) {
       const messages = await callClient(live, () => live.client.getMessages());
       // pi answers this from the live session, so it already knows which user
       // messages are forkable — no need to re-derive it from the file.
       const forkPoints = await callClient(live, () => live.client.getForkMessages());
+      // A live transcript is the expensive one: it holds every picture the
+      // process still remembers, so a session that has been working all day
+      // answers with tens of megabytes of base64 — and *this* is the switch the
+      // reader makes over and over. Its pictures therefore go out as URLs as
+      // well, but they cannot be addressed in the file, because memory may hold
+      // turns the file has never seen. The handle keeps the bytes instead and the
+      // URL names that copy.
+      const version = registry.rememberLiveTranscript(
+        live.sessionPath,
+        collectSessionImages(messages),
+      );
       json(res, 200, {
         sessionPath: live.sessionPath,
         sessionId: live.sessionId,
-        messages,
+        messages: withToolResultImageUrls(messages, live.sessionPath, version),
         forkPoints,
       });
       return;
@@ -1623,9 +1910,7 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     // The file's version is read *before* the snapshot, so a file that changed
     // underneath us produces URLs whose version no longer matches — a 404 the UI
     // heals on its next reload, rather than an ordinal pointing at the wrong
-    // picture. A live session keeps its images inline instead: its transcript
-    // comes from pi's memory and may hold turns the file has never seen, which
-    // no URL could point at.
+    // picture.
     const version = sessionImageVersion(sessionPath);
     const messages =
       version === null
@@ -1640,36 +1925,37 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   });
 
   /**
-   * One image from a session's transcript, by its position in the file.
+   * One image from a session's transcript, by its position in it.
    *
-   * The transcript hands its tool-result pictures out as these URLs (see
+   * The transcript hands its pictures out as these URLs (see
    * `session-images.ts`), so a switch no longer ships every screenshot of a
-   * session in one response. Addressed by ordinal plus the file's mtime, which
-   * makes the bytes immutable under this URL and lets the browser keep them; a
-   * request carrying an older version than the file currently has is refused
-   * rather than answered with whatever now sits at that position.
+   * session in one response. Addressed by ordinal plus a version, which makes the
+   * bytes immutable under this URL and lets the browser keep them; a request
+   * carrying a version the transcript has moved past is refused rather than
+   * answered with whatever now sits at that position.
+   *
+   * The version also says *where* the bytes are: a `live-` one names the copy the
+   * session's handle kept, anything else the file, addressed by its mtime.
    */
   route("GET", "/api/sessions/:id/image/:index", async ({ res, params, query }) => {
     const sessionPath = allowedPath(params.id!);
     const index = Number(params.index);
     if (!Number.isSafeInteger(index) || index < 0) throw notFound("图片不存在");
     const version = query.get("v");
+
+    if (version !== null && isLiveImageVersion(version)) {
+      const live = registry.readLiveImage(sessionPath, version, index);
+      if (live === null) throw notFound("图片不存在");
+      sendImage(res, live);
+      return;
+    }
+
     if (version !== null && sessionImageVersion(sessionPath) !== version) {
       throw notFound("图片不存在");
     }
     const image = readSessionImage(sessionPath, index);
     if (image === null) throw notFound("图片不存在");
-    const bytes = Buffer.from(image.data, "base64");
-    res.writeHead(200, {
-      "content-type": image.mimeType,
-      "content-length": bytes.byteLength,
-      // The URL names a file version, so these bytes can never change under it.
-      "cache-control": "private, max-age=31536000, immutable",
-      // The type above is a promise about the bytes, and a body that is not
-      // really that image must not be allowed to say otherwise.
-      "x-content-type-options": "nosniff",
-    });
-    res.end(bytes);
+    sendImage(res, image);
   });
 
   /**
@@ -2211,21 +2497,43 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   };
 
   /**
-   * What this host can offer, and what is already open for a session.
+   * What this host can offer, what is already open for a session, and the
+   * bounds the browser has to respect.
    *
-   * One request rather than two because the panel asks both questions at the
-   * same moment — the instant a terminal tab mounts — and the second is
-   * meaningless when the answer to the first is "no shells here". The support
-   * half is cheap: it reports whether the optional module loads, not whether a
-   * shell can start.
+   * One request rather than three because the panel asks them at the same
+   * moment, and the last two are meaningless when the answer to the first is
+   * "no shells here". Support is cheap: it reports whether the optional native
+   * module loads, not whether a shell can start.
    */
   route("GET", "/api/terminal", ({ res, query }) => {
     const requested = query.get("sessionPath");
     const sessionPath = requested === null || requested.length === 0 ? undefined : requested;
     json(res, 200, {
       support: terminals.support(),
+      environment: terminals.environment(),
       terminals: terminals.list(sessionPath),
     });
+  });
+
+  /**
+   * The shell picker's choices: installed shells, execution default first.
+   *
+   * Registered before `/:id` so "shells" is a path, not a terminal id. The
+   * default is repeated as a field rather than left implicit, because "the
+   * first one" is the server's rule and the browser must not have to guess it.
+   */
+  route("GET", "/api/terminal/shells", ({ res }) => {
+    const shells = terminals.shells();
+    json(res, 200, { shells, default: shells[0] ?? null });
+  });
+
+  /** Terminals whose process outlived a failed close, and can be retried. */
+  route("GET", "/api/terminal/cleanup", ({ res }) => {
+    json(res, 200, { failures: terminals.cleanupFailures() });
+  });
+
+  route("POST", "/api/terminal/cleanup/:id/retry", ({ res, params }) => {
+    json(res, 200, { retried: terminals.retryCleanup(params.id!) });
   });
 
   /** Open a shell. The response is the tab's handle, so it is a 201. */
@@ -2238,19 +2546,50 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       sessionPath,
       requested: optionalString(payload, "cwd"),
     });
+    const id = optionalString(payload, "id");
+    const shellPath = optionalString(payload, "shellPath");
     json(
       res,
       201,
-      terminals.create({ sessionPath, cwd, cols, rows }),
+      terminals.create({
+        ...(id === undefined ? {} : { id }),
+        ...(shellPath === undefined ? {} : { shellPath }),
+        sessionPath,
+        cwd,
+        cols,
+        rows,
+      }),
     );
   });
 
   /**
-   * The screen so far.
+   * Attach a page to a shell: take input control and answer with the screen.
    *
-   * Fetched by a tab that is mounting onto a shell that has been running
-   * without it — a sidebar toggle, a page reload, a session switch — so what it
-   * draws first is everything that happened, not everything from now on.
+   * The snapshot is what makes reconnecting cheap and correct: a headless
+   * xterm serialized the screen up to `sequence`, so the client resets its own
+   * xterm, writes this, and then applies live frames from `sequence + 1`.
+   */
+  route("POST", "/api/terminal/:id/attach", async ({ res, params, body }) => {
+    const attachmentId = requireString(asObject(body), "attachmentId");
+    json(res, 200, await terminals.attach(params.id!, attachmentId));
+  });
+
+  /** Let go of the shell without ending it. */
+  route("POST", "/api/terminal/:id/detach", ({ res, params, body }) => {
+    terminals.detach(params.id!, requireString(asObject(body), "attachmentId"));
+    json(res, 200, { ok: true });
+  });
+
+  /** The screen without taking control — used to repair a sequence gap. */
+  route("GET", "/api/terminal/:id/snapshot", async ({ res, params }) => {
+    json(res, 200, await terminals.snapshot(params.id!));
+  });
+
+  /**
+   * The screen so far, in the pre-snapshot shape.
+   *
+   * Kept for one release so a page served from an older build can still mount;
+   * new clients use `/:id/snapshot`, which also carries the sequence.
    */
   route("GET", "/api/terminal/:id", ({ res, params }) => {
     const scrollback = terminals.scrollbackOf(params.id!);
@@ -2259,7 +2598,8 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   });
 
   route("POST", "/api/terminal/:id/input", ({ res, params, body }) => {
-    terminals.write(params.id!, requireString(asObject(body), "data"));
+    const payload = asObject(body);
+    terminals.write(params.id!, requireString(payload, "attachmentId"), requireString(payload, "data"));
     json(res, 200, { ok: true });
   });
 
@@ -2267,9 +2607,21 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     const payload = asObject(body);
     terminals.resize(
       params.id!,
+      requireString(payload, "attachmentId"),
       requireNumber(payload, "cols"),
       requireNumber(payload, "rows"),
     );
+    json(res, 200, { ok: true });
+  });
+
+  /** Rename a shell. The title belongs to the session, not to one tab strip. */
+  route("PATCH", "/api/terminal/:id", ({ res, params, body }) => {
+    json(res, 200, terminals.rename(params.id!, optionalString(asObject(body), "title") ?? ""));
+  });
+
+  /** A mounted page says it is still looking; this is what keeps it from being reaped. */
+  route("POST", "/api/terminal/:id/heartbeat", ({ res, params, body }) => {
+    terminals.heartbeat(params.id!, requireString(asObject(body), "attachmentId"));
     json(res, 200, { ok: true });
   });
 
@@ -2485,7 +2837,11 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
         json(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
         return;
       }
-      const body = BODY_METHODS.has(req.method ?? "GET") ? await readJsonBody(req) : undefined;
+      const hasBody = BODY_METHODS.has(req.method ?? "GET");
+      if (hasBody && declaredBodyTooLarge(req, requestBodyMaxBytes)) {
+        throw new HttpError(413, "request body too large");
+      }
+      const body = hasBody ? await readJsonBody(req, requestBodyMaxBytes) : undefined;
       await match.handler({ req, res, params: match.params, query: url.searchParams, body });
     } catch (err) {
       const httpError = toHttpError(err);

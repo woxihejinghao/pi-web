@@ -15,8 +15,6 @@ jobs:
     name: 打包 ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
-    # Intel mac 的 runner 标签随时可能下线；它失败了不该拖垮整个发布（其余平台照发）。
-    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -25,7 +23,6 @@ jobs:
             artifact: macos-arm64
           - os: macos-15-intel
             artifact: macos-x64
-            experimental: true
           - os: ubuntu-latest
             artifact: linux-x64
           - os: windows-latest
@@ -56,6 +53,31 @@ jobs:
       - name: 打包
         run: pnpm package:desktop
 
+      - name: 校验产物（Unix）
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          case "${{ matrix.artifact }}" in
+            macos-*) files=(desktop/release/*.dmg desktop/release/*.zip) ;;
+            linux-*) files=(desktop/release/*.AppImage desktop/release/*.deb) ;;
+            *) echo "未知平台产物：${{ matrix.artifact }}" >&2; exit 1 ;;
+          esac
+          if [ ${#files[@]} -eq 0 ]; then echo "平台产物为空" >&2; exit 1; fi
+          for file in "${files[@]}"; do [ -s "$file" ] || { echo "空产物：$file" >&2; exit 1; }; done
+          sha256sum "${files[@]}" > desktop/release/SHA256SUMS.txt
+
+      - name: 校验产物（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem desktop/release -File | Where-Object { $_.Extension -in '.exe', '.zip' })
+          if ($files.Count -eq 0) { throw 'Windows 平台产物为空' }
+          foreach ($file in $files) { if ($file.Length -le 0) { throw "空产物：$($file.FullName)" } }
+          $hashes = $files | Get-FileHash -Algorithm SHA256
+          $hashes | ForEach-Object { "$($_.Hash.ToLowerInvariant())  $($_.Path.Replace((Get-Location).Path + '\\', ''))" } | Set-Content desktop/release/SHA256SUMS.txt
+
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
@@ -67,6 +89,7 @@ jobs:
             desktop/release/*.exe
             desktop/release/*.AppImage
             desktop/release/*.deb
+            desktop/release/SHA256SUMS.txt
 
   release:
     name: 挂到 GitHub Release
@@ -84,7 +107,7 @@ jobs:
       # download-artifact 没有 upload-artifact 那个 `if-no-files-found`（传了会被静默忽略，
       # 只在日志里留一条 `Unexpected input(s)` 警告）——所以在这里显式查一次：没产物就早点炸，
       # 别让下一步的 `artifacts/*` 原样传给 gh 报一句看不懂的「找不到文件」。
-      - name: 确认拿到了产物
+      - name: 确认拿到了全部平台产物
         run: |
           shopt -s nullglob
           files=(artifacts/*)
@@ -92,6 +115,13 @@ jobs:
             echo "✗ 一个产物都没下载到，拒绝挂 Release"
             exit 1
           fi
+          for pattern in '*.dmg' '*.AppImage' '*.deb' '*.exe'; do
+            matches=(artifacts/$pattern)
+            if [ ${#matches[@]} -eq 0 ]; then
+              echo "✗ 缺少平台产物：$pattern"
+              exit 1
+            fi
+          done
           echo "✓ 拿到 ${#files[@]} 个产物："
           printf '  %s\n' "${files[@]}"
 

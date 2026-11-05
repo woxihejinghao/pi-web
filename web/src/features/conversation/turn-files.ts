@@ -4,6 +4,7 @@ import type {
   ToolCallBlock,
   ToolResultMessage,
 } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { parseUnifiedDiff } from "../rightbar/diff-parse.ts";
 import { classify, relativizeToCwd, shortenPath } from "./row-model.ts";
 
@@ -205,6 +206,7 @@ export function turnFiles(
   for (const message of messages) {
     if (message.role !== "assistant") continue;
     for (const block of (message as AssistantMessage).content ?? []) {
+      if (!isContentBlock(block)) continue;
       if (block.type !== "toolCall") continue;
       const call = block as ToolCallBlock;
       const variant = classify(call.name);

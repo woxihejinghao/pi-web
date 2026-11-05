@@ -773,16 +773,16 @@ describe("persistence", () => {
 
   it("brings a renamed tab back with its name", () => {
     installStorage();
-    rightbarActions.openTerminalTab(KEY);
+    rightbarActions.openPreviewTab(KEY, "src/app.ts");
     const id = ids()[0]!;
     rightbarActions.setTabTitle(KEY, id, "build");
 
     resetRightbarState();
     rightbarActions.ensureSurface(KEY);
-    const terminal = tabsOf(surface().panes[0]!).find((tab) => tab.kind === "terminal");
-    // A name that did not survive the reload would come back as the shell's own
+    const tab = tabsOf(surface().panes[0]!).find((entry) => entry.kind === "preview");
+    // A name that did not survive the reload would come back as the file's own
     // name, which is a different tab than the one the reader left behind.
-    expect(terminal?.title).toBe("build");
+    expect(tab?.title).toBe("build");
   });
 
   it("restores a floating panel where it was left", () => {
@@ -900,18 +900,24 @@ describe("persistence", () => {
     ]);
   });
 
-  it("brings a terminal tab back pointing at the shell it was attached to", () => {
-    // This is what makes a reload reattach instead of opening a second shell
-    // beside the one still running on the host.
-    installStorage();
-    rightbarActions.openTerminalTab(KEY);
-    rightbarActions.setTabTarget(KEY, ids()[0]!, "t-42");
+  it("drops a stored terminal tab, which the panel no longer offers", () => {
+    // Terminals left the panel but older layouts still name them. Restoring the
+    // record would bring back a tab with no way to draw or open it, so it goes
+    // the same way as any other unreachable record.
+    installStorage().set(
+      V2 + KEY,
+      JSON.stringify({
+        panes: [{ id: "p0", host: "dock", tabs: ["t1", "t2"], activeTabId: "t1" }],
+        tabs: {
+          t1: { id: "t1", kind: "terminal", title: "build", target: "t-42" },
+          t2: { id: "t2", kind: "preview", title: "a.md", target: "a.md" },
+        },
+      }),
+    );
 
-    resetRightbarState();
     rightbarActions.ensureSurface(KEY);
-    expect(tabsOf(surface().panes[0]!)).toEqual([
-      expect.objectContaining({ kind: "terminal", target: "t-42" }),
-    ]);
+    expect(tabsOf(surface().panes[0]!).map((tab) => tab.id)).toEqual(["t2"]);
+    expect(Object.keys(surface().tabs)).toEqual(["t2"]);
   });
 
   describe("the flat layout this one replaced", () => {

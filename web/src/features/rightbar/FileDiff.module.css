@@ -1,0 +1,125 @@
+/*
+ * The unified diff as the reference's `FileDiff.module.css` draws it.
+ *
+ * The turn-tail card's hover comparison used to draw its rows through the
+ * changes panel's stylesheet (`ChangesTab.module.css`), which is this project's
+ * own picture of a diff — flex rows, a 34px number column, a 2px gap between
+ * hunks, and the state colours standing in for a diff's own palette — and it
+ * read as a different thing from the reference. This sheet is a port of
+ * `ui-deliverables/src/client/FileDiff.module.css`, and it is now the only
+ * picture of a diff in the app: the same rows on a grid of
+ * `3.5em 3.5em 1.2em minmax(0, 1fr)`, the same 22px line boxes and
+ * `--dsw-font-markdown-code-block` face, the same `--dsw-alias-file-diff-*`
+ * fills on the line, the number gutter and the marker, and the same
+ * `minmax(max-content, 100%)` column so a long line scrolls the body sideways
+ * instead of wrapping.
+ *
+ * `data-review-view` / `data-review-wrap` are the reference's own switches, and
+ * the surface decides them, not a row: the hover comparison is always unified
+ * and never wraps (its placed width depends on that), while the changes panel
+ * and the review tab carry `data-review-wrap`, because their patch scrolls with
+ * the pane instead of inside itself.
+ */
+
+.body {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(max-content, 100%);
+  align-content: start;
+  box-sizing: border-box;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+  padding: 8px 0 16px;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-markdown-code-block);
+}
+
+/* A wrapped row is only ever asked for by an attribute, so the default (pre)
+ * stays the one the placement measured. */
+.body[data-review-wrap] .line {
+  white-space: pre-wrap;
+}
+
+.hunk {
+  margin-bottom: 8px;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 3.5em 3.5em 1.2em minmax(0, 1fr);
+  box-sizing: border-box;
+  min-height: 22px;
+  line-height: 22px;
+  white-space: pre;
+}
+
+.num {
+  padding-right: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: right;
+  user-select: none;
+}
+
+.marker {
+  text-align: center;
+  user-select: none;
+}
+
+.text {
+  padding-right: 16px;
+}
+
+.lineAdd {
+  --diff-gutter-fill: var(--dsw-alias-file-diff-added-gutter);
+  --diff-marker: var(--dsw-alias-file-diff-added-marker);
+  background: var(--dsw-alias-file-diff-added-bg);
+}
+
+.lineDel {
+  --diff-gutter-fill: var(--dsw-alias-file-diff-deleted-gutter);
+  --diff-marker: var(--dsw-alias-file-diff-deleted-marker);
+  background: var(--dsw-alias-file-diff-deleted-bg);
+}
+
+.lineAdd .num,
+.lineDel .num {
+  background: var(--diff-gutter-fill);
+  color: var(--diff-marker);
+}
+
+/* The first number of the row carries the bar that marks the side. */
+.lineAdd .num:first-child,
+.lineDel .num:first-child {
+  box-shadow: inset 3px 0 0 var(--diff-marker);
+}
+
+.lineAdd .marker,
+.lineDel .marker {
+  color: var(--diff-marker);
+}
+
+.lineContext .text {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* A diff with nothing in it (a call that recorded no comparison) keeps the space
+ * a note needs rather than the rows it does not have. */
+.note {
+  margin: 0;
+  padding: 4px 16px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+}
+
+/* The reason a comparison cannot be drawn at all — the reference's `.status`:
+ * one step louder than a note, because this is the pane's whole answer. */
+.status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding: 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}

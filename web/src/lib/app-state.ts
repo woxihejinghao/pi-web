@@ -1,7 +1,10 @@
 import { useMemo } from "react";
-import { api } from "./api.ts";
+import { api, ApiError } from "./api.ts";
+import { APP_NAME } from "./brand.ts";
+import { clearComposerDrafts, deleteComposerDraft, moveComposerDraft } from "./composer-drafts.ts";
 import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
 import {
+  pageIsAttended,
   setNotificationBadge,
   showNotification,
   subscribeNotificationClicks,
@@ -19,6 +22,7 @@ import {
 import { createEmitter, createStore, useStoreSelector, type Emitter, type Store } from "./store.ts";
 import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
 import type {
+  AgentMessage,
   AgentPresetRow,
   AgentSettings,
   ComposerModel,
@@ -76,6 +80,29 @@ export const SESSIONS_PAGE_SIZE = 5;
 
 export function isDraftSession(sessionPath: string | null): boolean {
   return typeof sessionPath === "string" && sessionPath.startsWith(DRAFT_PREFIX);
+}
+
+/**
+ * Whether a frame addressed to `framePath` belongs to the seat `declared`.
+ *
+ * The server fans session frames out to every tab — dialogs and notices are
+ * shared chrome (see `wantsFrame` on the server) — so what arrives is not what
+ * is being read, and every consumer of a frame has to ask this first.
+ *
+ * `declared` is the session this tab is reading: its path, its draft id while
+ * the session is still being created, or null when there is no session yet at
+ * all (the hero). An unaddressed frame (`""`) belongs to that seat either way,
+ * because pi only names a session file on its first `get_state` — a session's
+ * first question is always published before the path exists, and it is asked
+ * from the seat that is, or is about to become, a session. An addressed frame
+ * belongs only to the session it names: a card for another session's question
+ * would take the input box of someone answering something else
+ * (`pendingUiForSession`), and a notice about another session is an
+ * interruption with nothing behind it (`sessionInView`).
+ */
+export function seatOwns(declared: string | null, framePath: string): boolean {
+  if (declared === null || isDraftSession(declared)) return framePath === "";
+  return framePath === declared;
 }
 
 /**
@@ -163,6 +190,8 @@ export interface AppState {
    * already has to mirror, so ownership is recorded here at creation time.
    */
   unsavedSessions: Record<string, string[]>;
+  /** First-message titles while pi has not flushed the new session yet. */
+  unsavedSessionTitles: Record<string, string>;
   /** Session files with a live pi process on the server. */
   activeSessions: string[];
   /**
@@ -292,6 +321,7 @@ const initialState: AppState = {
   sessionsLoading: {},
   selectedSessionPath: null,
   unsavedSessions: {},
+  unsavedSessionTitles: {},
   activeSessions: [],
   sessionActivity: {},
   externalChanged: {},
@@ -491,6 +521,7 @@ export const workspaceChanged: Emitter<{
 
 /** Test seam: restore the initial state. */
 export function resetAppState(): void {
+  clearComposerDrafts();
   appStore.set({ ...initialState });
   draftRequest = null;
   commandsRequests.clear();
@@ -1001,9 +1032,14 @@ export const actions = {
         const onDisk = new Set(page.sessions.map((session) => session.path));
         const remaining = unsaved.filter((path) => !onDisk.has(path));
         if (remaining.length === unsaved.length) return next;
+        const unsavedSessionTitles = { ...state.unsavedSessionTitles };
+        for (const path of unsaved) {
+          if (onDisk.has(path)) delete unsavedSessionTitles[path];
+        }
         return {
           ...next,
           unsavedSessions: { ...state.unsavedSessions, [projectId]: remaining },
+          unsavedSessionTitles,
         };
       });
     } catch (err) {
@@ -1166,6 +1202,7 @@ export const actions = {
   async deleteSession(sessionPath: string): Promise<void> {
     try {
       const result = await api.deleteSession(sessionPath);
+      deleteComposerDraft(sessionPath);
       if (appStore.get().selectedSessionPath === sessionPath) actions.selectSession(null);
       // The "changed by another process" dot and the run-state mark are keyed
       // by path too; a deleted session must not leave either behind for a
@@ -1233,11 +1270,22 @@ export const actions = {
         }
         // The draft id is replaced by the real path in place, wherever the user
         // has navigated to by now — the row follows the session, not the view.
+        moveComposerDraft(localId, created.sessionPath);
         appStore.update((state) => ({
           ...state,
           selectedSessionPath:
             state.selectedSessionPath === localId ? created.sessionPath : state.selectedSessionPath,
           unsavedSessions: replacePath(state.unsavedSessions, projectId, localId, created.sessionPath),
+          // A dialog this session asked while it was still being created arrived
+          // addressed to nobody: pi reveals its session file only on the first
+          // `get_state`, so the request was published before the path existed.
+          // The path is written onto it with the swap below, which is what keeps
+          // its card in the composer seat — the rule that seats a card reads an
+          // empty address as "the session being created", and this one has just
+          // stopped being that.
+          pendingUiRequests: state.pendingUiRequests.map((item) =>
+            item.sessionPath === "" ? { ...item, sessionPath: created.sessionPath } : item,
+          ),
         }));
         return created.sessionPath;
       })
@@ -1310,15 +1358,71 @@ export const actions = {
     });
   },
 
-  /**
-   * Fold an agent boundary into the sidebar's status mark.
-   *
-   * Called for every `session_event`, so it filters to the two boundaries that
-   * matter and leaves token deltas alone.
-   */
+  /** Name only a pending row, once; persisted and manually named rows win. */
+  noteUnsavedSessionTitle(sessionPath: string, text: string): void {
+    const state = appStore.get();
+    if (state.unsavedSessionTitles[sessionPath] !== undefined
+      || !Object.values(state.unsavedSessions).some((paths) => paths.includes(sessionPath))
+      || Object.values(state.sessions).some((rows) => rows.some((row) => row.path === sessionPath))) return;
+    // Match the default first-message title budgets; the disk-derived title
+    // remains authoritative, including custom server budgets and model titles.
+    const folded = text.replace(/^<skill name="([^"]+)"[^>]*>[\s\S]*?<\/skill>(?:\s*([\s\S]*))?$/, (_, name: string, args: string | undefined) =>
+      `/skill:${name}${args?.trim() ? ` ${args.trim()}` : ""}`);
+    const words = folded.replace(/[\u0000-\u001f\u007f-\u009f\s]+/g, " ").trim().split(" ").filter(Boolean);
+    const kept = words.slice(0, 8).join(" ");
+    if (!kept) return;
+    const encoder = new TextEncoder();
+    let title = kept;
+    if (encoder.encode(title).length > 120) {
+      title = "";
+      for (const char of kept) {
+        if (encoder.encode(title + char).length > 117) break;
+        title += char;
+      }
+      title = `${title.trimEnd()}…`;
+    } else if (words.length > 8) title += "…";
+    appStore.update((current) => ({
+      ...current,
+      unsavedSessionTitles: { ...current.unsavedSessionTitles, [sessionPath]: title },
+    }));
+  },
+
+  /** Track run boundaries and persistence even when the session is not open. */
   noteSessionActivity(sessionPath: string, event: SessionEvent): void {
     if (event.type === "agent_start") actions.markSessionOngoing(sessionPath);
     else if (event.type === "agent_settled") actions.markSessionSettled(sessionPath);
+
+    // User frames arrive before the first assistant reply (and before the file
+    // exists). Keep this separate from disk rows: refetching must not erase the
+    // title or incorrectly mark an unsaved session as persisted.
+    if (event.type === "message_start" || event.type === "message_end") {
+      const user = event.message as AgentMessage | undefined;
+      if (user?.role === "user") {
+        const text = typeof user.content === "string"
+          ? user.content
+          : Array.isArray(user.content)
+            ? user.content.flatMap((block: unknown) => {
+              if (block === null || typeof block !== "object" || !("type" in block)
+                || block.type !== "text" || !("text" in block) || typeof block.text !== "string") return [];
+              return [block.text];
+            }).join(" ")
+            : "";
+        actions.noteUnsavedSessionTitle(sessionPath, text);
+      }
+    }
+
+    // pi first flushes a new session when its assistant message lands. This
+    // belongs to the global stream, not the conversation hook: switching away
+    // must not strand the row as "Unsaved" or refresh the wrong workspace.
+    const message = event.message as AgentMessage | undefined;
+    if ((event.type === "message_end" && message?.role === "assistant")
+      || event.type === "agent_settled") {
+      const state = appStore.get();
+      const owner = Object.keys(state.unsavedSessions).find((projectId) =>
+        state.unsavedSessions[projectId]?.includes(sessionPath),
+      );
+      if (owner !== undefined) void actions.refreshSessions(owner, { force: true });
+    }
   },
 
   markSessionOngoing(sessionPath: string): void {
@@ -1339,23 +1443,27 @@ export const actions = {
    */
   markSessionSettled(sessionPath: string): void {
     const before = appStore.get();
-    const watching = before.selectedSessionPath === sessionPath;
-    // Only a task that was actually running can finish. Adopting a session that
-    // settles without this tab having seen it start (a reload mid-run, a
-    // session running elsewhere) is not a state change, and announcing it would
-    // be inventing one.
-    const wasRunning = before.sessionActivity[sessionPath] === "ongoing";
+    // The dot is keyed to selection alone, because opening a session is what
+    // clears it: it answers "is this the session on screen", not "is the user
+    // at the screen".
+    const selected = before.selectedSessionPath === sessionPath;
     appStore.update((state) => {
       const sessionActivity = { ...state.sessionActivity };
-      if (watching) delete sessionActivity[sessionPath];
+      if (selected) delete sessionActivity[sessionPath];
       else sessionActivity[sessionPath] = "done";
       return { ...state, sessionActivity };
     });
 
-    // The completion *notice* asks whether the user can see the session; the
-    // sidebar's "done" dot asks whether they might look at it next. They
-    // coincide here: nothing to announce about a result already on screen.
-    if (!watching && wasRunning) actions.notifyTaskFinished(sessionPath);
+    // The completion *notice* asks the stricter question — is the user at that
+    // screen at all — so a selected session in a hidden tab, or in a window the
+    // user has left for another app, is exactly the case it exists for. Reading
+    // selection as "watching" silenced precisely those finishes.
+    //
+    // Nothing else is asked of this frame. `agent_settled` is live news (the
+    // stream replays no history), so a finish that arrives is one that just
+    // happened, whether or not this tab saw it start: requiring the start only
+    // silenced the reload-mid-run case instead of reporting it.
+    if (!selected || !pageIsAttended()) actions.notifyTaskFinished(sessionPath);
   },
 
   /**
@@ -1371,9 +1479,17 @@ export const actions = {
     // may even have reloaded), and a click that lands later still has to know
     // which workspace to switch to along with the conversation.
     const owner = projectIdOfSession(state, sessionPath);
+    // The app names itself in the title, because on the web that is the only
+    // line of the notice it owns: the platform draws the origin above it from
+    // the address, and that would otherwise be the only name the banner carries.
+    // The session moves to the body, which is where the reader asking "which
+    // one finished?" looks anyway.
+    const sessionTitle = findSessionTitle(state, sessionPath);
     showNotification(
-      findSessionTitle(state, sessionPath) ?? "pi-web-simple",
-      tr()("notification.taskFinished"),
+      APP_NAME,
+      sessionTitle === null
+        ? tr()("notification.taskFinished")
+        : tr()("notification.taskFinishedIn", { title: sessionTitle }),
       sessionPath,
       () => {
         // Opening the session is the useful answer to "which one finished?".
@@ -1408,7 +1524,10 @@ export const actions = {
         changed = true;
         unsaved[projectId] = paths.filter((path) => path !== sessionPath);
       }
-      return changed ? { ...state, unsavedSessions: unsaved } : state;
+      if (!changed) return state;
+      const unsavedSessionTitles = { ...state.unsavedSessionTitles };
+      delete unsavedSessionTitles[sessionPath];
+      return { ...state, unsavedSessions: unsaved, unsavedSessionTitles };
     });
   },
 
@@ -1673,7 +1792,9 @@ export const actions = {
       if (index < 0) {
         return { ...state, pendingUiRequests: [...state.pendingUiRequests, pending] };
       }
-      // Same dialog, now with an address: keep the path for the jump line.
+      // Same dialog, now with an address: the address is what seats its card
+      // (`pendingUiForSession` never guesses one), so the real path is taken as
+      // soon as it arrives and never given back.
       const existing = state.pendingUiRequests[index];
       if (existing === undefined || existing.sessionPath !== "" || pending.sessionPath === "") {
         return state;
@@ -1685,18 +1806,42 @@ export const actions = {
   },
 
   /**
-   * Adopt the dialogs the server is still holding. Runs once at bootstrap, so
-   * it merges rather than replaces: a request pushed over SSE while this fetch
-   * was in flight must not be dropped by the reply to an older question.
+   * Reconcile against the server's live dialogs, retaining requests that arrived
+   * over SSE during the fetch and never restoring a locally dismissed card.
    */
   async loadPendingUiRequests(): Promise<void> {
+    const before = new Map(appStore.get().pendingUiRequests.map((item) => [item.request.id, item]));
     try {
       const { requests } = await api.listUiRequests();
-      for (const pending of requests) actions.enqueueUiRequest(pending);
+      const live = new Set(requests.map((item) => item.request.id));
+      appStore.update((state) => ({
+        ...state,
+        pendingUiRequests: state.pendingUiRequests.filter(
+          (item) => before.get(item.request.id) !== item || live.has(item.request.id),
+        ),
+      }));
+      for (const pending of requests) {
+        if (before.has(pending.request.id)
+          && !appStore.get().pendingUiRequests.some((item) => item.request.id === pending.request.id)) continue;
+        actions.enqueueUiRequest(pending);
+      }
     } catch {
-      // The stream is still the primary path; a failure here just means a
-      // dialog that predates this page stays hidden until it is answered.
+      // Keep the current queue on network failure; a later sync can retry.
     }
+  },
+
+  /** A stale dialog is already closed, including when another tab answered it. */
+  async respondToUiRequest(id: string, payload: Record<string, unknown>): Promise<boolean> {
+    try {
+      await api.respondToUiRequest(id, payload);
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+      actions.dismissUiRequest(id);
+      await actions.loadPendingUiRequests();
+      return false;
+    }
+    actions.dismissUiRequest(id);
+    return true;
   },
 
   /**

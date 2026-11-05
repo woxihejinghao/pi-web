@@ -125,16 +125,6 @@ describe("running a command", () => {
     expect(surface().open).toBe(true);
   });
 
-  it("opens one more shell every time it is asked", () => {
-    selectSession(KEY);
-    command("rightbar.terminal").run();
-    command("rightbar.terminal").run();
-    // Two terminals are two processes, so unlike Files this never reuses a tab.
-    expect(dockTabs().map((tab) => tab.kind)).toEqual(["terminal", "terminal"]);
-    // The host id is the body's business; the shortcut only makes the tab.
-    expect(dockTabs().map((tab) => tab.target)).toEqual(["", ""]);
-  });
-
   it("opens a browser tab on nothing, which is the address bar's empty state", () => {
     selectSession(KEY);
     command("rightbar.browser").run();
@@ -194,7 +184,7 @@ describe("running a command", () => {
     it("declines while a floating panel is the focus", () => {
       selectSession(KEY);
       rightbarActions.open(KEY);
-      rightbarActions.openTerminalTab(KEY);
+      rightbarActions.openBrowserTab(KEY, "");
       const panel = dockTabs()[1]!.id;
       rightbarActions.floatTab(KEY, panel);
 
@@ -244,9 +234,6 @@ describe("the keycap hint", () => {
   it("advertises the browser's column with the browser's symbols", async () => {
     expect(await hintOn(MAC_BROWSER, "rightbar.toggle")).toBe("⇧⌘B");
     expect(await hintOn(MAC_BROWSER, "rightbar.files")).toBe("⌥⌘P");
-    // Not built on `primary`: this is the one binding every terminal-bearing
-    // editor agrees on, Control on a Mac included.
-    expect(await hintOn(MAC_BROWSER, "rightbar.terminal")).toBe("⌃`");
   });
 
   it("advertises the desktop's column and the desktop's machine", async () => {

@@ -162,6 +162,10 @@ describe("ChangedFilePreview", () => {
       />,
     );
     expect(oversized).toContain("文件过大，无法显示改动");
+    // The reference answers a comparison it cannot draw with a status line,
+    // not with an empty diff's note.
+    expect(oversized).toContain('role="status"');
+    expect(oversized).not.toContain('data-diff-note="empty"');
 
     // No patch and nothing oversized: a call whose result the transcript does
     // not carry (an `edit` read back from a trimmed log).
@@ -169,5 +173,72 @@ describe("ChangedFilePreview", () => {
       <ChangedFilePreview file={file("a.ts")} onEnter={noop} onLeave={noop} />,
     );
     expect(unmeasurable).toContain("这次调用没有可显示的改动");
+    // dsh's own attribute for the empty note.
+    expect(unmeasurable).toContain('data-diff-note="empty"');
+  });
+
+  it("marks every row with the side it is, as the reference's rows are", () => {
+    const html = renderToStaticMarkup(
+      <ChangedFilePreview
+        file={file("src/a.ts", { patches: ["@@ -10,2 +20,2 @@\n same\n-old\n+new\n"] })}
+        onEnter={noop}
+        onLeave={noop}
+      />,
+    );
+
+    expect(html).toContain('data-review-view="unified"');
+    expect(html).toContain('data-diff-line="context"');
+    expect(html).toContain('data-diff-line="del"');
+    expect(html).toContain('data-diff-line="add"');
+  });
+
+  it("stops at the reference's line cap and says how much is missing", () => {
+    const lines = Array.from({ length: 5001 }, (_, index) => `+line ${String(index)}`);
+    const html = renderToStaticMarkup(
+      <ChangedFilePreview
+        file={file("src/big.ts", { patches: [`@@ -1,0 +1,5001 @@\n${lines.join("\n")}\n`] })}
+        onEnter={noop}
+        onLeave={noop}
+      />,
+    );
+
+    // dsh's `MAX_RENDERED_LINES`: one row past the budget is the first lost.
+    expect(html.split('data-diff-line="add"').length - 1).toBe(5000);
+    expect(html).toContain("只显示前 5,000 行");
+    expect(html).toContain("data-diff-truncated");
+  });
+
+  it("takes the box and the closing flag the portal hands down", () => {
+    const html = renderToStaticMarkup(
+      <ChangedFilePreview
+        file={file("src/a.ts", { patches: ["@@ -1,1 +1,1 @@\n-old\n+new\n"] })}
+        onEnter={noop}
+        onLeave={noop}
+        closing
+        style={{ left: 12, top: 340, width: 700, maxHeight: 420 }}
+      />,
+    );
+
+    // The box is the placement's, not the pane's: a pane that sized itself would
+    // be a pane the card's arithmetic did not place.
+    expect(html).toContain("left:12px");
+    expect(html).toContain("top:340px");
+    expect(html).toContain("width:700px");
+    expect(html).toContain("max-height:420px");
+    // dsh's `data-closing`: the fade's frame is still the pane, and the stylesheet
+    // reads this to start it.
+    expect(html).toContain("data-closing");
+  });
+
+  it("mounts open, with no closing flag and no box of its own", () => {
+    const html = renderToStaticMarkup(
+      <ChangedFilePreview file={file("src/a.ts")} onEnter={noop} onLeave={noop} />,
+    );
+
+    expect(html).toContain("data-turn-files-preview");
+    expect(html).not.toContain("data-closing");
+    // No inline box: a pane rendered without the card is the bare surface, which
+    // is what the tests above assert the contents of.
+    expect(html).not.toContain("style=");
   });
 });

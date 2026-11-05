@@ -84,7 +84,14 @@
   padding: 20px 24px 8px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  /*
+   * The transcript's own vertical rhythm, named because a second file measures
+   * against it: an earlier message's action row is taken out of the flow and
+   * hung in this gap (see `MessageActions.module.css`), so the row and the
+   * rhythm have to move together.
+   */
+  --transcript-gap: 14px;
+  gap: var(--transcript-gap);
 }
 
 /*
@@ -95,7 +102,7 @@
 .turn {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--transcript-gap);
   min-width: 0;
 }
 
@@ -109,7 +116,7 @@
 .turnTail {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--transcript-gap);
   min-width: 0;
 }
 

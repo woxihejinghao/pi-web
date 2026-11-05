@@ -14,6 +14,7 @@ import type {
   ThinkingBlock,
   ToolCallBlock,
 } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { projectTodos, type TodoItem } from "./todo-model.ts";
 import { projectPendingQuestions, type PendingQuestion } from "./pending-questions.ts";
 import { parseStreamingJson } from "../../lib/streaming-json.ts";
@@ -78,6 +79,26 @@ export interface ConversationView {
    * mirrors the trailing undelivered user rows one-to-one.
    */
   queue: QueuedPrompt[];
+  /**
+   * Wall-clock time of the newest message this browser sent this session, or 0
+   * when it has sent none.
+   *
+   * `MessageList` watches it: the composer is docked at the bottom of the
+   * window, so a reader who scrolled up to re-read something and then typed a
+   * message has asked to see what happens next — the send brings the transcript
+   * back to the tail. It is deliberately *not* "a user message appeared": a
+   * message pi recorded from the terminal, or a row that arrives on a reload,
+   * grows `messages` without touching this, and a reader who is not following
+   * must not be dragged down by someone else's message. Every send from this
+   * browser goes through this hook — a prompt, a steer or a follow-up, a
+   * command, a retry, an answer to a pending question — so one value covers
+   * them all instead of each call site remembering to ask.
+   *
+   * Only the *change* means anything, and it is never reset, so a session switch
+   * cannot read as a send (a reset would pin the next session's reader to the
+   * bottom, which is not something they asked for).
+   */
+  sentAt: number;
   toolExecutions: Record<string, ToolExecution>;
   /**
    * Whether this session's agent loop is running right now.
@@ -170,6 +191,12 @@ export function compactionCheckpoint(
 
 interface StreamSlot {
   content: ContentBlock[];
+  /** The occurrence this slot belongs to, never reused by a later stream. */
+  occurrenceId: number;
+  /** Stable assistant identity when pi supplied responseId. */
+  identity: string | null;
+  /** True only when a current-lifecycle message_start opened this slot. */
+  started: boolean;
   /**
    * Raw `toolcall_delta` chunks.
    *
@@ -190,6 +217,7 @@ const emptyView: ConversationView = {
   partial: null,
   undeliveredPrompts: 0,
   queue: [],
+  sentAt: 0,
   toolExecutions: {},
   isStreaming: false,
   compacting: false,
@@ -199,6 +227,46 @@ const emptyView: ConversationView = {
   failedAttempts: 0,
   stats: sessionStats([], EMPTY_TIMING),
 };
+
+/** Keep a few recently opened transcripts warm without retaining every session. */
+const SESSION_CACHE_LIMIT = 4;
+
+interface CachedConversation {
+  messages: AgentMessage[];
+  forkPoints: ForkPoint[];
+  stats: SessionStatsData;
+}
+
+function rememberConversation(
+  cache: Map<string, CachedConversation>,
+  sessionPath: string,
+  view: ConversationView,
+): void {
+  cache.delete(sessionPath);
+  cache.set(sessionPath, {
+    messages: view.messages,
+    forkPoints: view.forkPoints,
+    stats: view.stats,
+  });
+  while (cache.size > SESSION_CACHE_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (typeof oldest !== "string") break;
+    cache.delete(oldest);
+  }
+}
+
+/** A warm transcript is useful immediately, but its ephemeral stream state is not. */
+function warmConversationView(snapshot: CachedConversation): ConversationView {
+  return {
+    ...emptyView,
+    messages: snapshot.messages,
+    forkPoints: snapshot.forkPoints,
+    todos: projectTodos(snapshot.messages, 0),
+    pendingQuestions: projectPendingQuestions(snapshot.messages),
+    loading: true,
+    stats: snapshot.stats,
+  };
+}
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -266,10 +334,149 @@ function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** Fold one streaming delta into the partial assistant message. */
-function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
-  const index = typeof delta.contentIndex === "number" ? delta.contentIndex : 0;
-  const blocks = slot.content;
+function normalizedValue(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `[${value.map(normalizedValue).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) =>
+      `${JSON.stringify(key)}:${normalizedValue((value as Record<string, unknown>)[key])}`,
+    ).join(",")}}`;
+  }
+  return typeof value;
+}
+
+function contentIdentity(content: unknown): string {
+  if (typeof content === "string") return `text:${content}`;
+  if (!Array.isArray(content)) return `content:${normalizedValue(content)}`;
+  return content.filter(isContentBlock).map((block) => {
+    if (block.type === "text") return `text:${(block as TextBlock).text}`;
+    if (block.type === "thinking") return `thinking:${(block as ThinkingBlock).thinking}`;
+    if (block.type === "toolCall") {
+      const call = block as ToolCallBlock;
+      return `tool:${call.id}:${call.name}:${normalizedValue(call.arguments)}`;
+    }
+    if (block.type === "image") {
+      const image = block as ImageBlock;
+      return `image:${image.mimeType}:${image.url ?? ""}:${image.data ?? ""}`;
+    }
+    return `block:${block.type}`;
+  }).join("|");
+}
+
+function messageIdentity(message: AgentMessage): string {
+  if (message.role === "assistant" && message.responseId) return `assistant:${message.responseId}`;
+  if (message.role === "toolResult") return `tool-result:${message.toolCallId}`;
+  if (message.role === "user") return `user:${contentIdentity(message.content)}`;
+  if (message.role === "bashExecution") return `bash:${message.command}:${message.timestamp}`;
+  if (message.role === "compactionSummary") return `compaction:${message.timestamp}:${message.summary}`;
+  if (message.role === "assistant") return `assistant:${contentIdentity(message.content)}:${message.timestamp}`;
+  return `${message.role}:${normalizedValue(message)}`;
+}
+
+function userMessageMatches(left: AgentMessage, right: AgentMessage): boolean {
+  return left.role === "user" && right.role === "user"
+    && contentIdentity(left.content) === contentIdentity(right.content);
+}
+
+function assistantContentIsPrefix(prefix: AssistantMessage, final: AssistantMessage): boolean {
+  if (prefix.content.length > final.content.length) return false;
+  return prefix.content.every((block, index) => {
+    const candidate = final.content[index];
+    if (!candidate || block.type !== candidate.type) return false;
+    if (block.type === "text" && candidate.type === "text") {
+      return (candidate as TextBlock).text.startsWith((block as TextBlock).text);
+    }
+    if (block.type === "thinking" && candidate.type === "thinking") {
+      return (candidate as ThinkingBlock).thinking.startsWith((block as ThinkingBlock).thinking);
+    }
+    if (block.type === "toolCall" && candidate.type === "toolCall") return block.id === candidate.id;
+    return normalizedValue(block) === normalizedValue(candidate);
+  });
+}
+
+function mergeHistoryWithLive(history: AgentMessage[], live: AgentMessage[]): AgentMessage[] {
+  const available = new Map<string, number>();
+  for (const message of history) {
+    const key = messageIdentity(message);
+    available.set(key, (available.get(key) ?? 0) + 1);
+  }
+  const merged = [...history];
+  for (const message of live) {
+    const key = messageIdentity(message);
+    const count = available.get(key) ?? 0;
+    if (count > 0) available.set(key, count - 1);
+    else merged.push(message);
+  }
+  return merged;
+}
+
+/**
+ * Reattach local user occurrences after a history read.
+ *
+ * The server returns freshly parsed objects, so object identity cannot be used
+ * to decide whether an optimistic row survived hydration. Match each local
+ * occurrence once, preferring its original content and then the newest unused
+ * user row. The fallback is intentional: pi may expand a slash command or
+ * template before writing the user message, changing the content entirely.
+ */
+function rebindUserOccurrences(
+  occurrences: Array<{ message: AgentMessage; started: boolean; ended: boolean; delivered: boolean }>,
+  messages: readonly AgentMessage[],
+): void {
+  const userIndexes = messages
+    .map((message, index) => (message.role === "user" ? index : -1))
+    .filter((index) => index >= 0);
+  const claimed = new Set<number>();
+  let newestAvailable = userIndexes.length - 1;
+  for (let occurrenceIndex = occurrences.length - 1; occurrenceIndex >= 0; occurrenceIndex -= 1) {
+    const occurrence = occurrences[occurrenceIndex];
+    let match = -1;
+    for (let index = userIndexes.length - 1; index >= 0; index -= 1) {
+      const candidateIndex = userIndexes[index];
+      if (!claimed.has(candidateIndex)
+        && userMessageMatches(occurrence.message, messages[candidateIndex]!)) {
+        match = candidateIndex;
+        break;
+      }
+    }
+    if (match < 0) {
+      while (newestAvailable >= 0 && claimed.has(userIndexes[newestAvailable]!)) newestAvailable -= 1;
+      match = newestAvailable >= 0 ? userIndexes[newestAvailable]! : -1;
+    }
+    if (match >= 0) {
+      claimed.add(match);
+      occurrence.message = messages[match]!;
+    }
+  }
+}
+
+function streamContentIsPrefix(slot: StreamSlot, final: AssistantMessage): boolean {
+  if (slot.content.length === 0) return false;
+  return slot.content.every((block, index) => {
+    const candidate = final.content[index];
+    if (!candidate || block.type !== candidate.type) return false;
+    if (block.type === "text" && candidate.type === "text") {
+      return (candidate as TextBlock).text.startsWith((block as TextBlock).text);
+    }
+    if (block.type === "thinking" && candidate.type === "thinking") {
+      return (candidate as ThinkingBlock).thinking.startsWith((block as ThinkingBlock).thinking);
+    }
+    if (block.type === "toolCall" && candidate.type === "toolCall") {
+      return block.id === candidate.id;
+    }
+    return normalizedValue(block) === normalizedValue(candidate);
+  });
+}
+
+/** Fold one streaming delta into a new partial assistant message. */
+function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): StreamSlot {
+  if (delta.type === "start") return slot;
+  const streamDelta = delta as Exclude<AssistantStreamEvent, { type: "start" }>;
+  const index = typeof streamDelta.contentIndex === "number" ? streamDelta.contentIndex : 0;
+  const blocks = slot.content.slice();
+  const rawArgs = { ...slot.rawArgs };
 
   switch (delta.type) {
     case "text_start":
@@ -278,36 +485,28 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
     case "text_delta": {
       const existing = blocks[index];
       const chunk = asString(delta.delta);
-      if (existing && existing.type === "text") {
-        (existing as TextBlock).text += chunk;
-      } else {
-        blocks[index] = { type: "text", text: chunk };
-      }
+      blocks[index] = existing?.type === "text"
+        ? { ...existing, text: existing.text + chunk }
+        : { type: "text", text: chunk };
       break;
     }
-    case "text_end": {
-      const final = delta.content;
-      blocks[index] = { type: "text", text: typeof final === "string" ? final : "" };
+    case "text_end":
+      blocks[index] = { type: "text", text: delta.content };
       break;
-    }
     case "thinking_start":
       blocks[index] = { type: "thinking", thinking: "" };
       break;
     case "thinking_delta": {
       const existing = blocks[index];
       const chunk = asString(delta.delta);
-      if (existing && existing.type === "thinking") {
-        (existing as ThinkingBlock).thinking += chunk;
-      } else {
-        blocks[index] = { type: "thinking", thinking: chunk };
-      }
+      blocks[index] = existing?.type === "thinking"
+        ? { ...existing, thinking: existing.thinking + chunk }
+        : { type: "thinking", thinking: chunk };
       break;
     }
-    case "thinking_end": {
-      const final = delta.content;
-      blocks[index] = { type: "thinking", thinking: typeof final === "string" ? final : "" };
+    case "thinking_end":
+      blocks[index] = { type: "thinking", thinking: delta.content };
       break;
-    }
     case "toolcall_start":
       blocks[index] = {
         type: "toolCall",
@@ -315,11 +514,11 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
         name: asString(delta.toolName),
         arguments: {},
       };
-      slot.rawArgs[index] = "";
+      rawArgs[index] = "";
       break;
     case "toolcall_delta": {
-      const raw = (slot.rawArgs[index] ?? "") + asString(delta.delta);
-      slot.rawArgs[index] = raw;
+      const raw = (rawArgs[index] ?? "") + asString(delta.delta);
+      rawArgs[index] = raw;
       // Read the arguments as they arrive, not when the call ends. A row's
       // summary and a live group's detail both come from `arguments`, and for a
       // long one (a pasted file, a big patch) waiting for the end means the
@@ -327,16 +526,16 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
       const existing = blocks[index];
       if (existing?.type === "toolCall") {
         const partial = parseStreamingJson(raw);
-        if (partial !== undefined) existing.arguments = partial;
+        if (partial !== undefined) blocks[index] = { ...existing, arguments: partial };
       }
       break;
     }
     case "toolcall_end": {
       const call = delta.toolCall as ToolCallBlock | undefined;
       if (call) {
-        blocks[index] = call;
+        blocks[index] = { ...call, arguments: { ...call.arguments } };
       } else {
-        const raw = slot.rawArgs[index] ?? "";
+        const raw = rawArgs[index] ?? "";
         const existing = blocks[index];
         let parsed: Record<string, unknown> = {};
         try {
@@ -356,11 +555,13 @@ function applyDelta(slot: StreamSlot, delta: AssistantStreamEvent): void {
     default:
       break;
   }
+  return { ...slot, content: blocks, rawArgs };
 }
 
 function textFromContent(content: string | ContentBlock[]): string {
   if (typeof content === "string") return content;
   return content
+    .filter(isContentBlock)
     .map((block) => (block.type === "text" ? (block as TextBlock).text : ""))
     .join("");
 }
@@ -486,6 +687,20 @@ export function useConversation(sessionPath: string | null): ConversationApi {
    * echo is not what was typed.
    */
   const deliveredUsersRef = useRef(0);
+  interface UserOccurrence {
+    /** Internal identity survives history hydration, which replaces objects. */
+    id: number;
+    message: AgentMessage;
+    delivered: boolean;
+    started: boolean;
+    ended: boolean;
+  }
+  /** User occurrences are consumed strictly once, in send order. */
+  const userOccurrencesRef = useRef<UserOccurrence[]>([]);
+  /** Terminal frames are deduplicated only when the protocol supplies an ID. */
+  const assistantEndLedgerRef = useRef(new Set<string>());
+  const nextOccurrenceRef = useRef(0);
+  const streamGenerationRef = useRef(0);
   /**
    * The queued prompts this browser is waiting on — the queue dock's rows.
    *
@@ -498,6 +713,14 @@ export function useConversation(sessionPath: string | null): ConversationApi {
    * messages are taken up.
    */
   const queueRef = useRef<QueuedPrompt[]>([]);
+  /**
+   * The newest send from this browser; see `ConversationView.sentAt`.
+   *
+   * Deliberately not reset with the rest of the session state below: the number
+   * is meaningless outside the session that produced it, and going backwards
+   * would look like a send to whoever is comparing it.
+   */
+  const sentAtRef = useRef(0);
   /**
    * Whether the next user message pi records belongs to an extension command.
    *
@@ -513,6 +736,20 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   /** Whether pi is compacting right now; see `ConversationView.compacting`. */
   const compactingRef = useRef(false);
   const loadingRef = useRef(true);
+  /** Monotonically invalidates history loads whose session is no longer current. */
+  const loadGenerationRef = useRef(0);
+  /** The path currently represented by the mutable refs below. */
+  const activePathRef = useRef<string | null>(sessionPath);
+  /** The path represented by React's last published view. */
+  const viewPathRef = useRef<string | null>(sessionPath);
+  /** Recently published transcripts, keyed by session so switching can be warm. */
+  const sessionCacheRef = useRef(new Map<string, CachedConversation>());
+  /**
+   * React StrictMode replays an effect's setup/cleanup on mount. Keep the path
+   * across that replay so the second setup can restore the subscription without
+   * clearing the transcript or issuing the same history request twice.
+   */
+  const effectPathRef = useRef<string | null | undefined>(undefined);
   const errorRef = useRef<string | null>(null);
   const retryRef = useRef<RetryState | null>(null);
   /**
@@ -523,8 +760,6 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const failedAttemptsRef = useRef(0);
   /** Wall-clock boundaries accumulated from the event stream; see `TimingState`. */
   const timingRef = useRef<TimingState>(emptyTiming());
-  /** Guards the one-time "this session now exists on disk" sidebar refresh. */
-  const persistedNotifiedRef = useRef(false);
   /**
    * A repaint already scheduled for the streaming update, or null.
    *
@@ -541,15 +776,18 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   const lastPublishRef = useRef(0);
   /** True while a delta has arrived that no publish has carried yet. */
   const dirtyRef = useRef(false);
+  /** Invalidates callbacks that were queued before a terminal publish. */
+  const frameTokenRef = useRef(0);
 
   const publish = useCallback(() => {
     // This publish supersedes any frame that was waiting to do the same thing.
+    frameTokenRef.current += 1;
     if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
-    lastPublishRef.current = Date.now();
     dirtyRef.current = false;
+    lastPublishRef.current = Date.now();
     const slot = slotRef.current;
     // Computed before the projection that consumes it: the plan is cleared when a
     // turn opens, and a prompt pi has not taken up yet has not opened one.
@@ -557,7 +795,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       0,
       countUserMessages(messagesRef.current) - deliveredUsersRef.current,
     );
-    setView({
+    const nextView: ConversationView = {
       messages: messagesRef.current,
       forkPoints: forkPointsRef.current,
       // Projected on every publish rather than cached: the scan walks backwards
@@ -568,12 +806,15 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       // user messages already in the transcript, and a reply that arrived as a
       // new turn has to close its question on the frame that carries it.
       pendingQuestions: projectPendingQuestions(messagesRef.current),
-      partial: slot ? [...slot.content] : null,
+      // `slice()` copies without densifying a sparse contentIndex array. Spread
+      // would turn an as-yet-unseen block into explicit `undefined`.
+      partial: slot ? slot.content.slice() : null,
       // Recomputed rather than counted as it changes: the refs are the state,
       // and one pass over a few hundred messages is cheaper than a counter that
       // can drift from the list it describes.
       undeliveredPrompts,
       queue: [...queueRef.current],
+      sentAt: sentAtRef.current,
       toolExecutions: { ...toolsRef.current },
       isStreaming: streamingRef.current,
       compacting: compactingRef.current,
@@ -584,7 +825,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       // Copied, not aliased: the ref keeps mutating as events arrive, and a view
       // holding the live object would compare equal to itself forever.
       stats: sessionStats(messagesRef.current, { ...timingRef.current.totals }),
-    });
+    };
+    const activePath = activePathRef.current;
+    if (activePath !== null) rememberConversation(sessionCacheRef.current, activePath, nextView);
+    viewPathRef.current = activePath;
+    setView(nextView);
   }, []);
 
   /**
@@ -605,7 +850,12 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     // Keeps re-arming until the floor has passed and something is pending, so
     // the last delta of a burst is always painted — a dropped tail would leave
     // the transcript a few tokens short until the next event.
+    const token = frameTokenRef.current;
     const tick = (): void => {
+      if (token !== frameTokenRef.current) {
+        frameRef.current = null;
+        return;
+      }
       if (!dirtyRef.current) {
         frameRef.current = null;
         return;
@@ -624,10 +874,15 @@ export function useConversation(sessionPath: string | null): ConversationApi {
    * Fold one session frame into the refs.
    */
   const handleEvent = useCallback(
-    (event: SessionEvent) => {
+    (event: SessionEvent, generation = streamGenerationRef.current) => {
+      if (generation !== streamGenerationRef.current) return;
       switch (event.type) {
         case "agent_start":
           streamingRef.current = true;
+          // End identities are scoped to one agent lifecycle. A later run may
+          // legitimately reuse a provider response id, while duplicate frames
+          // within this run must still be ignored.
+          assistantEndLedgerRef.current.clear();
           // A fresh run: whatever the previous turn ended with is history now.
           retryAttemptRef.current = 0;
           failedAttemptsRef.current = 0;
@@ -665,18 +920,26 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         case "message_start": {
           const message = event.message as AgentMessage | undefined;
           if (message?.role === "assistant") {
-            slotRef.current = { content: [], rawArgs: {} };
+            const identity = message.responseId ?? null;
+            slotRef.current = {
+              content: [],
+              occurrenceId: nextOccurrenceRef.current++,
+              identity: identity as string | null,
+              started: true,
+              rawArgs: {},
+            };
             timingRef.current.stepStart = Date.now();
             timingRef.current.firstTokenAt = null;
           } else if (message?.role === "user") {
-            // pi has taken this message up. Only ever one at a time, and never
-            // more than the transcript holds: a message sent from the terminal
-            // or another tab has no row here to confirm.
+            const occurrence = userOccurrencesRef.current.find(
+              (candidate) => !candidate.started && userMessageMatches(candidate.message, message),
+            ) ?? userOccurrencesRef.current.find((candidate) => !candidate.started);
+            if (occurrence) {
+              occurrence.started = true;
+              occurrence.delivered = true;
+            }
             if (deliveredUsersRef.current < countUserMessages(messagesRef.current)) {
               deliveredUsersRef.current += 1;
-              // The same event consumes the queue dock's oldest row; gating on
-              // the delivery keeps a terminal-side take-up from eating a row
-              // this browser queued.
               queueRef.current = queueRef.current.slice(1);
             }
           }
@@ -686,7 +949,15 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         case "message_update": {
           const delta = event.assistantMessageEvent as AssistantStreamEvent | undefined;
           if (!delta) break;
-          if (!slotRef.current) slotRef.current = { content: [], rawArgs: {} };
+          if (!slotRef.current) {
+            slotRef.current = {
+              content: [],
+              occurrenceId: nextOccurrenceRef.current++,
+              identity: null,
+              started: false,
+              rawArgs: {},
+            };
+          }
           // TTFT runs to the first *non-empty* chunk: `text_start` frames land
           // with nothing in them, and counting one would report a first token
           // the model had not produced yet.
@@ -697,7 +968,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           ) {
             timingRef.current.firstTokenAt = Date.now();
           }
-          applyDelta(slotRef.current, delta);
+          slotRef.current = applyDelta(slotRef.current, delta);
           // One repaint per frame rather than one per token; see `frameRef`.
           schedulePublish();
           return;
@@ -707,8 +978,38 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           const message = event.message as AgentMessage | undefined;
           if (!message) break;
           if (message.role === "assistant") {
-            const hadAssistant = messagesRef.current.some((m) => m.role === "assistant");
-            messagesRef.current = [...messagesRef.current, message];
+            const slot = slotRef.current;
+            const identity = message.responseId
+              ? `assistant:${message.responseId}`
+              : null;
+            // Only an explicit responseId is safe for transport-level duplicate
+            // suppression. Content/timestamp identity cannot distinguish two
+            // legitimate identical assistant occurrences.
+            if (identity !== null && assistantEndLedgerRef.current.has(identity)) break;
+            if (identity !== null) assistantEndLedgerRef.current.add(identity);
+            const history = messagesRef.current;
+            const last = history.at(-1);
+            // A partial stream is not inserted into `messages`, so replacing a
+            // history row is safe only when that row carries the same stable
+            // response identity as the active slot. A prefix alone is not
+            // evidence: a new response can legitimately start with the same
+            // words as the previous assistant turn.
+            const slotCanReplace = slot !== null
+              && slot.started
+              && slot.identity !== null
+              && message.responseId === slot.identity
+              && last?.role === "assistant"
+              && (last as AssistantMessage).responseId === slot.identity
+              && streamContentIsPrefix(slot, message as AssistantMessage);
+            if (
+              slotCanReplace
+              && last?.role === "assistant"
+              && assistantContentIsPrefix(last as AssistantMessage, message as AssistantMessage)
+            ) {
+              messagesRef.current = [...history.slice(0, -1), message];
+            } else {
+              messagesRef.current = [...history, message];
+            }
             slotRef.current = null;
 
             // Close the step here, where the assembled message (and therefore
@@ -729,19 +1030,22 @@ export function useConversation(sessionPath: string | null): ConversationApi {
             }
             timing.stepStart = null;
             timing.firstTokenAt = null;
-
-            // pi writes the JSONL once the first assistant message lands, so
-            // this is the moment the sidebar can finally show the session.
-            if (!hadAssistant && !persistedNotifiedRef.current) {
-              persistedNotifiedRef.current = true;
-              actions.refreshSelectedProjectSessions();
-            }
           } else if (message.role === "user") {
-            // An extension command's own message: the command steered it, so pi
-            // is the only party that wrote a row for it — the composer
-            // deliberately draws none (see `runCommand`).
-            if (adoptUserRef.current) {
+            const occurrence = userOccurrencesRef.current.find(
+              (candidate) => !candidate.ended && candidate.started && userMessageMatches(candidate.message, message),
+            ) ?? userOccurrencesRef.current.find(
+              (candidate) => !candidate.ended && candidate.started,
+            ) ?? userOccurrencesRef.current.find(
+              (candidate) => !candidate.ended && candidate.delivered,
+            );
+            if (occurrence) {
+              occurrence.ended = true;
+            } else if (adoptUserRef.current) {
               adoptUserRef.current = false;
+              messagesRef.current = [...messagesRef.current, message];
+            } else {
+              // Messages written by another tab or the terminal are real
+              // transcript occurrences, not duplicates of a local optimistic row.
               messagesRef.current = [...messagesRef.current, message];
             }
           } else if (message.role === "toolResult" || message.role === "bashExecution") {
@@ -775,8 +1079,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           const id = asString(event.toolCallId);
           const previous = toolsRef.current[id];
           const partial = event.partialResult as { content?: ContentBlock[]; details?: unknown } | undefined;
-          const chunk = partial?.content
-            ? partial.content
+          const content = Array.isArray(partial?.content)
+            ? partial.content.filter(isContentBlock)
+            : null;
+          const chunk = content
+            ? content
                 .map((block) => (block.type === "text" ? (block as TextBlock).text : ""))
                 .join("")
             : "";
@@ -786,7 +1093,7 @@ export function useConversation(sessionPath: string | null): ConversationApi {
               toolName: previous?.toolName ?? asString(event.toolName),
               args: previous?.args,
               output: chunk.length > 0 ? chunk : (previous?.output ?? ""),
-              result: partial?.content ?? previous?.result ?? null,
+              result: content ?? previous?.result ?? null,
               details: partial?.details ?? previous?.details,
               isError: previous?.isError ?? false,
               running: true,
@@ -807,13 +1114,16 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           }
           const previous = toolsRef.current[id];
           const result = event.result as { content?: ContentBlock[]; details?: unknown } | undefined;
+          const content = Array.isArray(result?.content)
+            ? result.content.filter(isContentBlock)
+            : null;
           toolsRef.current = {
             ...toolsRef.current,
             [id]: {
               toolName: previous?.toolName ?? asString(event.toolName),
               args: previous?.args,
               output: previous?.output ?? "",
-              result: result?.content ?? previous?.result ?? null,
+              result: content ?? previous?.result ?? null,
               details: result?.details ?? previous?.details,
               isError: Boolean(event.isError),
               running: false,
@@ -872,25 +1182,31 @@ export function useConversation(sessionPath: string | null): ConversationApi {
 
   const load = useCallback(
     async (path: string) => {
+      const generation = ++loadGenerationRef.current;
       loadingRef.current = true;
       errorRef.current = null;
       publish();
       try {
         const { messages, forkPoints } = await api.getMessages(path);
+        if (generation !== loadGenerationRef.current) return;
         // System messages replay the entire prompt and tool loadout; the UI
         // never shows them and they would dwarf the real conversation.
         const visible = messages.filter((message) => message.role !== "system");
-        messagesRef.current = visible;
+        // A disk read can race live frames. Keep live occurrences that are not
+        // in this snapshot; stable identities consume exactly one matching
+        // history occurrence, so legitimate repeated messages survive.
+        messagesRef.current = mergeHistoryWithLive(visible, messagesRef.current);
+        rebindUserOccurrences(userOccurrencesRef.current, messagesRef.current);
         // Everything in the file is a message pi already took up, so the
         // transcript starts with nothing queued behind it.
-        deliveredUsersRef.current = countUserMessages(visible);
+        deliveredUsersRef.current = countUserMessages(messagesRef.current);
         // The dock rows belonged to the browser that queued them; pi's
         // surviving queue re-reveals itself through deliveries instead.
         queueRef.current = [];
         forkPointsRef.current = forkPoints;
-        persistedNotifiedRef.current = visible.some((message) => message.role === "assistant");
         loadingRef.current = false;
       } catch (err) {
+        if (generation !== loadGenerationRef.current) return;
         errorRef.current = (err as Error).message;
         loadingRef.current = false;
       }
@@ -904,43 +1220,62 @@ export function useConversation(sessionPath: string | null): ConversationApi {
   );
 
   useEffect(() => {
-    messagesRef.current = [];
-    deliveredUsersRef.current = 0;
-    queueRef.current = [];
-    // A command's pending adoption belongs to the stream it was sent on.
-    adoptUserRef.current = false;
-    slotRef.current = null;
-    toolsRef.current = {};
-    streamingRef.current = false;
-    // Timings belong to the stream they were measured on; a new session starts
-    // its own clock rather than inheriting the previous one's speed.
-    timingRef.current = emptyTiming();
-    // A retry belongs to one turn; carrying it into another session would leave
-    // a countdown ticking for something that is no longer happening — and the
-    // failed-attempt count belongs to that turn's transcript row, which only the
-    // session being switched away from can show.
-    retryRef.current = null;
-    retryAttemptRef.current = 0;
-    failedAttemptsRef.current = 0;
-    // A compaction belongs to the session that was running it too: leaving this
-    // set would put the running row under the next session's transcript, where
-    // no `compaction_end` is ever going to arrive to clear it.
-    compactingRef.current = false;
-    persistedNotifiedRef.current = false;
-    // The history below belongs to the previous session until `load` says
-    // otherwise; leaving this set would let a queued prompt skip the wait.
-    setLoadedPath(null);
+    // React StrictMode intentionally runs setup → cleanup → setup once on mount.
+    // The second setup still needs a fresh event subscription, but it must not
+    // clear the transcript or start a duplicate history request. A real session
+    // switch has a different path and therefore takes the full reset path.
+    const sameEffectPath = effectPathRef.current === sessionPath;
+    if (!sameEffectPath) {
+      effectPathRef.current = sessionPath;
+      // Invalidate any history request from the session that just became stale.
+      loadGenerationRef.current += 1;
+      const cached = sessionPath === null ? undefined : sessionCacheRef.current.get(sessionPath);
+      messagesRef.current = cached?.messages ?? [];
+      deliveredUsersRef.current = countUserMessages(messagesRef.current);
+      userOccurrencesRef.current = [];
+      streamGenerationRef.current += 1;
+      assistantEndLedgerRef.current.clear();
+      queueRef.current = [];
+      forkPointsRef.current = cached?.forkPoints ?? [];
+      // A command's pending adoption belongs to the stream it was sent on.
+      adoptUserRef.current = false;
+      slotRef.current = null;
+      toolsRef.current = {};
+      streamingRef.current = false;
+      // Timings belong to the stream they were measured on; a new session starts
+      // its own clock rather than inheriting the previous one's speed.
+      timingRef.current = emptyTiming();
+      // A retry belongs to one turn; carrying it into another session would leave
+      // a countdown ticking for something that is no longer happening — and the
+      // failed-attempt count belongs to that turn's transcript row, which only the
+      // session being switched away from can show.
+      retryRef.current = null;
+      retryAttemptRef.current = 0;
+      failedAttemptsRef.current = 0;
+      // A compaction belongs to the session that was running it too: leaving this
+      // set would put the running row under the next session's transcript, where
+      // no `compaction_end` is ever going to arrive to clear it.
+      compactingRef.current = false;
+      // The history below belongs to the previous session until `load` says
+      // otherwise; leaving this set would let a queued prompt skip the wait.
+      setLoadedPath(null);
+      loadingRef.current = sessionPath !== null;
+      activePathRef.current = sessionPath;
+    }
 
     if (!sessionPath) {
-      loadingRef.current = false;
-      publish();
+      if (!sameEffectPath) {
+        loadingRef.current = false;
+        publish();
+      }
       return;
     }
 
-    void load(sessionPath);
+    if (!sameEffectPath) void load(sessionPath);
+    const eventGeneration = streamGenerationRef.current;
     const unsubscribe = sessionEvents.subscribe((payload) => {
       if (payload.sessionPath !== sessionPath) return;
-      handleEvent(payload.event);
+      handleEvent(payload.event, eventGeneration);
     });
     // A reconnect means the stream may have missed frames that will never be
     // replayed (the server sheds a client that falls too far behind). The file
@@ -952,7 +1287,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     return () => {
       unsubscribe();
       unsubscribeRestored();
-      // A frame queued by this session must not repaint the next one.
+      // A frame queued by this session must not repaint the next one. Bump the
+      // token even when cancellation is unavailable or the callback was already
+      // dequeued by the host.
+      frameTokenRef.current += 1;
+      dirtyRef.current = false;
       if (frameRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
@@ -970,9 +1309,22 @@ export function useConversation(sessionPath: string | null): ConversationApi {
 
       // Show the user's turn immediately; `message_end` for user messages is
       // deliberately ignored above, so this stays the single source.
-      messagesRef.current = [
-        ...messagesRef.current,
-        { role: "user", content: userContent(message, images), timestamp: Date.now() },
+      const sendGeneration = loadGenerationRef.current;
+      const optimisticMessage: AgentMessage = {
+        role: "user",
+        content: userContent(message, images),
+        timestamp: Date.now(),
+      };
+      messagesRef.current = [...messagesRef.current, optimisticMessage];
+      userOccurrencesRef.current = [
+        ...userOccurrencesRef.current,
+        {
+          id: nextOccurrenceRef.current++,
+          message: optimisticMessage,
+          delivered: mode === "prompt",
+          started: false,
+          ended: false,
+        },
       ];
       if (mode === "prompt") streamingRef.current = true;
       // A prompt is sent as a prompt, so pi has taken it up the moment the call
@@ -990,6 +1342,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
           ? null
           : { id: crypto.randomUUID(), text: message, images, mode };
       if (queueEntry) queueRef.current = [...queueRef.current, queueEntry];
+      // Stamped with the optimistic turn, so the transcript can put the reader
+      // back on the floor on the same frame that turn is painted — see
+      // `ConversationView.sentAt`. A refused send keeps the stamp: the reader
+      // is already at the bottom, and taking it back would move them again.
+      sentAtRef.current = Date.now();
       publish();
 
       try {
@@ -998,8 +1355,18 @@ export function useConversation(sessionPath: string | null): ConversationApi {
         else await api.prompt(sessionPath, message, images);
         return true;
       } catch (err) {
-        // Roll the optimistic turn back so the failure is visible, not implied.
-        messagesRef.current = messagesRef.current.slice(0, -1);
+        // A late response from a previous session must not mutate the current
+        // session's transcript or counters.
+        if (sendGeneration !== loadGenerationRef.current) return false;
+        // Roll back this send only. Another concurrent send or stream event may
+        // have appended after it, so removing the last row is not safe.
+        const optimisticIndex = messagesRef.current.indexOf(optimisticMessage);
+        if (optimisticIndex >= 0) {
+          messagesRef.current = messagesRef.current.filter((_, index) => index !== optimisticIndex);
+        }
+        userOccurrencesRef.current = userOccurrencesRef.current.filter(
+          (occurrence) => occurrence.message !== optimisticMessage,
+        );
         if (mode === "prompt") deliveredUsersRef.current -= 1;
         if (queueEntry) {
           queueRef.current = queueRef.current.filter((entry) => entry.id !== queueEntry.id);
@@ -1092,6 +1459,11 @@ export function useConversation(sessionPath: string | null): ConversationApi {
       // Armed before the request, because pi may record the command's message
       // and emit it before the RPC reply lands.
       adoptUserRef.current = true;
+      // A command is a message too, so it goes through the same stamp: the row
+      // pi records for it arrives on the stream a beat later, and reading it
+      // needs the transcript back at the tail (see `ConversationView.sentAt`).
+      sentAtRef.current = Date.now();
+      publish();
       try {
         await api.prompt(sessionPath, message, images);
         return true;
@@ -1153,13 +1525,25 @@ export function useConversation(sessionPath: string | null): ConversationApi {
     [sessionPath],
   );
 
+  // During a switch the hook still holds the previous session's React state until
+  // the effect runs. Never let that state flash under the newly selected session:
+  // use its warm snapshot, or a clean loading view when it has not been opened.
+  const cached = sessionPath !== null && viewPathRef.current !== sessionPath
+    ? sessionCacheRef.current.get(sessionPath)
+    : undefined;
+  const visibleView = viewPathRef.current === sessionPath
+    ? view
+    : cached !== undefined
+      ? warmConversationView(cached)
+      : emptyView;
+
   // `view.isStreaming` is this hook's own view of the run; `running` is the
   // app-wide one. Either being true means the turn is still moving, so the two
   // are unioned: the ref knows about a run whose start frame this subscription
   // missed, and the mark knows about one that started before this hook mounted.
   return {
-    ...view,
-    isStreaming: view.isStreaming || running,
+    ...visibleView,
+    isStreaming: visibleView.isStreaming || running,
     send,
     runCommand,
     abort,

@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import { IDLE_TIMEOUT_MS, MAX_ACTIVE_SESSIONS, SESSION_DIR_OVERRIDE } from "./config.ts";
 import { DEFAULT_PRESET_ID, presetSpawnArgs } from "./presets.ts";
+import { LiveImageStore, type SessionImage } from "./session-images.ts";
 import { readStore } from "./store.ts";
 
 /**
@@ -67,6 +68,17 @@ export interface SessionHandle {
   client: RpcClient;
   startedAt: number;
   lastActivityAt: number;
+  /**
+   * pi's agent loop is between `agent_start` and `agent_settled`.
+   *
+   * Memory is authoritative while this is set: pi appends each committed entry
+   * to the session file as it lands, so the file is current again the moment the
+   * run ends — but the assistant message still streaming has no file line yet,
+   * and `message_update` carries deltas rather than a snapshot, so a reader that
+   * missed the start of it could never assemble the text. See the `/messages`
+   * route, which is the only reason this flag exists.
+   */
+  running: boolean;
   /** Detaches the RpcClient event subscription. */
   unsubscribe: () => void;
   /** Set when an RPC call failed; the handle is replaced on next open. */
@@ -85,6 +97,12 @@ export type SessionClosedListener = (handle: SessionHandle, reason: string) => v
 /** One writer per session file, enforced in-process. */
 class SessionRegistry {
   private readonly handles = new Map<string, SessionHandle>();
+  /**
+   * Live transcripts' images, keyed exactly like the handles they came from and
+   * dropped with them: the bytes are pi's memory, so they must not outlive the
+   * process that could serve them. See `LiveImageStore`.
+   */
+  private readonly liveImages = new Map<string, LiveImageStore>();
   private readonly pending = new Map<string, Promise<SessionHandle>>();
   /** One in-flight prewarm per project path and preset. */
   private readonly prewarming = new Map<string, Promise<SessionHandle | null>>();
@@ -339,6 +357,31 @@ class SessionRegistry {
     if (handle) handle.dead = true;
   }
 
+  /**
+   * Name the images of one live transcript, so its response can hand out URLs
+   * instead of shipping every screenshot inline. Answers the version those URLs
+   * carry.
+   */
+  rememberLiveTranscript(sessionPath: string, images: SessionImage[]): string {
+    const key = resolve(sessionPath);
+    let store = this.liveImages.get(key);
+    if (!store) {
+      store = new LiveImageStore();
+      this.liveImages.set(key, store);
+    }
+    return store.accept(images);
+  }
+
+  /**
+   * The bytes one live transcript's image URL names, or null when that version
+   * is not the current one — the transcript moved on, or the process is gone.
+   * The endpoint answers 404 for null, which the reader heals on its next
+   * transcript read.
+   */
+  readLiveImage(sessionPath: string, version: string, index: number): SessionImage | null {
+    return this.liveImages.get(resolve(sessionPath))?.read(version, index) ?? null;
+  }
+
   async close(sessionPath: string, reason = "closed"): Promise<void> {
     const key = resolve(sessionPath);
     // A move/delete must also retire an open already in flight, not just the
@@ -348,6 +391,7 @@ class SessionRegistry {
     const handle = this.handles.get(key);
     if (!handle) return;
     this.handles.delete(key);
+    this.liveImages.delete(key);
     handle.dead = true;
     handle.unsubscribe();
     try {
@@ -435,12 +479,17 @@ class SessionRegistry {
       client,
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
+      running: false,
       unsubscribe: () => undefined,
       dead: false,
       prewarmed,
     };
     const unsubscribe = client.onEvent((event) => {
       handle.lastActivityAt = Date.now();
+      // The two boundaries that say whether memory is ahead of the session file.
+      // Everything in between is a token delta and leaves the flag alone.
+      if (event.type === "agent_start") handle.running = true;
+      else if (event.type === "agent_settled") handle.running = false;
       for (const listener of this.eventListeners) listener(handle, event);
     });
     handle.unsubscribe = unsubscribe;

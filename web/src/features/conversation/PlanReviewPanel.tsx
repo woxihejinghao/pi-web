@@ -42,10 +42,6 @@ export interface PlanReviewPanelProps {
   embedded?: boolean;
   /** Whether Escape dismisses the review; a live dialog has a process behind it. */
   cancellable?: boolean;
-  /** Shown above the card when the request belongs to a session that is not open. */
-  sessionLabel?: string;
-  /** Jumps to that session; offered only alongside `sessionLabel`. */
-  onOpenSession?: () => void;
   /** Show the plan in the right sidebar. Absent when there is no sidebar to address. */
   onOpenPlan?: (() => void) | undefined;
   /** The change request being written, and where it is kept. */
@@ -65,8 +61,6 @@ export function PlanReviewPanel({
   error = null,
   embedded = false,
   cancellable = false,
-  sessionLabel,
-  onOpenSession,
   onOpenPlan,
   changes,
   onChange,
@@ -130,16 +124,6 @@ export function PlanReviewPanel({
 
   return (
     <div className={clsx(card.wrap, embedded && styles.embeddedWrap)}>
-      {sessionLabel ? (
-        <div className={clsx(card.eyebrow, styles.eyebrow)}>
-          <span className={card.eyebrowText}>{sessionLabel}</span>
-          {onOpenSession ? (
-            <button type="button" className={card.eyebrowAction} onClick={onOpenSession}>
-              {t("question.goTo")}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       <section
         ref={cardRef}
         className={card.card}

@@ -16,7 +16,7 @@ import { MINIMAL_SYSTEM_PROMPT } from "./presets.ts";
 import { SessionRegistry } from "./registry.ts";
 import { createRequestHandler } from "./routes.ts";
 import { sessionDirFor } from "./session-path.ts";
-import type { CreateTerminalInput, TerminalHost } from "./terminal.ts";
+import type { CreateTerminalInput, TerminalHost, TerminalInfo } from "./terminal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB_CLI = join(HERE, "testing", "stub-pi.mjs");
@@ -65,6 +65,12 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // The stub reads these at spawn, so a test that set one must not leak it into
+  // the next process — a stale transcript, or a run left in flight, would be a
+  // confusing failure somewhere else.
+  delete process.env.STUB_MESSAGES;
+  delete process.env.STUB_MESSAGES_FILE;
+  delete process.env.STUB_KEEP_RUNNING;
   await registry.closeAll("test-cleanup");
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
@@ -93,6 +99,35 @@ async function createProject(name = "demo-project"): Promise<{ id: string; path:
   expect(res.status).toBe(201);
   return res.body;
 }
+
+describe("request limits", () => {
+  it("rejects a declared body larger than the configured limit before parsing", async () => {
+    const tinyRegistry = new SessionRegistry({ cliPath: STUB_CLI });
+    const tinyHandler = createRequestHandler({
+      registry: tinyRegistry,
+      bus: new EventBus(),
+      sessionRoot,
+      requestBodyMaxBytes: 4,
+    });
+    const tinyServer = createServer((req, res) => {
+      void tinyHandler(req, res);
+    });
+    await new Promise<void>((resolve) => tinyServer.listen(0, "127.0.0.1", resolve));
+    const tinyBase = `http://127.0.0.1:${(tinyServer.address() as AddressInfo).port}`;
+    try {
+      const res = await fetch(`${tinyBase}/api/projects`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: projectRoot }),
+      });
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({ error: "request body too large" });
+    } finally {
+      await tinyRegistry.closeAll("test-cleanup");
+      await new Promise<void>((resolve) => tinyServer.close(() => resolve()));
+    }
+  });
+});
 
 describe("health", () => {
   it("reports ok with the active session count", async () => {
@@ -240,6 +275,70 @@ describe("workspace files api", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(res.body.items).toHaveLength(1);
     expect(res.body.truncated).toBe(true);
+  });
+});
+
+describe("external session-referenced image api", () => {
+  async function writeImageSession(sessionName: string, projectPath: string, reference: string): Promise<string> {
+    const sessionPath = join(sessionRoot, `--${sessionName}--`, "session.jsonl");
+    await mkdir(dirname(sessionPath), { recursive: true });
+    await writeFile(sessionPath, [
+      { type: "session", version: 3, id: sessionName, timestamp: "2026-01-01T00:00:00.000Z", cwd: projectPath },
+      { type: "message", id: "m1", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: reference } },
+    ].map((entry) => `${JSON.stringify(entry)}\n`).join(""), "utf8");
+    return sessionPath;
+  }
+
+  it("serves an image named in a bash command and markdown link", async () => {
+    const project = await createProject("external-image");
+    const imageDir = await mkdtemp(join(tmpdir(), "piws-external-image-"));
+    const imagePath = join(imageDir, "fin_archive.png");
+    await writeFile(imagePath, "PNG bytes", "utf8");
+    const sessionPath = await writeImageSession("external-image", project.path, `bash command: open ${imagePath}`);
+    const encoded = encodeURIComponent(imagePath);
+    const session = encodeURIComponent(sessionPath);
+    const file = await api(`/api/projects/${project.id}/file?path=${encoded}&session=${session}`);
+    expect(file.status).toBe(200);
+    expect(file.body).toMatchObject({ kind: "image", name: "fin_archive.png" });
+    const markdownSessionPath = await writeImageSession("external-markdown", project.path, `![preview](${imagePath})`);
+    const markdownSession = encodeURIComponent(markdownSessionPath);
+    const markdown = await api(`/api/projects/${project.id}/file?path=${encoded}&session=${markdownSession}`);
+    expect(markdown.status).toBe(200);
+    const raw = await fetch(`${baseUrl}/api/projects/${project.id}/raw?path=${encoded}&session=${session}`);
+    expect(raw.status).toBe(200);
+    expect(Buffer.from(await raw.arrayBuffer()).toString()).toBe("PNG bytes");
+  });
+
+  it("rejects unreferenced, prefixed, missing-session, and wrong-project requests", async () => {
+    const project = await createProject("external-reject");
+    const other = await createProject("external-other");
+    const imageDir = await mkdtemp(join(tmpdir(), "piws-external-reject-"));
+    const imagePath = join(imageDir, "unreferenced.png");
+    await writeFile(imagePath, "PNG bytes", "utf8");
+    const sessionPath = await writeImageSession("external-reject", project.path, `${imagePath}.bak`);
+    const path = encodeURIComponent(imagePath);
+    const session = encodeURIComponent(sessionPath);
+    expect((await api(`/api/projects/${project.id}/file?path=${path}&session=${session}`)).status).toBe(403);
+    expect((await api(`/api/projects/${project.id}/file?path=${path}`)).status).toBe(403);
+    expect((await api(`/api/projects/${other.id}/file?path=${path}&session=${session}`)).status).toBe(403);
+  });
+
+  it("rejects a symlink that escapes the referenced image directory", async () => {
+    const project = await createProject("external-symlink");
+    const imageDir = await mkdtemp(join(tmpdir(), "piws-external-symlink-"));
+    const outsideDir = join(imageDir, "outside");
+    const linkDir = join(imageDir, "link");
+    await mkdir(outsideDir);
+    await mkdir(linkDir);
+    const outside = join(outsideDir, "secret.txt");
+    const link = join(linkDir, "escape.png");
+    await writeFile(outside, "secret", "utf8");
+    await rm(link, { force: true });
+    const { symlink } = await import("node:fs/promises");
+    await symlink(outside, link);
+    const sessionPath = await writeImageSession("external-symlink", project.path, link);
+    const response = await api(`/api/projects/${project.id}/file?path=${encodeURIComponent(link)}&session=${encodeURIComponent(sessionPath)}`);
+    expect(response.status).toBe(403);
   });
 });
 
@@ -533,6 +632,162 @@ describe("sessions api", () => {
     // An ordinal is only meaningful for the file version it was named with.
     const stale = await fetch(`${baseUrl}${imageUrl.replace(/v=.*$/, "v=0")}`);
     expect(stale.status).toBe(404);
+  });
+
+  it("addresses a live transcript's pictures too, out of the handle", async () => {
+    // A session mid-turn answers from pi's memory — and *that* is the switch the
+    // reader makes over and over. It used to come back with every screenshot the
+    // process still remembered: tens of megabytes parsed on the main thread,
+    // which is the 正在载入会话… the user hits when they leave a session they just
+    // prompted and come back. The file is not where those bytes are, so the
+    // handle keeps the copy the URL addresses.
+    const sessionPath = join(sessionRoot, "--live-images--", "live.jsonl");
+    await mkdir(dirname(sessionPath), { recursive: true });
+    await writeFile(
+      sessionPath,
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "live-images",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: projectRoot,
+      })}\n`,
+      "utf8",
+    );
+
+    // Deliberately bigger than any assertion below would notice if it leaked:
+    // the response has to be the transcript, not the picture it mentions.
+    const data = Buffer.alloc(150_000, 7).toString("base64");
+    // Through a file rather than STUB_MESSAGES: this payload is ~200 KB of base64,
+    // and Linux refuses to exec with any single environment string over 128 KiB
+    // (E2BIG), so as an env var it only ever opened on macOS.
+    const messagesFile = join(sessionRoot, "--live-images--", "stub-messages.json");
+    await writeFile(
+      messagesFile,
+      JSON.stringify([
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "看看" },
+            { type: "image", data: "dXNlcg==", mimeType: "image/png" },
+          ],
+          timestamp: 0,
+        },
+        {
+          role: "toolResult",
+          toolCallId: "c1",
+          toolName: "read",
+          content: [{ type: "image", data, mimeType: "image/png" }],
+          isError: false,
+          timestamp: 1,
+        },
+      ]),
+      "utf8",
+    );
+    process.env.STUB_MESSAGES_FILE = messagesFile;
+
+    // Prompt it and leave the turn in flight: it stays resident for ten minutes
+    // (registry.ts) *and* its memory is still ahead of the file, so the switch
+    // back has to be answered by the process — the file does not have these
+    // turns at all.
+    process.env.STUB_KEEP_RUNNING = "1";
+    const state = await api(`/api/sessions/${encodeURIComponent(sessionPath)}/state`);
+    expect(state.status).toBe(200);
+    expect(
+      (await post(`/api/sessions/${encodeURIComponent(sessionPath)}/prompt`, { message: "看看" }))
+        .status,
+    ).toBe(200);
+
+    const url = `/api/sessions/${encodeURIComponent(sessionPath)}/messages`;
+    const text = await (await fetch(baseUrl + url)).text();
+    expect(text).not.toContain(data);
+
+    const body = JSON.parse(text) as {
+      messages: { role: string; content: Record<string, unknown>[] }[];
+    };
+    const userImage = body.messages.find((entry) => entry.role === "user")!.content[1]!;
+    expect(userImage).toMatchObject({ type: "image", data: "dXNlcg==", mimeType: "image/png" });
+
+    const toolImage = body.messages.find((entry) => entry.role === "toolResult")!.content[0]!;
+    expect(toolImage.data).toBeUndefined();
+    expect(toolImage).toMatchObject({ type: "image", mimeType: "image/png" });
+    const imageUrl = toolImage.url as string;
+    // Same ordinal space as the file's, but a version that names memory.
+    expect(imageUrl).toContain("/image/1?v=live-");
+
+    const image = await fetch(baseUrl + imageUrl);
+    expect(image.status).toBe(200);
+    expect(Buffer.from(await image.arrayBuffer()).toString("base64")).toBe(data);
+
+    // An unchanged transcript keeps its version, so coming back is a cache hit
+    // rather than a re-download of every screenshot.
+    const again = await api<{ messages: { role: string; content: Record<string, unknown>[] }[] }>(url);
+    const againUrl = again.body.messages.find((entry) => entry.role === "toolResult")!.content[0]!
+      .url;
+    expect(againUrl).toBe(imageUrl);
+
+    // The copy goes when the process does: a URL naming a transcript nobody holds
+    // any more must 404 rather than answer with whatever is at that ordinal now.
+    await post(`/api/sessions/${encodeURIComponent(sessionPath)}/stop`);
+    expect((await fetch(baseUrl + imageUrl)).status).toBe(404);
+  });
+
+  it("reads a settled session's file even while its process is resident", async () => {
+    // A process that is not working is no longer asked: pi appends every
+    // committed entry to the session file as it lands, so the file already holds
+    // the same transcript — and hauling it back out of pi means pushing every
+    // picture the process remembers over stdio, which is what made returning to
+    // a session that has settled crawl.
+    const sessionPath = join(sessionRoot, "--settled--", "settled.jsonl");
+    await mkdir(dirname(sessionPath), { recursive: true });
+    await writeFile(
+      sessionPath,
+      [
+        {
+          type: "session",
+          version: 3,
+          id: "settled-session",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          cwd: projectRoot,
+        },
+        {
+          type: "message",
+          id: "u1",
+          parentId: null,
+          timestamp: "2026-01-01T00:00:01.000Z",
+          message: { role: "user", content: [{ type: "text", text: "文件的" }] },
+        },
+      ]
+        .map((entry) => `${JSON.stringify(entry)}\n`)
+        .join(""),
+      "utf8",
+    );
+    // What only the process knows: a turn the file has never seen.
+    process.env.STUB_MESSAGES = JSON.stringify([
+      { role: "user", content: [{ type: "text", text: "内存的" }], timestamp: 0 },
+    ]);
+    process.env.STUB_KEEP_RUNNING = "1";
+
+    const url = `/api/sessions/${encodeURIComponent(sessionPath)}/messages`;
+    expect((await api(`/api/sessions/${encodeURIComponent(sessionPath)}/state`)).status).toBe(200);
+
+    const settled = await api<{ messages: unknown }>(url);
+    expect(JSON.stringify(settled.body.messages)).toContain("文件的");
+    expect(JSON.stringify(settled.body.messages)).not.toContain("内存的");
+
+    // The moment a turn starts, memory is ahead of the file again and the
+    // process is the only one that can answer.
+    await post(`/api/sessions/${encodeURIComponent(sessionPath)}/prompt`, { message: "继续" });
+    const running = await api<{ messages: unknown }>(url);
+    expect(JSON.stringify(running.body.messages)).toContain("内存的");
+
+    // …and once the run ends, the file is current again, so the next switch is
+    // cheap. A flag that only ever went up would keep every later read — and
+    // every screenshot in memory — on the slow path.
+    await post(`/api/sessions/${encodeURIComponent(sessionPath)}/abort`);
+    const ended = await api<{ messages: unknown }>(url);
+    expect(JSON.stringify(ended.body.messages)).toContain("文件的");
+    expect(JSON.stringify(ended.body.messages)).not.toContain("内存的");
   });
 
   it("404s an unknown project id", async () => {
@@ -2670,26 +2925,50 @@ describe("terminal api", () => {
    * `terminal.test.ts`.
    */
   const opened: CreateTerminalInput[] = [];
+  const shell = { path: "/bin/sh", name: "sh", args: ["-i"] };
+  const infoFor = (id: string, input: CreateTerminalInput): TerminalInfo => ({
+    id,
+    sessionPath: input.sessionPath,
+    title: shell.name,
+    // The host decides this; the route does not carry a choice in.
+    shell,
+    cwd: input.cwd,
+    cols: input.cols,
+    rows: input.rows,
+    state: "running",
+    exitCode: null,
+  });
   const host: TerminalHost = {
     support: () => ({ available: true }),
+    shells: () => [shell],
+    environment: () => ({
+      cwd: "",
+      maxCols: 500,
+      maxRows: 200,
+      maxInputBytes: 64 * 1024,
+      scrollback: 1000,
+    }),
     list: () => [],
     scrollbackOf: () => null,
     create: (input) => {
       opened.push(input);
-      return {
-        id: `t-${String(opened.length)}`,
-        sessionPath: input.sessionPath,
-        cols: input.cols,
-        rows: input.rows,
-        // The host decides this; the route does not carry a choice in.
-        shell: "/bin/sh",
-        exitCode: null,
-      };
+      return infoFor(`t-${String(opened.length)}`, input);
     },
+    attach: async (id) => ({
+      info: infoFor(id, opened.at(-1)!),
+      screen: "",
+      sequence: 0,
+    }),
+    detach: () => undefined,
+    snapshot: async (id) => ({ info: infoFor(id, opened.at(-1)!), screen: "", sequence: 0 }),
     write: () => undefined,
     resize: () => undefined,
+    rename: (id, title) => ({ ...infoFor(id, opened.at(-1)!), title }),
+    heartbeat: () => undefined,
     close: () => true,
     closeForSession: () => undefined,
+    cleanupFailures: () => [],
+    retryCleanup: () => false,
   };
 
   let terminalServer: Server;
@@ -2723,10 +3002,40 @@ describe("terminal api", () => {
     const res = await fetch(`${terminalUrl}/api/terminal?sessionPath=`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      // Nothing but availability: there is no list to pick from any more.
       support: { available: true },
+      environment: {
+        cwd: "",
+        maxCols: 500,
+        maxRows: 200,
+        maxInputBytes: 64 * 1024,
+        scrollback: 1000,
+      },
       terminals: [],
     });
+  });
+
+  it("lists installed shells with the execution default called out", async () => {
+    const res = await fetch(`${terminalUrl}/api/terminal/shells`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      shells: [{ path: "/bin/sh", name: "sh", args: ["-i"] }],
+      default: { path: "/bin/sh", name: "sh", args: ["-i"] },
+    });
+  });
+
+  it("passes a client-minted id and shell choice through to the host", async () => {
+    const project = await createProject("terminal-choice");
+    const res = await openTerminal({
+      id: "tab-1",
+      sessionPath: "draft:abc",
+      cwd: project.path,
+      cols: 90,
+      rows: 28,
+      shellPath: "/bin/sh",
+    });
+    expect(res.status).toBe(201);
+    expect(opened[0]?.id).toBe("tab-1");
+    expect(opened[0]?.shellPath).toBe("/bin/sh");
   });
 
   it("runs a draft session's shell in the workspace it was given", async () => {

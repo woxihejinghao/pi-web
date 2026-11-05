@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AskUserQuestionItem, ExtensionUiRequest } from "../../lib/types.ts";
+import type { AskUserQuestionItem, ExtensionUiRequest, PendingUiDialog } from "../../lib/types.ts";
 import {
   CONFIRM_NO,
   CONFIRM_YES,
@@ -13,6 +13,7 @@ import {
   initialText,
   isTextRequest,
   parseRecommendedLabel,
+  pendingUiForSession,
   questionOptions,
   secondsLeft,
   toggleAskUserSelection,
@@ -242,5 +243,41 @@ describe("askUserAnswerPayload", () => {
         { id: "tags", selected: ["vector"], custom: "and pgvector" },
       ],
     });
+  });
+});
+
+describe("pendingUiForSession", () => {
+  const dialog = (sessionPath: string, id = "ui_1"): PendingUiDialog => ({
+    sessionPath,
+    request: request({ id, method: "confirm" }),
+  });
+
+  it("takes the open session's own dialog", () => {
+    const mine = dialog("/work/a.jsonl", "ui_mine");
+    expect(pendingUiForSession([dialog("/work/b.jsonl"), mine], "/work/a.jsonl")).toBe(mine);
+  });
+
+  it("leaves another session's dialog undrawn", () => {
+    // Its process is blocked too, but the answer is not this reader's to give:
+    // the sidebar row for that session carries the waiting mark instead.
+    expect(pendingUiForSession([dialog("/work/b.jsonl")], "/work/a.jsonl")).toBeNull();
+  });
+
+  it("draws no dialog addressed elsewhere while no session is open", () => {
+    expect(pendingUiForSession([dialog("/work/b.jsonl")], null)).toBeNull();
+    expect(pendingUiForSession([], null)).toBeNull();
+  });
+
+  it("gives an unaddressed dialog to the seat that is becoming a session", () => {
+    // pi publishes the request before it has named the session file, so an empty
+    // address means "still being created" — and the draft on screen, like the
+    // hero whose next message creates one, is the seat it was asked from. That
+    // hero case is the prewarm process's first question (see design-notes).
+    const unaddressed = dialog("");
+    expect(pendingUiForSession([dialog("/work/b.jsonl"), unaddressed], null)).toBe(unaddressed);
+  });
+
+  it("keeps an unaddressed dialog off an open session", () => {
+    expect(pendingUiForSession([dialog("")], "/work/a.jsonl")).toBeNull();
   });
 });

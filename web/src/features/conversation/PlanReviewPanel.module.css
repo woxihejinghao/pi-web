@@ -3,7 +3,7 @@
  *
  * It takes over the composer seat the way the question card does and reuses
  * that card's shell (`QuestionCard.module.css`), but it draws none of the ask
- * card's parts: no eyebrow, no pager, no skip, no submit. A submitted plan is
+ * card's parts: no pager, no skip, no submit. A submitted plan is
  * one decision with two verdicts, and every one of those controls would be
  * either meaningless here or a second way to answer the same thing — which is
  * why dsh gives the review a card of its own instead of a question to fill in.
@@ -65,18 +65,6 @@
 /* dsh's chevron points right; this project's icon set has the disclosure one. */
 .openChevron {
   transform: rotate(-90deg);
-}
-
-/*
- * The session line sits above the card but on the card's own axis: it describes
- * the request, not the document being reviewed. 780px is the card shell's own
- * width (`QuestionCard.module.css`), repeated here because this line lives
- * outside that shell.
- */
-.eyebrow {
-  max-width: 780px;
-  margin: 0 auto 4px;
-  padding: 0 2px;
 }
 
 .summary {

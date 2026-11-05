@@ -1,4 +1,5 @@
 import type { AgentMessage, AssistantMessage, TextBlock, UserMessage } from "../../lib/types.ts";
+import { isContentBlock } from "../../lib/types.ts";
 import { textFromContent } from "./useConversation.ts";
 
 /**
@@ -52,6 +53,7 @@ export interface RailTurn {
 function assistantText(message: AssistantMessage): string {
   const content = message.content ?? [];
   return content
+    .filter(isContentBlock)
     .filter((block) => block.type === "text")
     .map((block) => (block as TextBlock).text)
     .join("");

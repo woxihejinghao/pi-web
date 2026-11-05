@@ -251,6 +251,30 @@ async function resolveInsideProject(
   return { target, relative: segments.join("/") };
 }
 
+/**
+ * Resolve one existing file inside the project to its absolute path on disk.
+ *
+ * Exported for the native opener, which hands the path to the operating system
+ * and lets *that* reach the file: the absolute path has to be the canonical one
+ * this module already checked, resolved by the same code and refused by the
+ * same rules, rather than a second opinion about where a path points.
+ */
+export async function resolveWorkspaceFile(
+  root: string,
+  relative: string,
+): Promise<{ absolutePath: string; relativePath: string; name: string }> {
+  if (typeof relative !== "string" || relative.length === 0) {
+    throw badRequest("path is required");
+  }
+  const { target, relative: normalized } = await resolveInsideProject(root, relative);
+
+  const info = await stat(target);
+  if (info.isDirectory()) throw badRequest(`这是一个目录：${normalized}`);
+  if (!info.isFile()) throw badRequest(`不是一个普通文件：${normalized}`);
+
+  return { absolutePath: target, relativePath: normalized, name: basename(normalized) };
+}
+
 /** The entry type a dirent describes, following a symlink one level. */
 async function entryType(
   absolutePath: string,

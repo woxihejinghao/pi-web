@@ -5,6 +5,9 @@ import type { SessionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openSessionForRead, resetSessionOpenCache } from "./session-open.ts";
 import {
+  collectSessionImages,
+  isLiveImageVersion,
+  LiveImageStore,
   readSessionImage,
   sessionImageUrl,
   sessionImageVersion,
@@ -147,5 +150,109 @@ describe("readSessionImage", () => {
     // The URL says position 0; the endpoint must resolve it to the same block.
     expect(readSessionImage(path, 0)).toEqual({ mimeType: "image/png", data: "VE9PTA==" });
     expect(openSessionForRead(path)).toBe(openSessionForRead(path));
+  });
+});
+
+describe("collectSessionImages", () => {
+  it("collects every image, in the ordinal space the rewrite numbers", () => {
+    // A live transcript's bytes are handed to the store as one flat list, so this
+    // walk and the rewrite have to agree on where each image sits — including the
+    // user message's, which the rewrite counts but leaves inline.
+    const messages = asMessages([
+      user([{ type: "image", data: "USER", mimeType: "image/png" }]),
+      user("plain"),
+      toolResult([
+        { type: "text", text: "shot" },
+        { type: "image", data: "TOOL", mimeType: "image/jpeg" },
+      ]),
+    ]);
+
+    expect(collectSessionImages(messages)).toEqual([
+      { mimeType: "image/png", data: "USER" },
+      { mimeType: "image/jpeg", data: "TOOL" },
+    ]);
+  });
+
+  it("puts the image a URL names at the index that URL carries", () => {
+    const messages = asMessages([
+      user([{ type: "image", data: "USER", mimeType: "image/png" }]),
+      toolResult([{ type: "image", data: "TOOL", mimeType: "image/jpeg" }]),
+    ]);
+    const images = collectSessionImages(messages);
+    const rewritten = withToolResultImageUrls(messages, "/s/a.jsonl", "7");
+    const url = (contentOf(rewritten[1]!)[0] as { url: string }).url;
+
+    expect(url).toContain("/image/1?");
+    expect(images[1]).toEqual({ mimeType: "image/jpeg", data: "TOOL" });
+  });
+
+  it("finds nothing in a transcript without pictures", () => {
+    expect(collectSessionImages(asMessages([user("hello")]))).toEqual([]);
+  });
+});
+
+describe("LiveImageStore", () => {
+  const shot = (data: string, mimeType = "image/png"): { mimeType: string; data: string } => ({
+    mimeType,
+    data,
+  });
+
+  it("mints a version a file's version could never be mistaken for", () => {
+    const version = new LiveImageStore().accept([shot("A")]);
+
+    // The image route tells the two address spaces apart by exactly this: a file
+    // version is a decimal nanosecond stamp, so the prefix is unambiguous.
+    expect(isLiveImageVersion(version)).toBe(true);
+    expect(isLiveImageVersion("1760000000000000000")).toBe(false);
+  });
+
+  it("resolves the ordinals its version was minted for", () => {
+    const store = new LiveImageStore();
+    const images = [shot("A"), shot("B", "image/jpeg")];
+    const version = store.accept(images);
+
+    expect(store.read(version, 0)).toEqual(images[0]);
+    expect(store.read(version, 1)).toEqual(images[1]);
+    expect(store.read(version, 2)).toBeNull();
+    expect(store.read("live-someone-else-1", 0)).toBeNull();
+  });
+
+  it("keeps its version while the transcript is unchanged", () => {
+    // Returning to a session is answered from the browser's cache only if the
+    // version did not move — and a fresh read of pi's memory yields equal but
+    // distinct objects, which is what the comparison has to see through.
+    const store = new LiveImageStore();
+    const first = store.accept([shot("A")]);
+    expect(store.accept([shot("A")])).toBe(first);
+  });
+
+  it("retires a version as soon as the bytes behind it change", () => {
+    // Reusing a version for different bytes is the one thing this must never do:
+    // the browser would keep drawing the old screenshot.
+    const store = new LiveImageStore();
+    const before = store.accept([shot("A")]);
+    const after = store.accept([shot("A"), shot("B")]);
+
+    expect(after).not.toBe(before);
+    expect(store.read(before, 0)).toBeNull();
+    expect(store.read(after, 1)).toEqual(shot("B"));
+  });
+
+  it("notices a changed payload at the same position and length", () => {
+    const store = new LiveImageStore();
+    const before = store.accept([shot("AAA")]);
+    const after = store.accept([shot("BBB")]);
+
+    expect(after).not.toBe(before);
+    expect(store.read(before, 0)).toBeNull();
+    expect(store.read(after, 0)).toEqual(shot("BBB"));
+  });
+
+  it("never hands one version to two transcripts", () => {
+    // Two sessions can hold the same picture at the same ordinal, and a URL only
+    // ever names one transcript — so the version has to be minted per store.
+    const first = new LiveImageStore();
+    const second = new LiveImageStore();
+    expect(second.accept([shot("A")])).not.toBe(first.accept([shot("A")]));
   });
 });

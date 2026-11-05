@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import clsx from "clsx";
 import { ConversationPane } from "../features/conversation/ConversationPane.tsx";
+import { pendingUiForSession } from "../features/conversation/question-model.ts";
 import { Rightbar } from "../features/rightbar/Rightbar.tsx";
 import { rightbarCommands } from "../features/rightbar/shortcuts.ts";
 import { SettingsPage } from "../features/settings/SettingsPage.tsx";
@@ -8,7 +9,7 @@ import { Sidebar } from "./Sidebar.tsx";
 import { layoutActions, layoutStore, sidebarGeometry } from "./layout-state.ts";
 import { useFrameWidth } from "./use-frame-width.ts";
 import { useKeyboardInset } from "./use-keyboard-inset.ts";
-import { actions, appStore, useT } from "../lib/app-state.ts";
+import { actions, appStore, isDraftSession, useT } from "../lib/app-state.ts";
 import { useShortcuts } from "../lib/shortcuts/use-shortcuts.ts";
 import { setEventSession } from "../lib/sse.ts";
 import { useStore } from "../lib/store.ts";
@@ -72,6 +73,15 @@ export function AppLayout() {
   useKeyboardInset();
 
   const sidebar = sidebarGeometry(layout);
+
+  // Whether a dialog holds the composer seat right now, asked with the pane's
+  // own rule — a dialog belonging to another session is not drawn over there, so
+  // it must not lift the notice either, or the notice would float up with no
+  // card under it to clear.
+  const selected = state.selectedSessionPath;
+  const draft = isDraftSession(selected);
+  const askingInComposer =
+    pendingUiForSession(state.pendingUiRequests, draft ? null : selected) !== null;
 
   // Escape closes the drawer. It is the one dismissal a touch device also has
   // (Android's back gesture arrives as this key), so it is handled here rather
@@ -139,7 +149,7 @@ export function AppLayout() {
             styles.notice,
             // A notify that lands while a question is waiting would otherwise sit
             // on top of the card and cover the controls the user has to reach.
-            state.pendingUiRequests.length > 0 && styles.noticeAboveCard,
+            askingInComposer && styles.noticeAboveCard,
           )}
           role="status"
         >

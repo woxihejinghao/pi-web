@@ -123,6 +123,11 @@ export function useComposerState({ sessionPath, projectId }: ComposerSource): Co
   const sourceRef = useRef<string | null>(sourceKey);
   const stateRef = useRef<ComposerState | null>(null);
   const inflightRef = useRef<Promise<void> | null>(null);
+  /** Context usage changes while a model is streaming. Keep reads single-flight and
+   * coalesce token events so the composer stays live without creating one request
+   * per token. */
+  const liveRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveRefreshRef = useRef<Promise<void> | null>(null);
   /**
    * A plan-mode switch this browser made that no authoritative read has confirmed.
    *
@@ -170,10 +175,41 @@ export function useComposerState({ sessionPath, projectId }: ComposerSource): Co
     [apply],
   );
 
+  const refreshLive = useCallback(
+    async (path: string): Promise<void> => {
+      if (sourceRef.current !== path) return;
+      const pending = liveRefreshRef.current;
+      if (pending !== null) return pending;
+      const request = loadSession(path, false).finally(() => {
+        if (liveRefreshRef.current === request) liveRefreshRef.current = null;
+      });
+      liveRefreshRef.current = request;
+      return request;
+    },
+    [loadSession],
+  );
+
+  const scheduleLiveRefresh = useCallback(
+    (path: string): void => {
+      if (sourceRef.current !== path) return;
+      if (liveRefreshTimerRef.current !== null) return;
+      liveRefreshTimerRef.current = setTimeout(() => {
+        liveRefreshTimerRef.current = null;
+        void refreshLive(path);
+      }, 250);
+    },
+    [refreshLive],
+  );
+
   useEffect(() => {
     sourceRef.current = sourceKey;
     stateRef.current = null;
     inflightRef.current = null;
+    liveRefreshRef.current = null;
+    if (liveRefreshTimerRef.current !== null) {
+      clearTimeout(liveRefreshTimerRef.current);
+      liveRefreshTimerRef.current = null;
+    }
     setState(null);
     setModelsLoading(false);
     if (sessionPath !== null) {
@@ -194,18 +230,33 @@ export function useComposerState({ sessionPath, projectId }: ComposerSource): Co
     }
   }, [sessionPath, projectId, sourceKey, loadSession, loadProject]);
 
-  // The context figure changes while the agent runs and settles at the end of a
-  // turn. `agent_settled` is the moment it stops moving, and the one moment the
-  // process is guaranteed to be resident — so this read is always live and never
-  // costs a spawn.
+  // Context usage changes throughout a streamed turn. Refresh on the first
+  // meaningful frame and then at a modest cadence; the timer and single-flight
+  // guard prevent one HTTP request per token while keeping the chip live.
   useEffect(() => {
     if (sessionPath === null) return;
-    return sessionEvents.subscribe((payload) => {
+    const unsubscribe = sessionEvents.subscribe((payload) => {
       if (payload.sessionPath !== sessionPath) return;
-      if (payload.event.type !== "agent_settled") return;
-      void loadSession(sessionPath, false);
+      const type = payload.event.type;
+      if (type === "message_update" || type === "message_end" || type === "tool_execution_end") {
+        scheduleLiveRefresh(sessionPath);
+      }
+      if (type === "agent_settled") {
+        if (liveRefreshTimerRef.current !== null) {
+          clearTimeout(liveRefreshTimerRef.current);
+          liveRefreshTimerRef.current = null;
+        }
+        void refreshLive(sessionPath);
+      }
     });
-  }, [sessionPath, loadSession]);
+    return () => {
+      unsubscribe();
+      if (liveRefreshTimerRef.current !== null) {
+        clearTimeout(liveRefreshTimerRef.current);
+        liveRefreshTimerRef.current = null;
+      }
+    };
+  }, [sessionPath, refreshLive, scheduleLiveRefresh]);
 
   const ensureLive = useCallback(async (): Promise<void> => {
     if (sessionPath === null) {

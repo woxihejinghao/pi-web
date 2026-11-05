@@ -9,7 +9,7 @@
  * pi's framing rule.
  */
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,9 +60,34 @@ const stubContextUsage = process.env.STUB_CONTEXT_USAGE
  * command listing follows the composition rather than the project.
  */
 const minimalComposition = args.includes("--no-extensions");
-// Session content the stub reports. Tests that need a specific transcript set
-// STUB_SESSION_FILE; everything else gets these empty defaults.
-const stubMessages = [];
+/**
+ * Transcript `get_messages` reports. The stub never writes a session file, so a
+ * test that wants the `get_messages` route to answer from memory sets
+ * STUB_MESSAGES to a JSON payload; everything else gets an empty transcript.
+ */
+const stubMessages = readStubMessages();
+
+/**
+ * A test that needs a transcript bigger than a few characters points
+ * `STUB_MESSAGES_FILE` at a JSON file instead of putting the payload in the
+ * environment: Linux caps one environment string at 128 KiB (MAX_ARG_STRLEN),
+ * so a ~200 KB `STUB_MESSAGES` makes `execve` fail with E2BIG and the session
+ * opens with an error the test never asked for. macOS has no such per-string
+ * limit, which is why the payload fits there and not on the CI runner.
+ */
+function readStubMessages() {
+  const file = process.env.STUB_MESSAGES_FILE;
+  if (file) return JSON.parse(readFileSync(file, "utf8"));
+  return process.env.STUB_MESSAGES ? JSON.parse(process.env.STUB_MESSAGES) : [];
+}
+
+/**
+ * Leave a prompted turn in flight. A real pi streams from `agent_start` until
+ * the run settles, and while it does, its memory can hold turns no session file
+ * has seen yet. A test that needs that window sets STUB_KEEP_RUNNING=1: the stub
+ * then stops after `agent_start` and never settles.
+ */
+const keepRunning = process.env.STUB_KEEP_RUNNING === "1";
 const stubForkMessages = [];
 const stubTree = [];
 const stubLeafId = null;
@@ -267,11 +292,25 @@ process.stdin.on("data", (chunk) => {
         // "handled"); `RpcClient.prompt()` reads `data.disposition` and throws on
         // an undefined payload. 0.86.1 ignores the field, so sending it is safe
         // on both versions. "started" is what tells the caller to wait for
-        // `agent_settled`, which this stub emits just below.
-        respond("prompt", { disposition: "started" }, message.id);
+        // `agent_settled`, which this stub emits below.
+        // The run starts before the command answers: pi resolves `prompt`
+        // through a preflight callback it fires once the stream is up, so the
+        // boundary is on the wire first here too — which is what lets a test
+        // that just prompted treat the process as running the moment the call
+        // returns.
         write({ type: "agent_start" });
+        respond("prompt", { disposition: "started" }, message.id);
+        if (keepRunning) break;
         write({ type: "agent_end", messages: [], willRetry: false });
         write({ type: "agent_settled" });
+        break;
+      case "abort":
+        // Aborting settles the run either way — pi's `_emitAgentSettled` reads
+        // the abort request and emits `agent_settled` with `aborted: true`, so
+        // the boundary a transcript read waits on comes down for an aborted run
+        // exactly as for a finished one.
+        write({ type: "agent_settled", aborted: true });
+        respond("abort", undefined, message.id);
         break;
       default:
         write({

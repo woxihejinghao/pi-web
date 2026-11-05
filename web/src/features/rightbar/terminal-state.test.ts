@@ -1,55 +1,77 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TerminalInfo, TerminalSupport } from "../../lib/types.ts";
+import type {
+  TerminalEnvironment,
+  TerminalInfo,
+  TerminalShell,
+  TerminalSupport,
+} from "../../lib/types.ts";
 import {
   attachShell,
   emitTerminalOutput,
+  TerminalGoneError,
   resetTerminalState,
+  resyncTerminal,
   shellName,
   subscribeTerminalOutput,
+  takeControl,
   terminalActions,
   terminalStore,
+  terminalTitle,
   terminalsFor,
 } from "./terminal-state.ts";
 
+const SHELL: TerminalShell = { path: "/bin/zsh", name: "zsh", args: ["-i"] };
+const DEFAULT_SHELL: TerminalShell = { path: "/bin/bash", name: "bash", args: ["-i"] };
+const ENVIRONMENT: TerminalEnvironment = {
+  cwd: "/tmp",
+  maxCols: 500,
+  maxRows: 200,
+  maxInputBytes: 65536,
+  scrollback: 1000,
+};
 const AVAILABLE: TerminalSupport = { available: true };
+const UNAVAILABLE: TerminalSupport = { available: false, reason: "node-pty is not installed" };
 
 function info(overrides: Partial<TerminalInfo> = {}): TerminalInfo {
   return {
     id: "t1",
     sessionPath: "sess-1",
+    title: "",
+    shell: SHELL,
+    cwd: "/tmp",
     cols: 80,
     rows: 24,
-    shell: "/bin/zsh",
+    state: "running",
     exitCode: null,
     ...overrides,
   };
 }
 
-/**
- * Answer the one endpoint these tests reach.
- *
- * `api` has no seam of its own, so the stub sits on `fetch` and parses the URL
- * the same way the server does — a `sessionPath` of `""` is the host-only probe.
- */
-function stubFetch(support: TerminalSupport, terminals: TerminalInfo[]): string[] {
-  const seen: string[] = [];
-  vi.stubGlobal("fetch", (url: string) => {
-    seen.push(url);
-    const sessionPath = new URL(url, "http://localhost").searchParams.get("sessionPath") ?? "";
+interface Call {
+  url: string;
+  init: RequestInit | undefined;
+}
+
+/** Answer with a JSON body chosen by URL; every call is recorded. */
+function stubFetch(handler: (url: string, init: RequestInit | undefined) => unknown): Call[] {
+  const calls: Call[] = [];
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    const body = handler(url, init);
     return Promise.resolve({
       ok: true,
       status: 200,
       statusText: "OK",
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            support,
-            terminals: sessionPath.length > 0 ? terminals : [],
-          }),
-        ),
+      text: () => Promise.resolve(JSON.stringify(body)),
     });
   });
-  return seen;
+  return calls;
+}
+
+function bodyOf(call: Call): Record<string, unknown> {
+  return typeof call.init?.body === "string"
+    ? (JSON.parse(call.init.body) as Record<string, unknown>)
+    : {};
 }
 
 beforeEach(() => {
@@ -63,290 +85,237 @@ afterEach(() => {
 
 describe("output fan-out", () => {
   it("hands a frame to the listener watching that shell", () => {
-    const got: string[] = [];
-    subscribeTerminalOutput("t1", (data) => got.push(data));
-    emitTerminalOutput("t1", "hello");
-    expect(got).toEqual(["hello"]);
+    const got: Array<{ sequence: number; data: string }> = [];
+    subscribeTerminalOutput("t1", (frame) => got.push(frame));
+    emitTerminalOutput("t1", { sequence: 1, data: "hello" });
+    expect(got).toEqual([{ sequence: 1, data: "hello" }]);
   });
 
   it("routes by id, so one tab never sees another shell's output", () => {
     const a: string[] = [];
     const b: string[] = [];
-    subscribeTerminalOutput("t1", (data) => a.push(data));
-    subscribeTerminalOutput("t2", (data) => b.push(data));
-    emitTerminalOutput("t2", "for-b");
+    subscribeTerminalOutput("t1", (frame) => a.push(frame.data));
+    subscribeTerminalOutput("t2", (frame) => b.push(frame.data));
+    emitTerminalOutput("t2", { sequence: 1, data: "for-b" });
     expect(a).toEqual([]);
     expect(b).toEqual(["for-b"]);
   });
 
-  it("drops a frame nobody is watching rather than queueing it", () => {
-    // The point of the out-of-band channel: an unmounted tab costs nothing, and
-    // a shell that keeps printing while its tab is away does not grow a buffer.
-    expect(() => emitTerminalOutput("t1", "into the void")).not.toThrow();
-  });
-
-  it("stops delivering once the subscription is dropped", () => {
+  it("stops delivering after unsubscribe", () => {
     const got: string[] = [];
-    const stop = subscribeTerminalOutput("t1", (data) => got.push(data));
+    const stop = subscribeTerminalOutput("t1", (frame) => got.push(frame.data));
+    emitTerminalOutput("t1", { sequence: 1, data: "one" });
     stop();
-    emitTerminalOutput("t1", "after");
-    expect(got).toEqual([]);
+    emitTerminalOutput("t1", { sequence: 2, data: "two" });
+    expect(got).toEqual(["one"]);
   });
 
-  it("keeps the other listeners when one throws", () => {
-    const got: string[] = [];
-    subscribeTerminalOutput("t1", () => {
-      throw new Error("disposed mid-write");
-    });
-    subscribeTerminalOutput("t1", (data) => got.push(data));
-    emitTerminalOutput("t1", "still delivered");
-    expect(got).toEqual(["still delivered"]);
+  it("drops output for an id nobody watches", () => {
+    expect(() => {
+      emitTerminalOutput("gone", { sequence: 9, data: "x" });
+    }).not.toThrow();
   });
 });
 
-describe("refresh and probe", () => {
-  it("records the host's answer and one session's shells together", async () => {
-    stubFetch(AVAILABLE, [info()]);
-    const answer = await terminalActions.refresh("sess-1");
-    expect(answer.support).toEqual(AVAILABLE);
-    expect(terminalStore.get().support).toEqual(AVAILABLE);
-    expect(terminalsFor(terminalStore.get(), "sess-1")).toHaveLength(1);
-  });
-
-  it("asks about the host alone, with an empty session path", async () => {
-    const seen = stubFetch(AVAILABLE, [info()]);
-    await terminalActions.probe();
-    expect(seen).toEqual(["/api/terminal?sessionPath="]);
-    expect(terminalStore.get().support).toEqual(AVAILABLE);
-    // A probe is not allowed to invent a shell list for a session it never
-    // named — the menu only wanted to know whether to offer the entry.
-    expect(terminalStore.get().bySession).toEqual({});
-  });
-
-  it("replaces one session's list without touching another's", async () => {
-    stubFetch(AVAILABLE, [info({ id: "a", sessionPath: "sess-1" })]);
-    await terminalActions.refresh("sess-1");
-
-    stubFetch(AVAILABLE, [info({ id: "b", sessionPath: "sess-2" })]);
-    await terminalActions.refresh("sess-2");
-
-    const state = terminalStore.get();
-    expect(terminalsFor(state, "sess-1").map((item) => item.id)).toEqual(["a"]);
-    expect(terminalsFor(state, "sess-2").map((item) => item.id)).toEqual(["b"]);
-  });
-});
-
-describe("lifecycle notes", () => {  it("adds a shell once, however many times the body reports it", () => {
-    terminalActions.noteAdded(info());
-    terminalActions.noteAdded(info());
-    expect(terminalsFor(terminalStore.get(), "sess-1")).toHaveLength(1);
-  });
-
-  it("records an exit against the shell that left", () => {
-    terminalActions.noteAdded(info());
-    terminalActions.noteExit("t1", 130);
-    expect(terminalsFor(terminalStore.get(), "sess-1")[0]?.exitCode).toBe(130);
-  });
-
-  it("leaves other shells alone when one exits", () => {
-    terminalActions.noteAdded(info({ id: "t1" }));
-    terminalActions.noteAdded(info({ id: "t2" }));
-    terminalActions.noteExit("t2", 0);
-    const list = terminalsFor(terminalStore.get(), "sess-1");
-    expect(list.find((item) => item.id === "t1")?.exitCode).toBeNull();
-    expect(list.find((item) => item.id === "t2")?.exitCode).toBe(0);
-  });
-
-  it("drops a shell the host no longer has", () => {
-    terminalActions.noteAdded(info({ id: "t1" }));
-    terminalActions.noteAdded(info({ id: "t2" }));
-    terminalActions.forget("t1");
-    expect(terminalsFor(terminalStore.get(), "sess-1").map((item) => item.id)).toEqual(["t2"]);
-  });
-
-  it("reports an unknown session as having no shells", () => {
-    expect(terminalsFor(terminalStore.get(), "never-asked")).toEqual([]);
-  });
-});
-
-describe("release", () => {
-  it("tells the host to close the shell and forgets it", async () => {
-    const seen = stubRoutes({ "DELETE /api/terminal/t1": { closed: true } });
-    terminalActions.noteAdded(info());
-    terminalActions.release("t1");
-
-    expect(terminalsFor(terminalStore.get(), "sess-1")).toEqual([]);
-    // The call itself is what frees the slot; without it a host that caps the
-    // shells it keeps would fill up with ones nobody can reach.
-    await vi.waitFor(() => expect(seen).toEqual(["DELETE /api/terminal/t1"]));
-  });
-
-  it("forgets the shell even when the host has already lost it", async () => {
-    vi.stubGlobal("fetch", () =>
-      Promise.resolve({
-        ok: false,
-        status: 404,
-        statusText: "Not Found",
-        text: () => Promise.resolve(JSON.stringify({ error: "终端不存在" })),
-      }),
-    );
-    terminalActions.noteAdded(info());
-    terminalActions.release("t1");
-
-    expect(terminalsFor(terminalStore.get(), "sess-1")).toEqual([]);
-    // The rejection is swallowed rather than surfacing as an unhandled one.
-    await Promise.resolve();
-  });
-});
-
-/**
- * Route one request per method+path.
- *
- * `attachShell` talks to up to three endpoints to answer one question, and
- * *which* of them it reaches is the behaviour under test — so the stub records
- * every call and a test can assert on the sequence.
- */
-function stubRoutes(routes: Record<string, unknown>): string[] {
-  const seen: string[] = [];
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
-    const method = init?.method ?? "GET";
-    const key = `${method} ${url}`;
-    seen.push(key);
-    if (!(key in routes)) {
-      return Promise.reject(new Error(`unstubbed request: ${key}`));
-    }
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      text: () => Promise.resolve(JSON.stringify(routes[key])),
-    });
-  });
-  return seen;
-}
-
-describe("shellName", () => {
-  it("names a shell by its program, not by its path", () => {
+describe("naming", () => {
+  it("strips the path and a Windows extension", () => {
     expect(shellName("/bin/zsh")).toBe("zsh");
-    expect(shellName("/opt/homebrew/bin/fish")).toBe("fish");
+    expect(shellName("C:\\Program Files\\PowerShell\\pwsh.exe")).toBe("pwsh");
   });
 
-  it("drops the extension Windows never says out loud", () => {
-    expect(shellName("C:\\Program Files\\PowerShell\\7\\pwsh.exe")).toBe("pwsh");
-    expect(shellName("cmd.exe")).toBe("cmd");
+  it("prefers the user's title over the program's name", () => {
+    expect(terminalTitle(info())).toBe("zsh");
+    expect(terminalTitle(info({ title: "build" }))).toBe("build");
+  });
+});
+
+describe("refresh and the host probe", () => {
+  it("stores support, the environment and one session's shells", async () => {
+    stubFetch((url) => {
+      expect(url).toContain("sessionPath=sess-1");
+      return { support: AVAILABLE, environment: ENVIRONMENT, terminals: [info()] };
+    });
+    const answer = await terminalActions.refresh("sess-1");
+    expect(answer.terminals).toHaveLength(1);
+    expect(terminalStore.get().support).toEqual(AVAILABLE);
+    expect(terminalStore.get().environment).toEqual(ENVIRONMENT);
+    expect(terminalsFor(terminalStore.get(), "sess-1")).toHaveLength(1);
   });
 
-  it("keeps a name that has no separator to strip", () => {
-    // `ComSpec` is documented as a full path but often holds just `cmd`, and
-    // there is nothing to cut in that case.
-    expect(shellName("cmd")).toBe("cmd");
-    expect(shellName("")).toBe("");
+  it("probes without discarding another session's list", async () => {
+    terminalActions.noteAdded(info());
+    stubFetch(() => ({ support: AVAILABLE, environment: ENVIRONMENT, terminals: [] }));
+    await terminalActions.probe();
+    expect(terminalsFor(terminalStore.get(), "sess-1")).toHaveLength(1);
+    expect(terminalStore.get().support).toEqual(AVAILABLE);
+  });
+});
+
+describe("shell discovery", () => {
+  it("loads once and remembers the execution default", async () => {
+    const calls = stubFetch(() => ({ shells: [SHELL, DEFAULT_SHELL], default: DEFAULT_SHELL }));
+    await terminalActions.loadShells();
+    await terminalActions.loadShells();
+    expect(calls).toHaveLength(1);
+    expect(terminalStore.get().shells).toEqual([SHELL, DEFAULT_SHELL]);
+    expect(terminalStore.get().defaultShell).toEqual(DEFAULT_SHELL);
+  });
+
+  it("reloads when asked", async () => {
+    const calls = stubFetch(() => ({ shells: [SHELL], default: SHELL }));
+    await terminalActions.loadShells();
+    await terminalActions.loadShells(true);
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe("state frames", () => {
+  it("adds an unknown shell and updates one it has", () => {
+    terminalActions.noteAdded(info());
+    terminalActions.noteState(info({ state: "exited", exitCode: 3 }));
+    const list = terminalsFor(terminalStore.get(), "sess-1");
+    expect(list).toHaveLength(1);
+    expect(list[0]?.state).toBe("exited");
+    expect(list[0]?.exitCode).toBe(3);
+  });
+
+  it("forgets a shell without touching other sessions", () => {
+    terminalActions.noteAdded(info());
+    terminalActions.noteAdded(info({ id: "t2", sessionPath: "sess-2" }));
+    terminalActions.forget("t1");
+    expect(terminalsFor(terminalStore.get(), "sess-1")).toHaveLength(0);
+    expect(terminalsFor(terminalStore.get(), "sess-2")).toHaveLength(1);
+  });
+
+  it("renames through the host and stores the answer", async () => {
+    stubFetch(() => info({ title: "build" }));
+    await terminalActions.rename("t1", "build");
+    expect(terminalsFor(terminalStore.get(), "sess-1")[0]?.title).toBe("build");
   });
 });
 
 describe("attachShell", () => {
-  const attach = {
+  const base = {
     sessionPath: "sess-1",
-    projectPath: "/tmp/demo",
-    cols: 80,
-    rows: 24,
+    projectPath: "/work",
+    cols: 100,
+    rows: 30,
+    attachmentId: "a1",
   };
 
-  it("reattaches to the shell the tab remembers, and replays its screen", async () => {
-    const seen = stubRoutes({
-      "GET /api/terminal?sessionPath=sess-1": {
+  it("attaches to a running shell it remembers and reports the id first", async () => {
+    const seen: string[] = [];
+    const calls = stubFetch((url) => {
+      if (url.includes("/attach")) {
+        return { info: info({ controllerId: "a1" }), screen: "prompt$ ", sequence: 7 };
+      }
+      return { support: AVAILABLE, environment: ENVIRONMENT, terminals: [info()] };
+    });
+    const connected = await attachShell({
+      ...base,
+      knownId: "t1",
+      openId: "fresh",
+      onId: (id) => seen.push(id),
+    });
+    expect(seen).toEqual(["t1"]);
+    expect(connected.screen).toBe("prompt$ ");
+    expect(connected.sequence).toBe(7);
+    expect(connected.attachmentId).toBe("a1");
+    const attach = calls.find((call) => call.url.includes("/attach"));
+    expect(bodyOf(attach as Call)).toEqual({ attachmentId: "a1" });
+  });
+
+  it("reads a finished shell without taking control", async () => {
+    const calls = stubFetch((url) => {
+      if (url.includes("/snapshot")) {
+        return { info: info({ state: "exited", exitCode: 0 }), screen: "done", sequence: 12 };
+      }
+      return {
         support: AVAILABLE,
-        terminals: [info({ id: "t9" })],
-      },
-      "GET /api/terminal/t9": { scrollback: "$ echo hi\r\nhi\r\n" },
+        environment: ENVIRONMENT,
+        terminals: [info({ state: "exited", exitCode: 0 })],
+      };
     });
-
-    const attached = await attachShell({ ...attach, knownId: "t9" });
-    expect(attached.info.id).toBe("t9");
-    expect(attached.scrollback).toBe("$ echo hi\r\nhi\r\n");
-    // Nothing was opened: that is the whole point of remembering the id.
-    expect(seen).toEqual([
-      "GET /api/terminal?sessionPath=sess-1",
-      "GET /api/terminal/t9",
-    ]);
+    const connected = await attachShell({ ...base, knownId: "t1", openId: "fresh" });
+    expect(connected.attachmentId).toBe("");
+    expect(connected.screen).toBe("done");
+    expect(calls.some((call) => call.url.includes("/attach"))).toBe(false);
   });
 
-  it("opens a new shell when the remembered one has already exited", async () => {
-    const seen = stubRoutes({
-      "GET /api/terminal?sessionPath=sess-1": {
-        support: AVAILABLE,
-        terminals: [info({ id: "t9", exitCode: 0 })],
-      },
-      "POST /api/terminal": info({ id: "t-new" }),
+  it("opens a shell with the caller's id and shell choice, then attaches", async () => {
+    const calls = stubFetch((url) => {
+      if (url.includes("sessionPath=")) {
+        return { support: AVAILABLE, environment: ENVIRONMENT, terminals: [] };
+      }
+      if (url.endsWith("/api/terminal")) return info({ id: "opened" });
+      if (url.includes("/attach")) {
+        return { info: info({ id: "opened", controllerId: "a1" }), screen: "", sequence: 0 };
+      }
+      throw new Error(`unexpected ${url}`);
     });
-
-    const attached = await attachShell({ ...attach, knownId: "t9" });
-    expect(attached.info.id).toBe("t-new");
-    expect(attached.scrollback).toBe("");
-    // An exited shell is still in the list — it has something left to read —
-    // but reattaching to it would draw a dead screen with no way forward, so a
-    // second one is opened and joins it in the store.
-    expect(seen).toContain("POST /api/terminal");
-    expect(terminalsFor(terminalStore.get(), "sess-1").map((item) => item.id)).toEqual([
-      "t9",
-      "t-new",
-    ]);
-  });
-
-  it("starts the shell in the session's workspace, at the size already measured", async () => {
-    let body: unknown;
-    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
-      if (init?.method === "POST") body = JSON.parse(String(init.body));
-      const payload =
-        init?.method === "POST"
-          ? info({ id: "t-new" })
-          : { support: AVAILABLE, terminals: [] };
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        text: () => Promise.resolve(JSON.stringify(payload)),
-      });
+    const connected = await attachShell({
+      ...base,
+      knownId: "",
+      openId: "opened",
+      shellPath: "/bin/bash",
     });
-
-    await attachShell({ ...attach, knownId: "" });
-    expect(body).toEqual({
-      sessionPath: "sess-1",
-      cwd: "/tmp/demo",
-      cols: 80,
-      rows: 24,
+    expect(connected.info.id).toBe("opened");
+    const create = calls.find(
+      (call) => call.url.endsWith("/api/terminal") && call.init?.method === "POST",
+    );
+    expect(bodyOf(create as Call)).toMatchObject({
+      id: "opened",
+      shellPath: "/bin/bash",
+      cwd: "/work",
     });
   });
 
-  it("refuses with the host's own reason when no shells can be opened", async () => {
-    // The graceful-degradation path: `node-pty` is an optional dependency, so
-    // "this host cannot do shells" is an answer, and the reason is what the tab
-    // puts on screen. Nothing is attempted, and nothing is registered.
-    stubRoutes({
-      "GET /api/terminal?sessionPath=sess-1": {
-        support: { available: false, reason: "node-pty 未安装" },
-        terminals: [],
-      },
-    });
-
-    await expect(attachShell({ ...attach, knownId: "" })).rejects.toThrow("node-pty 未安装");
-    expect(terminalsFor(terminalStore.get(), "sess-1")).toEqual([]);
+  it("reports a remembered shell the host no longer has instead of replacing it", async () => {
+    const calls = stubFetch(() => ({
+      support: AVAILABLE,
+      environment: ENVIRONMENT,
+      terminals: [],
+    }));
+    await expect(
+      attachShell({ ...base, knownId: "gone", openId: "fresh" }),
+    ).rejects.toBeInstanceOf(TerminalGoneError);
+    expect(calls.some((call) => call.init?.method === "POST")).toBe(false);
   });
 
-  it("picks the remembered shell out of a session's several", async () => {
-    const seen = stubRoutes({
-      "GET /api/terminal?sessionPath=sess-1": {
-        support: AVAILABLE,
-        terminals: [info({ id: "t1" }), info({ id: "t2" }), info({ id: "t3", exitCode: 7 })],
-      },
-      "GET /api/terminal/t2": { scrollback: "t2's screen" },
-    });
+  it("refuses to open one when the host has no shells", async () => {
+    stubFetch(() => ({ support: UNAVAILABLE, environment: ENVIRONMENT, terminals: [] }));
+    await expect(attachShell({ ...base, knownId: "", openId: "fresh" })).rejects.toThrow(
+      "node-pty is not installed",
+    );
+  });
+});
 
-    const attached = await attachShell({ ...attach, knownId: "t2" });
-    expect(attached.scrollback).toBe("t2's screen");
-    expect(seen).toEqual([
-      "GET /api/terminal?sessionPath=sess-1",
-      "GET /api/terminal/t2",
-    ]);
+describe("control transfer and repair", () => {
+  it("takes control through attach and stores the new controller", async () => {
+    stubFetch(() => ({ info: info({ controllerId: "a2" }), screen: "screen", sequence: 4 }));
+    const snapshot = await takeControl("t1", "a2");
+    expect(snapshot.sequence).toBe(4);
+    expect(terminalsFor(terminalStore.get(), "sess-1")[0]?.controllerId).toBe("a2");
+  });
+
+  it("resyncs with the snapshot endpoint and leaves control alone", async () => {
+    const calls = stubFetch(() => ({
+      info: info({ controllerId: "a2" }),
+      screen: "screen",
+      sequence: 5,
+    }));
+    await resyncTerminal("t1");
+    expect(calls[0]?.url).toContain("/snapshot");
+    expect(terminalsFor(terminalStore.get(), "sess-1")[0]?.controllerId).toBe("a2");
+  });
+});
+
+describe("release", () => {
+  it("forgets the shell and asks the host to close it", () => {
+    const calls = stubFetch(() => ({ closed: true }));
+    terminalActions.noteAdded(info());
+    terminalActions.release("t1");
+    expect(terminalsFor(terminalStore.get(), "sess-1")).toHaveLength(0);
+    expect(calls[0]?.init?.method).toBe("DELETE");
   });
 });

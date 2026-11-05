@@ -221,66 +221,76 @@ button.row:focus-visible {
 }
 
 /*
- * The hover comparison: the card's own width, opening over the turns above it —
- * or under the card when the transcript has not left room above (see
- * `PREVIEW_ROOM_PX`). It lives beside the card rather than inside it because the
- * card clips its own corners, and a floating panel that the card cropped would
- * be a panel the reader cannot read.
+ * The hover comparison: one surface for a file, drawn over the whole app.
+ *
+ * It is portalled to `document.body` and placed by script (`previewPlacement`).
+ * The old card drew it absolutely inside its own shell, which made the
+ * transcript's scrollport the containing block and let that scrolling box clip
+ * the panel along the edge the composer sits on; a fixed panel portalled to the
+ * body is out of that box entirely (and out of its stacking context, so nothing
+ * an ancestor later declares can re-trap it). Its box — left, top, width,
+ * max-height — arrives inline, so nothing here may set `top`/`bottom`/`left`, or
+ * the two would disagree.
+ *
+ * The layer is dsh's HoverCard layer (100): above every piece of the app's own
+ * chrome (the image lightbox at 70 is the highest of those), and below the dialog
+ * mask (1000) and the tooltip (1100), which are drawn for something the reader
+ * has to answer rather than for a file they are only curious about.
  */
 .preview {
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-lg);
   background: var(--dsw-alias-bg-layer-1);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+  box-shadow: var(--dsw-elevation-panel);
+  opacity: 1;
+  transition: opacity var(--dsh-hover-preview-fade, 100ms) linear;
 }
 
-.root[data-place="above"] .preview {
-  bottom: calc(100% - 4px);
+/* The first frame after mounting: start transparent, so the fade has somewhere
+ * to run from (the same `@starting-style` dsh uses). */
+@starting-style {
+  .preview {
+    opacity: 0;
+  }
 }
 
-.root[data-place="below"] .preview {
-  top: calc(100% + 4px);
+/* The dismissal, still mounted: text on its way out, and unclickable so a
+ * vanishing panel cannot swallow a click meant for what is behind it. */
+.preview[data-closing] {
+  opacity: 0;
+  pointer-events: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .preview {
+    transition: none;
+  }
+}
+
+/* The path line, at the reference's own header metrics: 38px tall, the path
+ * scrolling sideways (a long path is information, not something to truncate) and
+ * the same hairline under it that dsh's `FileDiff.header` draws. */
 .previewPath {
-  flex: none;
-  overflow: hidden;
-  padding: 8px 12px;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  display: flex;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  align-items: center;
+  height: 38px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 6px 0 8px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code);
   font-size: 12px;
   line-height: 20px;
-  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.previewBody {
-  max-height: 320px;
-  overflow: auto;
-  padding: 6px 0;
-}
-
-/* The rows are the panel's own (`DiffLines`, drawn over the panel's `.patch`
- * class), so the two cannot disagree about a line number. Only the gap between
- * hunks is the preview's to decide: the panel draws a header between them, and a
- * preview has no header — without a gap, a file edited three times would read as
- * one continuous run of lines. */
-.previewHunk + .previewHunk {
-  margin-top: 2px;
-}
-
-.previewNote {
-  padding: 6px 12px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11.5px;
 }
 
 @media (pointer: coarse) {

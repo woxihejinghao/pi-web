@@ -6,6 +6,7 @@ import { DiffHunkView } from "./DiffHunk.tsx";
 import { PlusIcon } from "../../components/icons.tsx";
 import { MinusIcon, TreeChevronIcon, UndoIcon } from "./rightbar-icons.tsx";
 import { PathLabel } from "./rightbar-path.tsx";
+import diffStyles from "./FileDiff.module.css";
 import styles from "./ChangesTab.module.css";
 import { useT } from "../../lib/app-state.ts";
 import type { Translate } from "../../lib/i18n/index.ts";
@@ -167,8 +168,10 @@ function FilePatch({
   if (parsed.hunks.length === 0) {
     return <div className={styles.fileNote}>{t("fileDiff.empty")}</div>;
   }
+  // dsh's diff body, wrapping: this patch scrolls with the pane rather than
+  // inside itself, so a long line wraps instead of scrolling sideways.
   return (
-    <div className={styles.patch}>
+    <div className={diffStyles.body} data-review-view="unified" data-review-wrap>
       {parsed.hunks.map((hunk) => (
         <DiffHunkView key={hunk.header} hunk={hunk} />
       ))}

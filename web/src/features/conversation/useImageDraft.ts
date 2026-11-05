@@ -7,6 +7,8 @@ import {
   type RefObject,
 } from "react";
 import type { ImageBlock } from "../../lib/types.ts";
+import type { Store } from "../../lib/store.ts";
+import type { ComposerDraft } from "../../lib/composer-drafts.ts";
 import { pathForFile } from "../../lib/desktop.ts";
 import { droppedFolder } from "../projects/drop-path.ts";
 import {
@@ -79,7 +81,10 @@ export interface FolderDropHandlers {
  * only writer: a closure over `images` would hand the wrong list to whichever
  * of those ran while a read was in flight.
  */
-export function useImageDraft(handlers: FolderDropHandlers = {}): ImageDraft {
+export function useImageDraft(
+  handlers: FolderDropHandlers = {},
+  storage?: Store<ComposerDraft>,
+): ImageDraft {
   const t = useT();
   const { onDroppedFolder, onUnnamedFolder } = handlers;
   const [images, setImages] = useState<ImageBlock[]>([]);
@@ -90,32 +95,38 @@ export function useImageDraft(handlers: FolderDropHandlers = {}): ImageDraft {
 
   const apply = useCallback((next: ImageBlock[]): void => {
     imagesRef.current = next;
-    setImages(next);
-  }, []);
+    if (storage) storage.update((state) => ({ ...state, images: next }));
+    else setImages(next);
+  }, [storage]);
 
   const attach = useCallback(
     async (files: File[]): Promise<void> => {
       if (files.length === 0) return;
-      const results = await Promise.all(files.map((file) => readImageFile(file, t)));
-      const incoming = results
-        .map((result) => result.image)
-        .filter((image): image is ImageBlock => image !== null);
-      const refusals = results
-        .map((result) => result.refusal)
-        .filter((item): item is ImageRefusal => item !== null);
-      const merged = addImages(imagesRef.current, incoming);
-      apply(merged.images);
-      setRefusal(refusalNotice(refusals, merged.overflow, t));
+      storage?.update((state) => ({ ...state, pendingReads: state.pendingReads + 1 }));
+      try {
+        const results = await Promise.all(files.map((file) => readImageFile(file, t)));
+        const incoming = results
+          .map((result) => result.image)
+          .filter((image): image is ImageBlock => image !== null);
+        const refusals = results
+          .map((result) => result.refusal)
+          .filter((item): item is ImageRefusal => item !== null);
+        const merged = addImages(storage?.get().images ?? imagesRef.current, incoming);
+        apply(merged.images);
+        setRefusal(refusalNotice(refusals, merged.overflow, t));
+      } finally {
+        storage?.update((state) => ({ ...state, pendingReads: state.pendingReads - 1 }));
+      }
     },
-    [apply],
+    [apply, storage, t],
   );
 
   const remove = useCallback(
     (index: number): void => {
-      apply(imagesRef.current.filter((_, at) => at !== index));
+      apply((storage?.get().images ?? imagesRef.current).filter((_, at) => at !== index));
       setRefusal(null);
     },
-    [apply],
+    [apply, storage],
   );
 
   const clear = useCallback((): void => {
@@ -196,7 +207,7 @@ export function useImageDraft(handlers: FolderDropHandlers = {}): ImageDraft {
   }, []);
 
   return {
-    images,
+    images: storage?.get().images ?? images,
     refusal,
     dragging,
     attach,

@@ -83,6 +83,13 @@ export interface RightbarTab {
   line?: number;
   /** `preview` only: the last line of a range; equal to `line` for one line. */
   endLine?: number;
+  /**
+   * `terminal` only: the shell the user picked from the guide menu.
+   *
+   * Kept on the tab rather than in the body so a layout restored after a reload
+   * still opens the same program.
+   */
+  shellPath?: string;
 }
 
 /** Where a pane is drawn: inside the docked row, or as a viewport overlay. */
@@ -333,7 +340,7 @@ function parseSurface(raw: string): RightbarSurface | null {
   if (typeof record.tabs === "object" && record.tabs !== null && !Array.isArray(record.tabs)) {
     for (const entry of Object.values(record.tabs)) {
       const tab = readTab(entry);
-      if (tab !== null) tabs[tab.id] = tab;
+      if (tab !== null && tab.kind !== "terminal") tabs[tab.id] = tab;
     }
   }
 
@@ -402,7 +409,7 @@ function adoptLegacy(raw: string): RightbarSurface | null {
   if (Array.isArray(record.tabs)) {
     for (const entry of record.tabs) {
       const tab = readTab(entry);
-      if (tab === null) continue;
+      if (tab === null || tab.kind === "terminal") continue;
       ids.push(tab.id);
       tabs[tab.id] = tab;
     }
@@ -695,8 +702,14 @@ export function makeBrowserTab(url: string): RightbarTab {
  * There is no shell to remember: every terminal opens bash (the server's
  * `pickShell` decides), so a tab carries nothing about which program it wants.
  */
-export function makeTerminalTab(): RightbarTab {
-  return { id: nextTabId("terminal"), kind: "terminal", title: "", target: "" };
+export function makeTerminalTab(shellPath?: string): RightbarTab {
+  return {
+    id: nextTabId("terminal"),
+    kind: "terminal",
+    title: "",
+    target: "",
+    ...(shellPath === undefined ? {} : { shellPath }),
+  };
 }
 
 /** The host a browser tab is titled after; falls back to the raw input. */
@@ -1303,8 +1316,8 @@ export const rightbarActions = {
    * never reused the way a preview of the same file is. The host id is filled
    * in by the body once it has one.
    */
-  openTerminalTab(key: string, paneId?: string): void {
-    rightbarActions.openTab(key, makeTerminalTab(), paneId);
+  openTerminalTab(key: string, paneId?: string, shellPath?: string): void {
+    rightbarActions.openTab(key, makeTerminalTab(shellPath), paneId);
   },
 
   /** Close one tab. */

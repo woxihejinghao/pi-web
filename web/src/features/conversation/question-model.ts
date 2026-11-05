@@ -1,7 +1,9 @@
+import { seatOwns } from "../../lib/app-state.ts";
 import type {
   AskUserQuestionAnswerItem,
   AskUserQuestionItem,
   ExtensionUiRequest,
+  PendingUiDialog,
 } from "../../lib/types.ts";
 
 /**
@@ -267,4 +269,29 @@ export function pendingAskOf(
   const item = requests.find((request) => request.sessionPath === path);
   if (item === undefined) return null;
   return isPlanReviewRequest(item.request) ? "plan-review" : "question";
+}
+
+/**
+ * The dialog that takes the composer seat for the conversation in view, or null.
+ *
+ * Only the open session's own dialog takes that seat (`seatOwns` says whose a
+ * request is). A dialog from another session is just as hard a block — on
+ * another pi process — but drawing it here would answer a question the reader is
+ * not being asked, in the one place they were about to type, losing whatever
+ * they were writing there. So it stays off this pane: the session's row carries
+ * the waiting mark instead (`pendingAskOf`), and opening that row brings the
+ * card back — the request is still held by the server, so not drawing it here
+ * loses nothing.
+ *
+ * `sessionPath` is that seat: the open session's path, or null while no session
+ * exists yet — the hero, or a session still being created. A request addressed
+ * to nobody is that seat's, so a new session's first question survives the
+ * swap from draft to real path (`startDraftSession` writes the path it learns
+ * onto the request).
+ */
+export function pendingUiForSession(
+  requests: readonly PendingUiDialog[],
+  sessionPath: string | null,
+): PendingUiDialog | null {
+  return requests.find((item) => seatOwns(sessionPath, item.sessionPath)) ?? null;
 }

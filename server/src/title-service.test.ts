@@ -110,6 +110,7 @@ function handleFor(sessionPath: string): SessionHandle {
     client: {} as SessionHandle["client"],
     startedAt: 0,
     lastActivityAt: 0,
+    running: false,
     unsubscribe: () => undefined,
     dead: false,
     prewarmed: false,

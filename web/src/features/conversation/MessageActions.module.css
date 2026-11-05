@@ -181,13 +181,34 @@
  * the same rule on the same attribute, and nothing here may take a row away from
  * an `always` one — the rule below matches `hover` and only `hover`.
  *
- * `opacity` rather than `display`/`visibility`: the row keeps its height, so
- * revealing one never moves the transcript under the reader. The transition
- * lives on the hidden state so it plays in both directions. Devices with no
- * hover pointer keep every row visible — this media query is the whole fix.
+ * A `hover` row stands outside the layout instead of holding a band open for
+ * itself: faded to nothing it would still be 28px of nothing under every
+ * earlier message, and with the transcript's 14px gaps around it that is a
+ * ~62px hole where nobody is touching the row — a few turns in, the session
+ * reads as spaced out. So the row leaves the flow, `absolute` in both states
+ * (revealing it still moves nothing), and hangs in the gap under its own
+ * message, bottom-aligned with the next row by `--transcript-gap` — the very
+ * rhythm the transcript uses between turns, published by
+ * `MessageList.module.css`. The 14px it borrows lands in the message's own
+ * bottom edge — a bubble's or a card's padding — never on its text.
+ *
+ * An `always` row stays in the flow: it is visible, so its band *is* its row,
+ * and floating the newest prompt's row would lay it over the answer's first
+ * line. The transition lives on the hidden state so it plays in both
+ * directions. Devices with no hover pointer keep every row visible and in
+ * place — this media query is the whole fix.
  */
 @media (hover: hover) {
+  [data-actions-reveal="hover"] {
+    /* The floating row is positioned against the message it belongs to. */
+    position: relative;
+  }
+
   [data-actions-reveal="hover"] .actions {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + var(--transcript-gap, 14px));
     opacity: 0;
     transition: opacity 80ms ease;
   }

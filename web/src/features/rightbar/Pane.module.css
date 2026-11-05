@@ -85,3 +85,14 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* A blank pane that offers the thing it can open, rather than a sentence about
+ * being blank. */
+.guideHost {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

@@ -59,6 +59,11 @@ describe("TurnChangesTab", () => {
     // words are separate nodes — the assertion asks for the text it renders.
     expect(html).toContain(">kept<");
     expect(html).toContain(">gone<");
+    // The hunks are drawn as the reference's diff body, and this body wraps: the
+    // panel's patch scrolls with the pane, so a long line breaks inside it
+    // instead of running off sideways.
+    expect(html).toContain('data-review-view="unified"');
+    expect(html).toContain("data-review-wrap");
     expect(html).toContain("选择要查看的文件");
     expect(html).toContain("在右侧栏打开 src/a.ts");
   });

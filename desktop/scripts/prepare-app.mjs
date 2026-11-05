@@ -34,17 +34,16 @@ function fail(message) {
   process.exit(1);
 }
 
-/** 仓库里实际装到的 pi 版本；拿不到就退回 package.json 里写的范围。 */
+/** 仓库里实际装到的 pi 版本；没有精确版本就拒绝打包，避免把范围解析成漂移的安装包。 */
 function resolvePiVersion() {
   const installed = join(repoRoot, "node_modules", ...PI.split("/"), "package.json");
-  if (existsSync(installed)) {
-    try {
-      return JSON.parse(readFileSync(installed, "utf8")).version;
-    } catch {
-      /* 落到下面的范围 */
-    }
+  if (!existsSync(installed)) return null;
+  try {
+    const version = JSON.parse(readFileSync(installed, "utf8")).version;
+    return typeof version === "string" && version.length > 0 ? version : null;
+  } catch {
+    return null;
   }
-  return rootPkg.dependencies[PI];
 }
 
 // --- 前置产物 -------------------------------------------------------------
@@ -66,6 +65,9 @@ for (const file of shellBundles) {
 // --- 应用目录 -------------------------------------------------------------
 
 const piVersion = resolvePiVersion();
+if (piVersion === null) {
+  fail(`找不到已安装的 ${PI} 精确版本，先在仓库根目录跑 \`pnpm install --frozen-lockfile\``);
+}
 
 await rm(appDir, { recursive: true, force: true });
 await mkdir(appDir, { recursive: true });
@@ -114,13 +116,22 @@ const npmEnv = Object.fromEntries(
   Object.entries(process.env).filter(([key]) => !/^(npm_|pnpm_)/i.test(key)),
 );
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const install = spawnSync(npm, ["install", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], {
+// 先只解析一次并落盘 lockfile，再用 npm ci 按 lockfile 安装；这样同一 tag 的
+// 重试不会重新解析 transitive 依赖。`--ignore-scripts` 仅用于生成锁，不影响随后
+// 的正式安装生命周期脚本。
+const lock = spawnSync(
+  npm,
+  ["install", "--package-lock-only", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"],
+  { cwd: appDir, stdio: "inherit", shell: process.platform === "win32", env: npmEnv },
+);
+if (lock.status !== 0) fail(`生成 package-lock.json 失败（退出码 ${lock.status}）`);
+const install = spawnSync(npm, ["ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], {
   cwd: appDir,
   stdio: "inherit",
   shell: process.platform === "win32",
   env: npmEnv,
 });
-if (install.status !== 0) fail(`npm install 失败（退出码 ${install.status}）`);
+if (install.status !== 0) fail(`npm ci 失败（退出码 ${install.status}）`);
 
 // 保留 npm 自己写出来的 package-lock.json：electron-builder 靠锁文件判断该用哪个
 // 包管理器分析依赖树。删了它，它就退回去看环境变量（我们是通过 pnpm 调的，于是

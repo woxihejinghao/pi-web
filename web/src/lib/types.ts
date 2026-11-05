@@ -91,7 +91,9 @@ export interface ToolCallBlock {
   type: "toolCall";
   id: string;
   name: string;
-  arguments?: Record<string, unknown>;
+  arguments: Record<string, unknown>;
+  thoughtSignature?: string;
+  namespace?: string;
 }
 
 export interface ImageBlock {
@@ -118,6 +120,13 @@ export type ContentBlock =
   | ImageBlock
   | { type: string; [key: string]: unknown };
 
+/** Runtime guard for content arrays arriving from JSON or streaming events. */
+export function isContentBlock(value: unknown): value is ContentBlock {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as { type?: unknown }).type === "string";
+}
+
 export interface UserMessage {
   role: "user";
   content: string | ContentBlock[];
@@ -131,6 +140,7 @@ export interface AssistantMessage {
   api?: string;
   provider?: string;
   model?: string;
+  responseId?: string;
   usage?: Usage;
   stopReason?: string;
   timestamp: number;
@@ -190,12 +200,13 @@ export type AgentMessage =
 /** Streaming deltas inside `message_update`. There is no cumulative snapshot:
  * clients assemble content by `contentIndex` and treat `message_end` as final. */
 export type AssistantStreamEvent =
+  | { type: "start" }
   | { type: "text_start"; contentIndex: number }
   | { type: "text_delta"; contentIndex: number; delta: string }
-  | { type: "text_end"; contentIndex: number; content?: string }
+  | { type: "text_end"; contentIndex: number; content: string }
   | { type: "thinking_start"; contentIndex: number }
   | { type: "thinking_delta"; contentIndex: number; delta: string }
-  | { type: "thinking_end"; contentIndex: number; content?: string }
+  | { type: "thinking_end"; contentIndex: number; content: string }
   | { type: "toolcall_start"; contentIndex: number; id: string; toolName: string }
   | { type: "toolcall_delta"; contentIndex: number; delta: string }
   | { type: "toolcall_end"; contentIndex: number; toolCall: ToolCallBlock }
@@ -475,6 +486,48 @@ export interface WorkspaceFileContent {
 }
 
 /**
+ * One application the host's desktop can open a file with.
+ *
+ * `id` is the host's own identity for it — a macOS bundle path — and is what an
+ * "open with this one" request names. It is validated on the host against the
+ * current registration list, so an id that has gone stale is refused rather
+ * than launched.
+ */
+export interface NativeApplication {
+  id: string;
+  name: string;
+  /** Whether the operating system would pick this one for this file. */
+  default: boolean;
+  /** A `data:image/png;base64,…` icon, or null when the host could not read one. */
+  icon: string | null;
+}
+
+/**
+ * What this host can open one file with.
+ *
+ * `desktop: false` is the headless answer, and the only one that draws no
+ * controls: there is nothing on the other end to hand a path to. An empty
+ * `applications` list is not that — the desktop still opens and still reveals,
+ * it just cannot say what the file is associated with.
+ */
+export interface FileApplications {
+  desktop: boolean;
+  applications: NativeApplication[];
+}
+
+/**
+ * The answer to an open or reveal gesture.
+ *
+ * `ok: false` carries the host's own sentence about what went wrong — the
+ * desktop refused, the application is gone — because that is the one thing the
+ * client cannot work out for itself.
+ */
+export interface OpenFileResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
  * One page of a text file, for files too large to hand over whole.
  *
  * Addressed by the byte offset the previous page ended at rather than by line
@@ -508,15 +561,62 @@ export interface TerminalSupport {
   reason?: string;
 }
 
+/** One shell the host found installed, with the arguments it starts it with. */
+export interface TerminalShell {
+  path: string;
+  /** The program's own name, for menus and tab labels. */
+  name: string;
+  args: string[];
+}
+
+/** The states a shell can be in, as the client draws them. */
+export type TerminalLifecycle = "starting" | "running" | "exited" | "failed";
+
 export interface TerminalInfo {
   id: string;
   sessionPath: string;
+  /** The user's name for it; empty until renamed. */
+  title: string;
+  /** The program actually started, after the host resolved the request. */
+  shell: TerminalShell;
+  cwd: string;
   cols: number;
   rows: number;
-  /** The program actually started, after the host resolved the request. */
-  shell: string;
+  state: TerminalLifecycle;
   /** null while the shell is alive; the code it left with afterwards. */
   exitCode: number | null;
+  /** Set when the shell failed to start or died without an exit code. */
+  error?: string;
+  /**
+   * The attachment allowed to type into it. Absent when nobody is attached or
+   * when the shell is finished; another window seeing its own id absent knows
+   * it is read-only and can ask to take control.
+   */
+  controllerId?: string;
+}
+
+/** The host's limits, as the client needs them for sizing and validation. */
+export interface TerminalEnvironment {
+  cwd: string;
+  maxCols: number;
+  maxRows: number;
+  maxInputBytes: number;
+  /** Rows the client may keep in xterm's own scrollback. */
+  scrollback: number;
+}
+
+/** The opening screen of a shell, plus the sequence it is current as of. */
+export interface TerminalSnapshot {
+  info: TerminalInfo;
+  screen: string;
+  sequence: number;
+}
+
+/** A close whose process outlived the tab; the host retries it. */
+export interface TerminalCleanupFailure {
+  id: string;
+  sessionPath: string;
+  message: string;
 }
 
 /**
@@ -570,9 +670,21 @@ export type BusEvent =
   | { type: "session_event"; sessionPath: string; event: SessionEvent }
   | { type: "session_closed"; sessionPath: string; reason: string }
   | { type: "session_external_changed"; sessionPath: string; modifiedAt: string }
-  | { type: "terminal_output"; terminalId: string; sessionPath: string; data: string }
-  | { type: "terminal_state"; terminalId: string; sessionPath: string; exitCode: number }
+  | {
+      type: "terminal_output";
+      terminalId: string;
+      sessionPath: string;
+      sequence: number;
+      data: string;
+    }
+  | { type: "terminal_state"; terminalId: string; sessionPath: string; info: TerminalInfo }
   | { type: "terminal_closed"; terminalId: string; sessionPath: string }
+  | {
+      type: "terminal_cleanup_failed";
+      terminalId: string;
+      sessionPath: string;
+      message: string;
+    }
   | {
       type: "workspace_changed";
       projectPath: string;
@@ -777,6 +889,40 @@ export interface ExtensionItem {
   enabled: boolean;
 }
 
+export interface PromptDocument {
+  scope: "global" | "workspace";
+  path: string;
+  content: string;
+  exists: boolean;
+  active: boolean;
+}
+
+export interface PromptsView {
+  global: PromptDocument;
+  workspace: PromptDocument | null;
+  workspacePath: string | null;
+}
+
+
+export interface SkillItem {
+  name: string;
+  description: string;
+  path: string;
+  scope: "user" | "project";
+  enabled: boolean;
+  content: string;
+  source: string;
+}
+
+export interface SkillsView {
+  agentDir: string;
+  projectPath: string | null;
+  projectTrusted: boolean;
+  skillsPath: string;
+  projectSkillsPath: string | null;
+  skills: SkillItem[];
+  error: string | null;
+}
 export interface ExtensionsView {
   agentDir: string;
   /** pi's global settings file. */

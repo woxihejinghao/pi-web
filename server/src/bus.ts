@@ -1,4 +1,5 @@
 import type { JsonAgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type { TerminalInfo } from "./terminal.ts";
 
 /**
  * Everything the browser is told about, over one SSE stream. Session events
@@ -23,9 +24,27 @@ export type BusEvent =
     }
   | { type: "projects_changed" }
   | { type: "sessions_changed"; projectPath: string }
-  | { type: "terminal_output"; terminalId: string; sessionPath: string; data: string }
-  | { type: "terminal_state"; terminalId: string; sessionPath: string; exitCode: number }
-  | { type: "terminal_closed"; terminalId: string; sessionPath: string };
+  | {
+      type: "terminal_output";
+      terminalId: string;
+      sessionPath: string;
+      /** Monotone within one terminal; a gap means the client missed a frame. */
+      sequence: number;
+      data: string;
+    }
+  | {
+      type: "terminal_state";
+      terminalId: string;
+      sessionPath: string;
+      info: TerminalInfo;
+    }
+  | { type: "terminal_closed"; terminalId: string; sessionPath: string }
+  | {
+      type: "terminal_cleanup_failed";
+      terminalId: string;
+      sessionPath: string;
+      message: string;
+    };
 
 export type BusListener = (event: BusEvent) => void;
 
@@ -91,7 +110,8 @@ export function wantsFrame(
     if (
       event.type === "terminal_output" ||
       event.type === "terminal_state" ||
-      event.type === "terminal_closed"
+      event.type === "terminal_closed" ||
+      event.type === "terminal_cleanup_failed"
     ) {
       return event.sessionPath === sessionPath;
     }

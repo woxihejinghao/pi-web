@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // lands on English without a navigator (node test environment). The assertions
 // below pin the Chinese wording, so fix the host locale here.
 vi.stubGlobal("navigator", { language: "zh-CN" });
-import { api } from "./api.ts";
+import { api, ApiError } from "./api.ts";
+import { APP_NAME } from "./brand.ts";
 import {
   actions,
   appStore,
@@ -16,7 +17,8 @@ import {
 import type { ExtensionUiRequest, ProjectView, SessionView } from "./types.ts";
 import { DEFAULT_PRESET_ID } from "./types.ts";
 
-vi.mock("./api.ts", () => ({
+vi.mock("./api.ts", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("./api.ts")>()).ApiError,
   api: {
     listProjects: vi.fn(),
     listSessions: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock("./api.ts", () => ({
     deleteSession: vi.fn(),
     listCommands: vi.fn(),
     listUiRequests: vi.fn(),
+    respondToUiRequest: vi.fn(),
     env: vi.fn(),
     reorderProjects: vi.fn(),
   },
@@ -150,6 +153,29 @@ describe("draft sessions", () => {
     expect(appStore.get().unsavedSessions).toEqual({ "project-1": [REAL_PATH] });
   });
 
+  it("addresses a dialog that arrived before the session had a file", async () => {
+    const create = deferredCreate();
+    actions.startDraftSession("project-1");
+
+    // The extension asks in the window before pi names its session file
+    // (`session_start` lands ahead of `get_state`), so the request reaches this
+    // tab addressed to nobody — and it can only be this session's: the draft on
+    // screen is the only session being created.
+    const asked = { type: "extension_ui_request" as const, id: "ui_1", method: "confirm" };
+    actions.enqueueUiRequest({ sessionPath: "", request: asked });
+
+    create.resolve({ sessionPath: REAL_PATH, sessionId: "s1", projectPath: "/home/me/proj", prewarmed: false, presetId: "standard" });
+
+    // The path is written onto it with the swap, so the card the draft is
+    // holding on to stays in the composer seat instead of being read as some
+    // other session's dialog.
+    await vi.waitFor(() => {
+      expect(appStore.get().pendingUiRequests).toEqual([
+        { sessionPath: REAL_PATH, request: asked },
+      ]);
+    });
+  });
+
   it("keeps a running session tracked after the user moves on", async () => {
     const create = deferredCreate();
     actions.startDraftSession("project-1");
@@ -244,6 +270,110 @@ describe("draft sessions", () => {
 
   it("resolveDraftSession is null when nothing was started", async () => {
     await expect(actions.resolveDraftSession()).resolves.toBeNull();
+  });
+});
+
+describe("background session persistence", () => {
+  it("names the pending row on the first user frame without waiting for an assistant", async () => {
+    appStore.update((state) => ({
+      ...state,
+      selectedProjectId: "other-project",
+      selectedSessionPath: "/other/session.jsonl",
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_start", message: { role: "user", content: [{ type: "text", text: "修复登录问题" }] },
+    });
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBe("修复登录问题");
+    expect(appStore.get().unsavedSessions["project-1"]).toEqual([REAL_PATH]);
+    expect(appStore.get().selectedSessionPath).toBe("/other/session.jsonl");
+    expect(mocked.listSessions).not.toHaveBeenCalled();
+
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "user", content: "another message" },
+    });
+    await actions.refreshSessions("project-1", { force: true });
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBe("修复登录问题");
+
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH, "正式标题")], total: 1 });
+    await actions.refreshSessions("project-1", { force: true });
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBeUndefined();
+    expect(appStore.get().sessions["project-1"]?.[0]?.title).toBe("正式标题");
+  });
+
+  it("bounds pending titles and cleans them up when the session closes", () => {
+    appStore.update((state) => ({ ...state, unsavedSessions: { "project-1": [REAL_PATH] } }));
+    actions.noteUnsavedSessionTitle(REAL_PATH, "中文😀".repeat(100));
+    const title = appStore.get().unsavedSessionTitles[REAL_PATH]!;
+    expect(new TextEncoder().encode(title).length).toBeLessThanOrEqual(120);
+    expect(title.endsWith("…")).toBe(true);
+    expect(title).not.toContain("�");
+    actions.forgetUnsavedSession(REAL_PATH);
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBeUndefined();
+  });
+
+  it("does not replace persisted or manually named rows with a user message", () => {
+    appStore.update((state) => ({
+      ...state, sessions: { "project-1": [diskSession(REAL_PATH, "手动命名")] },
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    actions.noteUnsavedSessionTitle(REAL_PATH, "hello");
+    expect(appStore.get().unsavedSessionTitles[REAL_PATH]).toBeUndefined();
+    expect(appStore.get().sessions["project-1"]?.[0]?.title).toBe("手动命名");
+  });
+  it("replaces an unsaved row and its title in the owning workspace after switching away", async () => {
+    appStore.update((state) => ({
+      ...state,
+      selectedProjectId: "other-project",
+      selectedSessionPath: "/other/session.jsonl",
+      sessions: { "project-1": [] },
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    mocked.listSessions.mockResolvedValue({
+      sessions: [diskSession(REAL_PATH, "修复登录问题")], total: 1,
+    });
+
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "assistant", content: [] },
+    });
+
+    await vi.waitFor(() => {
+      expect(appStore.get().unsavedSessions["project-1"]).toEqual([]);
+    });
+    expect(mocked.listSessions).toHaveBeenCalledWith("project-1", expect.any(Object));
+    expect(appStore.get().sessions["project-1"]?.[0]?.title).toBe("修复登录问题");
+    expect(appStore.get().selectedSessionPath).toBe("/other/session.jsonl");
+    expect(appStore.get().selectedProjectId).toBe("other-project");
+  });
+
+  it("retries persistence on settle if the first message still preceded the disk flush", async () => {
+    appStore.update((state) => ({
+      ...state,
+      unsavedSessions: { "project-1": [REAL_PATH] },
+    }));
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "assistant", content: [] },
+    });
+    await vi.waitFor(() => expect(mocked.listSessions).toHaveBeenCalledTimes(1));
+    expect(appStore.get().unsavedSessions["project-1"]).toEqual([REAL_PATH]);
+
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 1 });
+    actions.emitSessionEvent(REAL_PATH, { type: "agent_settled" });
+    await vi.waitFor(() => expect(appStore.get().unsavedSessions["project-1"]).toEqual([]));
+  });
+
+  it("does not refetch for tokens, user messages, or assistant messages already on disk", () => {
+    appStore.update((state) => ({
+      ...state, sessions: { "project-1": [diskSession(REAL_PATH)] },
+    }));
+    actions.emitSessionEvent(REAL_PATH, { type: "message_update" });
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "user", content: "hello" },
+    });
+    actions.emitSessionEvent(REAL_PATH, {
+      type: "message_end", message: { role: "assistant", content: [] },
+    });
+    expect(mocked.listSessions).not.toHaveBeenCalled();
   });
 });
 
@@ -350,6 +480,66 @@ describe("extension dialogs", () => {
     mocked.listUiRequests.mockResolvedValue({ requests: [dialog("", "ui_1")] });
     await actions.loadPendingUiRequests();
     expect(appStore.get().pendingUiRequests).toEqual([dialog("", "ui_1")]);
+  });
+
+  it("removes expired dialogs while keeping the current question", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "expired"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "current"));
+    mocked.listUiRequests.mockResolvedValue({ requests: [dialog(REAL_PATH, "current")] });
+
+    await actions.loadPendingUiRequests();
+
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual(["current"]);
+  });
+
+  it("does not restore a dialog answered while the list was in flight", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    mocked.listUiRequests.mockImplementationOnce(async () => {
+      actions.dismissUiRequest("ui_1");
+      return { requests: [dialog(REAL_PATH, "ui_1")] };
+    });
+
+    await actions.loadPendingUiRequests();
+
+    expect(appStore.get().pendingUiRequests).toEqual([]);
+  });
+
+  it("keeps dialogs when synchronization fails", async () => {
+    const pending = dialog(REAL_PATH, "ui_1");
+    actions.enqueueUiRequest(pending);
+    mocked.listUiRequests.mockRejectedValueOnce(new Error("offline"));
+
+    await actions.loadPendingUiRequests();
+
+    expect(appStore.get().pendingUiRequests).toEqual([pending]);
+  });
+
+  it("closes an expired card on a 404 and reconciles other stale cards", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "expired"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "also-expired"));
+    actions.enqueueUiRequest(dialog(REAL_PATH, "current"));
+    mocked.respondToUiRequest.mockRejectedValueOnce(new ApiError(404, "no dialog is waiting under that id"));
+    mocked.listUiRequests.mockResolvedValue({ requests: [dialog(REAL_PATH, "current")] });
+
+    expect(await actions.respondToUiRequest("expired", { cancelled: true })).toBe(false);
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual(["current"]);
+  });
+
+  it("keeps a card retryable when submitting fails for another reason", async () => {
+    const pending = dialog(REAL_PATH, "ui_1");
+    actions.enqueueUiRequest(pending);
+    mocked.respondToUiRequest.mockRejectedValueOnce(new ApiError(400, "invalid answer"));
+
+    await expect(actions.respondToUiRequest("ui_1", { value: "allow" })).rejects.toThrow("invalid answer");
+    expect(appStore.get().pendingUiRequests).toEqual([pending]);
+  });
+
+  it("dismisses a successfully answered card", async () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+    mocked.respondToUiRequest.mockResolvedValueOnce({ ok: true });
+
+    expect(await actions.respondToUiRequest("ui_1", { value: "allow" })).toBe(true);
+    expect(appStore.get().pendingUiRequests).toEqual([]);
   });
 
   it("does not drop a dialog that arrived while the list was in flight", async () => {
@@ -1062,13 +1252,16 @@ describe("task-finished notifications", () => {
     actions.emitSessionEvent(PATH, { type: "agent_settled" });
 
     expect(shownNotifications).toHaveLength(1);
+    // The app's name is the title, because that is the one line of the notice
+    // this page owns — the platform puts the origin above it.
+    expect(shownNotifications[0]?.title).toBe(APP_NAME);
     expect(shownNotifications[0]?.options?.body).toBe("会话任务已完成");
     // One slot per session, so a second finish replaces the first instead of
     // stacking a duplicate of the same news.
     expect(shownNotifications[0]?.options?.tag).toBe(PATH);
   });
 
-  it("names the session the list knows it by", () => {
+  it("names the session in the body", () => {
     setEnabled(true);
     appStore.update((state) => ({
       ...state,
@@ -1077,15 +1270,17 @@ describe("task-finished notifications", () => {
     actions.emitSessionEvent(PATH, { type: "agent_start" });
     actions.emitSessionEvent(PATH, { type: "agent_settled" });
 
-    expect(shownNotifications[0]?.title).toBe("修复登录问题");
+    expect(shownNotifications[0]?.title).toBe(APP_NAME);
+    expect(shownNotifications[0]?.options?.body).toBe("修复登录问题 · 会话任务已完成");
   });
 
-  it("falls back to the app name when no title is loaded", () => {
+  it("falls back to the bare sentence when the list does not know the session", () => {
     setEnabled(true);
     actions.emitSessionEvent(PATH, { type: "agent_start" });
     actions.emitSessionEvent(PATH, { type: "agent_settled" });
 
-    expect(shownNotifications[0]?.title).toBe("pi-web-simple");
+    expect(shownNotifications[0]?.title).toBe(APP_NAME);
+    expect(shownNotifications[0]?.options?.body).toBe("会话任务已完成");
   });
 
   it("does not announce a task the user is watching", () => {
@@ -1097,13 +1292,28 @@ describe("task-finished notifications", () => {
     expect(shownNotifications).toHaveLength(0);
   });
 
-  it("does not invent a finish for a task it never saw start", () => {
+  it("announces a task in the session the user selected and then walked away from", () => {
     setEnabled(true);
-    // A session adopted mid-run settles without this tab having seen a start;
-    // that is not a state change, so there is nothing to report.
+    actions.selectSession(PATH);
+    // The session stays open in the reading pane; the tab is merely not the one
+    // on screen. That is the finish the notice exists for.
+    vi.stubGlobal("document", { visibilityState: "hidden", hasFocus: () => false });
+    actions.emitSessionEvent(PATH, { type: "agent_start" });
     actions.emitSessionEvent(PATH, { type: "agent_settled" });
 
-    expect(shownNotifications).toHaveLength(0);
+    expect(shownNotifications).toHaveLength(1);
+    // No dot is left behind on the session they have open: the mark answers
+    // "which session do I still have to open", and this one already is.
+    expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
+  });
+
+  it("announces a finish it never saw start", () => {
+    setEnabled(true);
+    // A reload mid-run, or a task run from somewhere else: the settle frame is
+    // live news either way, so this tab has a finish to report.
+    actions.emitSessionEvent(PATH, { type: "agent_settled" });
+
+    expect(shownNotifications).toHaveLength(1);
   });
 
   it("stays silent when the browser has denied permission", () => {

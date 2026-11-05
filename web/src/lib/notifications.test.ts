@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PI_MARK_URL } from "./brand.ts";
 
 /**
  * The desktop shell's half of notifications, which is the only half with a
@@ -31,11 +32,11 @@ function stubShell() {
 }
 
 /** A stand-in for the browser API, which the shell path must leave alone. */
-function stubWebNotifications(shown: string[]): void {
+function stubWebNotifications(shown: { title: string; options?: NotificationOptions }[]): void {
   class FakeNotification {
     static permission: NotificationPermission = "granted";
-    constructor(title: string) {
-      shown.push(title);
+    constructor(title: string, options?: NotificationOptions) {
+      shown.push({ title, options });
     }
   }
   vi.stubGlobal("Notification", FakeNotification);
@@ -47,14 +48,18 @@ afterEach(() => {
 
 describe("outside the shell", () => {
   it("keeps the Web Notification path and makes the shell hooks harmless", async () => {
-    const shown: string[] = [];
+    const shown: { title: string; options?: NotificationOptions }[] = [];
     stubWebNotifications(shown);
     const { hasShellNotifications, setNotificationBadge, showNotification, subscribeNotificationClicks } =
       await freshNotifications();
 
     expect(hasShellNotifications()).toBe(false);
     showNotification("t", "b", "tag");
-    expect(shown).toEqual(["t"]);
+    expect(shown.map((notice) => notice.title)).toEqual(["t"]);
+    // The same mark the tab wears: without one the banner falls back to the
+    // browser's own icon, and the platform's line above it already carries the
+    // origin rather than the app's name.
+    expect(shown[0]?.options?.icon).toBe(PI_MARK_URL);
     // Both are no-ops a caller can make unconditionally.
     setNotificationBadge(3);
     expect(subscribeNotificationClicks(() => {})).toBeTypeOf("function");
@@ -70,6 +75,37 @@ describe("outside the shell", () => {
     expect(hasShellNotifications()).toBe(false);
     setNotificationBadge(1);
     expect(subscribeNotificationClicks(() => {})).toBeTypeOf("function");
+  });
+});
+
+describe("page attendance", () => {
+  /** The two things a page can tell us about whether it is being read. */
+  function stubPage(visibilityState: DocumentVisibilityState, focused: boolean): void {
+    vi.stubGlobal("document", { visibilityState, hasFocus: () => focused });
+  }
+
+  it("answers 'attended' when there is no document to ask", async () => {
+    const { pageIsAttended } = await freshNotifications();
+
+    // Nothing here can observe the user, so nothing is invented on their
+    // behalf — the store's rule for a finish it cannot place.
+    expect(typeof document).toBe("undefined");
+    expect(pageIsAttended()).toBe(true);
+  });
+
+  it("reads a hidden tab, and a window someone else is typing in, as elsewhere", async () => {
+    const { pageIsAttended } = await freshNotifications();
+
+    stubPage("hidden", false);
+    expect(pageIsAttended()).toBe(false);
+
+    // Visible — on a second screen, or behind the app the user is actually
+    // working in — and nowhere near their attention either way.
+    stubPage("visible", false);
+    expect(pageIsAttended()).toBe(false);
+
+    stubPage("visible", true);
+    expect(pageIsAttended()).toBe(true);
   });
 });
 

@@ -189,12 +189,50 @@ describe("MessageActions stylesheet", () => {
     expect(rules.indexOf('[data-actions-reveal="hover"] .actions')).toBeGreaterThan(media);
   });
 
-  it("fades the row rather than removing it", () => {
-    // `opacity`, not `display`: the row keeps its height, so revealing one never
-    // moves the transcript under the reader.
+  it("takes the hidden row out of the transcript's flow", () => {
+    // dsh only fades this row (`opacity`), which leaves its 28px band standing
+    // under every earlier message; with the transcript's own gaps around it
+    // that is a ~62px hole where nobody is touching the row, and a session a
+    // few turns old reads as spaced out. The row leaves the layout instead:
+    // `absolute` in both states, hung in the gap below its own message.
+    expect(reveal).toContain('[data-actions-reveal="hover"] {');
+    expect(reveal).toContain("position: relative");
     expect(reveal).toContain('[data-actions-reveal="hover"] .actions');
+    expect(reveal).toContain("position: absolute");
+    expect(reveal).toContain("top: calc(100% + var(--transcript-gap, 14px))");
+    // Without both edges the absolute row shrink-wraps and loses the alignment
+    // the row above relies on (`actionsEnd` to the right, `timeStart` left).
+    expect(reveal).toContain("left: 0");
+    expect(reveal).toContain("right: 0");
     expect(reveal).toContain("opacity: 0");
     expect(reveal).toContain("transition: opacity 80ms ease");
+  });
+
+  it("measures the row's gap against the transcript's own rhythm", () => {
+    // The row hangs in the space `MessageList.module.css` leaves between turns,
+    // so that sheet declares the value and this one reads it; the two numbers
+    // have to agree or a hidden row sits off the rhythm it is hiding inside.
+    const transcript = readFileSync(
+      new URL("./MessageList.module.css", import.meta.url),
+      "utf8",
+    );
+    const declared = /--transcript-gap:\s*(\d+)px/.exec(transcript);
+    expect(declared?.[1]).toBe("14");
+    expect(rules).toContain("var(--transcript-gap, 14px)");
+    // All three of that sheet's gaps — column, turn and turn tail — read the
+    // variable, so the row moves with the rhythm instead of with one copy of it.
+    expect(transcript.match(/gap: var\(--transcript-gap\)/g)?.length).toBe(3);
+    expect(transcript).not.toMatch(/^\s*gap: 14px;/m);
+  });
+
+  it("changes nothing but opacity when the row comes back", () => {
+    // The reason the row is out of the flow in the first place: revealing it
+    // must not re-enter the layout, or the transcript jumps under the pointer.
+    const back = reveal.slice(reveal.indexOf('[data-actions-reveal="hover"]:hover'));
+    expect(back).toContain("opacity: 1");
+    expect(back).not.toContain("position:");
+    expect(back).not.toContain("display:");
+    expect(back).not.toContain("margin");
   });
 
   it("brings the row back on hover and on keyboard focus", () => {

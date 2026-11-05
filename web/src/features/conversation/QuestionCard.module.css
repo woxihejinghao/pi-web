@@ -56,34 +56,6 @@
   min-width: 0;
 }
 
-.eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.eyebrowText {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.eyebrowAction {
-  flex-shrink: 0;
-  padding: 0;
-  color: var(--dsw-alias-link);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.eyebrowAction:hover {
-  text-decoration: underline;
-}
-
 .title {
   margin: 0;
   font-size: 15px;

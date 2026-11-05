@@ -57,7 +57,7 @@ export type AnswerOutcome = "answered" | "unknown" | "invalid";
 function expired(entry: Entry, now: number): boolean {
   const timeout = entry.request.timeout;
   if (typeof timeout !== "number" || timeout <= 0) return false;
-  return now - entry.receivedAt > timeout;
+  return now - entry.receivedAt >= timeout;
 }
 
 // Whitelist response fields: a browser payload must not override the RPC

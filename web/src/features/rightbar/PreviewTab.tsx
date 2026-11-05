@@ -10,6 +10,7 @@ import { languageFor, previewKindFor } from "./file-kind.ts";
 import { buildFrameDocument } from "./html-frame.ts";
 import { PathLabel } from "./rightbar-path.tsx";
 import { PauseIcon, PlayIcon } from "./rightbar-icons.tsx";
+import { OpenWithButton, useOpenWith, type OpenWithControls } from "./OpenWithButton.tsx";
 import { previewChangedBy } from "./preview-refresh.ts";
 import type { RightbarTab } from "./rightbar-state.ts";
 import pane from "./Pane.module.css";
@@ -44,8 +45,10 @@ type PreviewState =
 export function PreviewTab({
   projectId,
   projectPath,
+  sessionPath,
   tab,
 }: {
+  sessionPath?: string;
   projectId: string;
   /** The project root the watcher reports paths against. */
   projectPath: string;
@@ -59,6 +62,14 @@ export function PreviewTab({
   // keeps the same pair in a per-tab store with the same defaults.
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [stale, setStale] = useState(false);
+  // One query for the file, shared by both places the control appears — the
+  // header and, for a file this app cannot render, the empty state. dsh shares
+  // one per (file, query) for the same reason: two controls for one file must
+  // not be able to disagree about what the host offers.
+  // External transcript images are preview-only; native file actions retain
+  // their project-relative boundary.
+  const absoluteTarget = tab.target.startsWith("/") || /^[a-zA-Z]:/.test(tab.target);
+  const openWith = useOpenWith(projectId, tab.target, !absoluteTarget);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +78,7 @@ export function PreviewTab({
     // first read — nothing to keep — shows the loading state.
     setState((previous) => (previous.status === "ready" ? previous : { status: "loading" }));
     api
-      .readWorkspaceFile(projectId, tab.target)
+      .readWorkspaceFile(projectId, tab.target, absoluteTarget ? sessionPath : undefined)
       .then((file) => {
         if (!cancelled) setState({ status: "ready", file });
       })
@@ -86,7 +97,7 @@ export function PreviewTab({
     return () => {
       cancelled = true;
     };
-  }, [projectId, tab.target, attempt]);
+  }, [projectId, tab.target, attempt, absoluteTarget, sessionPath]);
 
   /**
    * Follow the file the way the changes panel follows the tree.
@@ -152,6 +163,17 @@ export function PreviewTab({
         >
           <RefreshIcon width={14} height={14} />
         </button>
+        {/* Last in the header, after the panel's own controls, which is where
+            dsh's `sidebar.right.tab.document.actions` slot puts it. */}
+        {openWith.available ? (
+          <OpenWithButton
+            applications={openWith.applications}
+            loading={openWith.loading}
+            failed={openWith.failed}
+            busy={openWith.busy}
+            onAct={openWith.act}
+          />
+        ) : null}
       </div>
       {/* One row, two reasons: a failed refresh outranks "this is stale", the
           way dsh orders the same pair. Both offer the same re-read. */}
@@ -170,6 +192,17 @@ export function PreviewTab({
           </button>
         </p>
       ) : null}
+      {/* A refused open or reveal, in the host's own words. Its own row rather
+          than a toast: this app has no toast layer, and a sentence that
+          disappears on a timer is the wrong shape for "the desktop said no". */}
+      {openWith.failure !== null ? (
+        <p className={styles.changed} data-preview-open-failed>
+          <span>{openWith.failure}</span>
+          <button type="button" className={styles.changedAction} onClick={openWith.dismissFailure}>
+            {t("common.close")}
+          </button>
+        </p>
+      ) : null}
       <div className={framed ? styles.framed : clsx(pane.scroll, styles.body)}>
         {state.status === "loading" ? (
           <div className={styles.centered}>
@@ -182,6 +215,7 @@ export function PreviewTab({
             path={tab.target}
             attempt={attempt}
             file={state.file}
+            openWith={openWith}
             // A reference's lines belong to the tab, so they are read back on
             // every render: a second chip pointing at the same file moves the
             // tab it already has rather than opening a neighbouring copy.
@@ -205,6 +239,7 @@ function Body({
   attempt,
   file,
   position,
+  openWith,
 }: {
   projectId: string;
   path: string;
@@ -212,6 +247,8 @@ function Body({
   file: WorkspaceFileContent;
   /** Lines a reference asked for; absent for an ordinary open. */
   position?: { line?: number | undefined; endLine?: number | undefined } | undefined;
+  /** The file's open control, shared with the header. */
+  openWith?: OpenWithControls | undefined;
 }) {
   const t = useT();
   const kind = previewKindFor(file.name, file.kind);
@@ -221,6 +258,19 @@ function Body({
       <div className={styles.centered}>
         <span className={styles.unsupportedName}>{file.name}</span>
         {file.reason ?? t("preview.unsupported")}
+        {/* A file this app cannot draw is the one place where opening it
+            elsewhere is the whole answer, so the control is offered at full size
+            with the action spelled out — dsh's `unpreviewable` slot. */}
+        {openWith !== undefined && openWith.available ? (
+          <OpenWithButton
+            applications={openWith.applications}
+            loading={openWith.loading}
+            failed={openWith.failed}
+            busy={openWith.busy}
+            prominent
+            onAct={openWith.act}
+          />
+        ) : null}
       </div>
     );
   }

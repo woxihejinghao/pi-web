@@ -238,6 +238,15 @@ body {
   --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-100);
   --dsw-alias-code-diff-added: color-mix(in srgb, var(--dsw-static-green-500) 8%, transparent);
   --dsw-alias-code-diff-deleted: color-mix(in srgb, var(--dsw-static-red-600) 8%, transparent);
+  /* The file-comparison palette: the line fill, the number gutter and the
+   * marker of one side. Literal values, exactly as the reference publishes
+   * them — this set paints a diff, it does not alias a state colour. */
+  --dsw-alias-file-diff-added-bg: rgb(230, 244, 231);
+  --dsw-alias-file-diff-added-gutter: rgb(237, 247, 237);
+  --dsw-alias-file-diff-added-marker: rgb(1, 162, 65);
+  --dsw-alias-file-diff-deleted-bg: rgb(252, 230, 226);
+  --dsw-alias-file-diff-deleted-gutter: rgb(253, 236, 233);
+  --dsw-alias-file-diff-deleted-marker: rgb(186, 39, 35);
   --dsw-alias-state-error-primary: var(--dsw-static-red-600);
   --dsw-alias-state-error-secondary: var(--dsw-static-red-400);
   --dsw-alias-state-idle-primary: var(--dsw-static-neutral-300);
@@ -339,6 +348,12 @@ html[data-appearance="dark"] body {
   --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-800);
   --dsw-alias-code-diff-added: color-mix(in srgb, var(--dsw-static-green-500) 12%, transparent);
   --dsw-alias-code-diff-deleted: color-mix(in srgb, var(--dsw-static-red-400) 12%, transparent);
+  --dsw-alias-file-diff-added-bg: rgb(31, 49, 36);
+  --dsw-alias-file-diff-added-gutter: rgb(19, 32, 22);
+  --dsw-alias-file-diff-added-marker: rgb(65, 201, 119);
+  --dsw-alias-file-diff-deleted-bg: rgb(60, 31, 27);
+  --dsw-alias-file-diff-deleted-gutter: rgb(40, 19, 14);
+  --dsw-alias-file-diff-deleted-marker: rgb(250, 66, 62);
   --dsw-alias-state-error-primary: var(--dsw-static-red-400);
   --dsw-alias-state-error-secondary: var(--dsw-static-red-400);
   --dsw-alias-state-idle-primary: var(--dsw-static-neutral-600);

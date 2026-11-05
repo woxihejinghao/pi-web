@@ -6,6 +6,7 @@ import { parseUnifiedDiff } from "./diff-parse.ts";
 import { DiffHunkView } from "./DiffHunk.tsx";
 import { parseTurnChangesTarget, type RightbarTab } from "./rightbar-state.ts";
 import { useTurnChanges } from "./turn-changes-store.ts";
+import diffStyles from "./FileDiff.module.css";
 import styles from "./TurnChangesTab.module.css";
 
 /** dsh groups its line counts; a turn that adds 1200 lines says so readably. */
@@ -152,9 +153,13 @@ export function TurnChangesTab({
             {selected.oversized ? t("turnChanges.oversized") : t("turnChanges.noDiff")}
           </p>
         ) : (
-          hunks.map((hunk, hunkIndex) => (
-            <DiffHunkView key={`${String(hunkIndex)}:${hunk.header}`} hunk={hunk} />
-          ))
+          // The hunks are the reference's diff body; the tab's own chrome (the
+          // file header and these notes) stays outside it.
+          <div className={diffStyles.body} data-review-view="unified" data-review-wrap>
+            {hunks.map((hunk, hunkIndex) => (
+              <DiffHunkView key={`${String(hunkIndex)}:${hunk.header}`} hunk={hunk} />
+            ))}
+          </div>
         )}
       </div>
     </div>

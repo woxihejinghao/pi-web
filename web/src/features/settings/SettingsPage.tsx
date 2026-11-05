@@ -7,11 +7,14 @@ import { GeneralSection } from "./GeneralSection.tsx";
 import { McpSection } from "./McpSection.tsx";
 import { ModelsSection } from "./ModelsSection.tsx";
 import { PluginsSection } from "./PluginsSection.tsx";
+import { PromptsSection } from "./PromptsSection.tsx";
+import { SkillsSection } from "./SkillsSection.tsx";
+
 import styles from "./SettingsPage.module.css";
 import { useT } from "../../lib/app-state.ts";
 import type { Translate } from "../../lib/i18n/index.ts";
 
-type SectionId = "general" | "models" | "plugins" | "mcp" | "approval";
+type SectionId = "general" | "models" | "plugins" | "skills" | "prompts" | "mcp" | "approval";
 
 /**
  * The nav rail. dsh's settings shell drives this from a slot registry that each
@@ -30,7 +33,9 @@ function navSections(
     { id: "general", label: t("settings.nav.general"), glyph: "settings" },
     { id: "models", label: t("settings.nav.models"), glyph: "database" },
     { id: "plugins", label: t("settings.nav.plugins"), glyph: "plugin" },
-  // dsh puts MCP beside 技能 inside its extension panel; here it is its own
+    { id: "skills", label: t("settings.nav.skills"), glyph: "skill" },
+    { id: "prompts", label: t("settings.nav.prompts"), glyph: "settings" },
+    // dsh puts MCP beside 技能 inside its extension panel; here it is its own
     // section, because this page's navigation is flat and MCP is not a plugin.
     { id: "mcp", label: "MCP", glyph: "mcp" },
     { id: "approval", label: t("approval.title"), glyph: "settings" },
@@ -75,6 +80,10 @@ export function SettingsPage() {
             <ModelsSection className={styles.section} />
           ) : section === "plugins" ? (
             <PluginsSection className={styles.section} />
+          ) : section === "skills" ? (
+            <SkillsSection className={styles.section} />
+          ) : section === "prompts" ? (
+            <PromptsSection className={styles.section} />
           ) : section === "approval" ? (
             <section className={styles.section}><ApprovalControl settings /></section>
           ) : (

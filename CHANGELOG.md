@@ -3,6 +3,101 @@
 本文件记录 pi-web-simple 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.14.1] - 2026-10-29
+
+### 修复
+
+- **会话更新实时同步**：会话文件监听采用固定刷新窗口，并同步当前进程自己的写入；流式消息、历史加载、会话切换与重复消息的合并更加可靠，避免侧栏和对话内容长时间停留在旧状态。
+
+## [0.14.0] - 2026-10-28
+
+### 新增
+
+- **提示词管理**：设置里新增一页，读写 pi 启动时加载的全局上下文（`AGENTS.override.md` / `AGENTS.md` / `CLAUDE.md`，按 pi 自己的候选顺序取第一个存在的）与当前工作区的那一份，没有文件时可以就地新建。保存会重启驻留的 pi 进程，新会话立刻用上新指令；工作区没选中时只给全局那一半。API：`GET` / `PUT /api/prompts`。
+- **Skills 管理**：设置里新增一页，列出 pi 解析到的全局、工作区与包内 Agent Skills，支持按名称/描述搜索、按启用状态筛选、读单个 `SKILL.md`。启停只写 pi 的配置，不改技能源文件，下一条消息生效；工作区还没被 pi 信任时界面明说原因，并且不给改。API：`GET /api/skills`、`GET /api/skills/detail`、`PUT /api/skills`。
+
+### 变更
+
+- **右侧栏撤下终端标签页**：「+」菜单、空面板的引导卡与 `Ctrl` + 反引号都不再提供终端入口，空面板回到一句「空面板」；读取布局时丢弃 `kind: "terminal"` 的标签，旧布局不会带回一个既画不出也打不开的标签。服务端的 `/api/terminal` 路由、`TerminalTab` 与 `terminal-state` 仍留在仓库里，恢复入口时不必重写。相关文档（`docs/known-limitations.md`、`docs/design-notes.md`）已改写。
+- 侧栏「设置」按钮不再挂更新红点，版本提示只留在设置页里。
+
+### 修复
+
+- **流式内容的空洞不再让对话崩掉**：流式块按 `contentIndex` 落位，还没到的位置是空洞而不是空块；`partial` 改用 `slice()` 保住这个稀疏形状，渲染、助手文本提取、工具结果与「本轮是否已收尾」的判定都先过 `isContentBlock`，遇到空洞就跳过。
+
+## [0.13.5] - 2026-10-27
+
+### 修复
+
+- **切回最近打开的会话不用再等一遍加载**：消息、fork 点与用量读数按会话缓存（最多 4 份，按最近使用淘汰），切回去立刻有内容，同时仍标成加载中，等最新状态落地。
+
+## [0.13.4] - 2026-10-27
+
+### 修复
+
+- **草稿按会话保存**：输入框正文、图片与 `@` 引用各跟各的会话，切走再回来还在，侧栏的行上也标出哪些会话还留着草稿；空输入不占缓存，会话删掉时一并清理。
+
+## [0.13.3] - 2026-10-26
+
+### 变更
+
+- 移除通用设置「关于」中的 pi 版本模块，保留项目版本信息及其检查更新、更新操作。
+
+## [0.13.2] - 2026-10-26
+
+### 修复
+
+- **回复前切换会话不再遗留「未保存」和旧标题**：首次助手回复后的保存状态刷新改由全局事件处理，切到其他会话或工作区也会刷新原工作区；回复结束时补偿刷新，覆盖文件落盘稍晚的情况。
+- **消息操作栏不再上浮覆盖内容**。
+
+### 变更
+
+- 输入框中的技能命令增加高亮，新会话与现有会话使用相同的命令信息。
+
+## [0.13.1] - 2026-10-22
+
+### 修复
+
+- **Linux 上创建不了带图会话的用例（也是 0.13.0 没能发上 npm 的原因）**：
+  `routes.test.ts` 把 ~200 KB base64 的转录塞进 `STUB_MESSAGES` 环境变量，而 Linux
+  对单条环境字符串的上限是 128 KiB（`MAX_ARG_STRLEN`），`spawn` 直接 E2BIG，
+  `/api/sessions/:id/state` 回 500。这条用例在本机 macOS 上一直通过，所以 CI 从
+  0.12.0 起就是红的、npm 停在 0.11.0。桩进程新增 `STUB_MESSAGES_FILE`：给到路径就
+  从文件读转录，环境变量只留给小 payload。
+
+## [0.13.0] - 2026-10-22
+
+### 新增
+
+- **终端按 dsh 的侧栏模型重做：服务端会话 + 客户端附件**。空面板现在是一张引导卡（不再是一句「空面板」），「+ → 终端」也先选 shell：默认跟主机登录 shell（macOS 上通常是 zsh），列出 `/etc/shells` 与 zsh / bash / fish / pwsh 等候选，选择记在标签上。同一时刻只有一个窗口能输入，其余窗口只读并显示「接管」；`write` / `resize` 由服务端校验 `attachmentId`，不是 controller 就回 409。
+- **屏幕快照与单调序号**：每个 shell 在服务端挂一棵 headless xterm（新增 `@xterm/headless`、`@xterm/addon-serialize` 依赖）。`attach` / `snapshot` 返回整屏加序号，`terminal_output` 帧带同一序号；客户端只接受更大的序号，断档时自动重拉快照，刷新、重连、两个窗口看同一个 shell 都不再回放字符流、不会花屏。
+- **标签名归服务端**（`TerminalInfo.title`，默认是实际启动的程序名）：双击标签就地改名，右键菜单同一项，改名走 `PATCH /api/terminal/:id`；`RightbarTab.shellPath` 让同一标签重挂载还开同一种 shell。
+- **退出/失败/丢失分得开**：已退出的 shell 保留屏幕与退出码，给「新建终端」；服务端重启后标签记住的 id 不存在时明说「进程已经不在了」，不再偷偷拿新 shell 顶替。关闭标签立刻移出界面并在后台 kill，失败在面板底部留可重试提示（`terminal_cleanup_failed`），不再 fire-and-forget。
+- **配额、校验与回收**：8 个上限含启动失败/已退出；列数行数夹到 500×200，输入上限 64 KiB（413）；无附件空闲 2 小时回收，附件 90 秒无心跳让出输入权；输入/尺寸变化只在真实变化时发给主机。
+
+### 变更
+
+- **文件树的四行样式补齐 dsh**（图标集本身早已和 dsh 逐字节相同，差的是装它的那棵树）：字号从写死的 12.5px 换成 dsh 的 `var(--dsh-content-font-size-secondary, 13px)`，跟着字号轴缩放（默认 14 时树是 13px）；文件名补上 `white-space: nowrap`，长名字现在走省略号而不是把行撑高；行内提示从 11.5px 回到 dsh 的 12px；文件行的类型图标挂上 dsh 的 `.fileIcon`（`flex: none`），长文件名挤过来时不再被压窄。
+- 终端主题即时跟随明暗切换（`MutationObserver`），xterm 设 `minimumContrastRatio: 4.5`。
+- 终端标签的「重新启动」改成「新建终端」：先释放旧 id 再开，不再复用同一个 shell。
+- `GET /api/terminal` 多返回 `environment`；新增 `GET /api/terminal/shells`、`GET /api/terminal/cleanup`、`POST /api/terminal/:id/attach|detach|heartbeat|cleanup/:id/retry`、`GET /api/terminal/:id/snapshot`、`PATCH /api/terminal/:id`。
+- 终端不再只开 bash；`docs/known-limitations.md` 与 `docs/design-notes.md` 的终端段落已重写。agent 侧仍只有 `bash`，没有 dsh 的六个 `terminal_*` 工具。
+
+### 修复
+
+- **会话与路径的加固**：会话文件的 `sessionPath` 与工作区文件解析都改成先 canonicalize（`realpathSync`）再判前缀——符号链接指到目录之外现在被拒，`path=../../../etc/passwd` 在任何系统调用之前就返回 403；对应回归测试在 `server/src/session-path.test.ts` 与 `server/src/routes.test.ts`。
+- **请求体有上限**：`POST/PUT/PATCH/DELETE` 的 `Content-Length` 超过 32 MiB（`PI_WEB_SIMPLE_REQUEST_BODY_BYTES`）直接 413，不再先把整段 base64 图片读进内存再判定。
+- **会话状态不再被异步回写覆盖**：`useConversation` 的进行中状态改成按最新快照合并，异步回调晚到的旧值不再把界面打回上一轮（`web/src/features/conversation/useConversation.regression.test.ts` 覆盖）。
+- **桌面打包更稳**：四个平台的产物校验、依赖安装可复现，Windows 退出时清掉整棵子进程树，目录选择弹窗的焦点与 Esc 处理也补齐了。
+
+## [0.12.0] - 2026-10-16
+
+### 新增
+
+- **预览文件时多了一个「打开方式」分体按钮与本机应用列表（dsh 的 `ui-open-in-app`）**：预览头最右（重新载入之后）是本机打开的分体按钮——主按钮用系统默认应用打开，措辞是「用 Xcode 打开」，箭头列出这台机器上注册为这个文件类型的应用（真实图标、默认那个标「（默认）」），最后一行固定「显示文件位置」；不能预览的文件在空态画同一个控件的放大形态（36px、带「打开」两个字）。同一个文件的头部与空态共用一次查询（`useOpenWith`），列表还在读时按钮显示 13px 灰块并禁用，指针与键盘手势共用同一个 in-flight 锁，所以连点不会打开两次。几何与文案按 dsh：24px 分体、0.5px 边框、11px 字、菜单行 28px、应用图标 14px、最后一行前一条分隔线。应用列表来自 macOS 的 LaunchServices（`server/src/open-with.ts` 里一段 JXA 脚本走 `osascript -l JavaScript` 读 `NSWorkspace` 的 `URLsForApplicationsToOpenURL`）：同名同 bundle 的副本（自更新留下的 staging、多版本安装）合并成系统默认那一个、否则留版本最高的，图标是 `NSWorkspace` 现画的 32px PNG。应用目录只查 `/Applications` 与 `~/Applications`（与 dsh 相同，不去问全量注册表），所以装在别处的 app 不在菜单里，新装的要刷新页面。
+
+- **打开与显示位置都先过读文件那道闸门，主机拒绝是一句话而不是一次失败**：前端只发工作区相对路径，服务端用 `resolveWorkspaceFile`（项目内 realpath + 前缀判定）解析——实测 `path=../../../etc/passwd` 在任何系统调用之前就返回 403；请求体的 `action` 是闭集（`open` | `reveal`），`application` 只对 `open` 有效，`reveal` 带上它会被拒绝。`.html`/`.svg` 的默认打开会先试默认浏览器（macOS 读 LaunchServices 里 `https` 那个 handler），`reveal` 是 `open -R` / `explorer.exe /select,`（退出码 1 算「已交给桌面进程」）/ `xdg-open` 父目录。主机拒绝（`{"ok":false,"error":…}`）与超时都不变成 HTTP 错误，而是头部下面一行原话（自带「关闭」——本项目没有 toast 层，而一句会自己消失的话不适合表达「桌面拒绝了」）：「没有可用的桌面」是一个答案，不是一次故障。**与 dsh 有意不同的一处**：dsh 在没有任何关联应用时把主按钮变成「显示文件位置」并去掉箭头，而这里只有 macOS 答得出关联查询（Windows/Linux 用的是注册表与 GIO，本机验证不到，所以没有带一份测不了的清单），照搬会让默认打开方式彻底没有入口——因此主按钮永远是「打开」（没有列表时措辞是「用默认应用打开」），「显示文件位置」永远在菜单最后一行。主机判断按 dsh：`SSH_CONNECTION`/`SSH_TTY` 非空，或 Linux 没有 `DISPLAY`/`WAYLAND_DISPLAY` 时一个控件也不画。
+
 ## [0.11.0] - 2026-10-15
 
 ### 新增

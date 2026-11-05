@@ -3,7 +3,6 @@ import clsx from "clsx";
 import { CloseIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { actions, type PendingUiRequest, useT } from "../../lib/app-state.ts";
-import { api } from "../../lib/api.ts";
 import { Markdown } from "./Markdown.tsx";
 import {
   CONFIRM_NO,
@@ -35,13 +34,9 @@ import styles from "./QuestionCard.module.css";
  */
 export interface QuestionCardProps {
   pending: PendingUiRequest;
-  /** Shown above the title when the request belongs to a session that is not the open one. */
-  sessionLabel?: string;
-  /** Jumps to that session; offered only alongside `sessionLabel`. */
-  onOpenSession?: () => void;
 }
 
-export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionCardProps) {
+export function QuestionCard({ pending }: QuestionCardProps) {
   const t = useT();
   const { request } = pending;
   const options = questionOptions(request);
@@ -124,8 +119,7 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
     setBusy("answer");
     setError(null);
     try {
-      await api.respondToUiRequest(request.id, payload);
-      actions.dismissUiRequest(request.id);
+      await actions.respondToUiRequest(request.id, payload);
     } catch (err) {
       setBusy(null);
       setError((err as Error).message);
@@ -135,9 +129,8 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
   const cancel = (): void => {
     setBusy("cancel");
     setError(null);
-    void api
+    void actions
       .respondToUiRequest(request.id, { cancelled: true })
-      .then(() => actions.dismissUiRequest(request.id))
       .catch((err: Error) => {
         setBusy(null);
         setError(err.message);
@@ -211,14 +204,6 @@ export function QuestionCard({ pending, sessionLabel, onOpenSession }: QuestionC
       >
         <header className={styles.header}>
           <div className={styles.heading}>
-            {sessionLabel ? (
-              <div className={styles.eyebrow}>
-                <span className={styles.eyebrowText}>{sessionLabel}</span>
-                {onOpenSession ? (
-                  <button type="button" className={styles.eyebrowAction} onClick={onOpenSession}>{t("question.goTo")}</button>
-                ) : null}
-              </div>
-            ) : null}
             <h2 className={styles.title}>{title}</h2>
           </div>
           <div className={styles.headerActions}>
