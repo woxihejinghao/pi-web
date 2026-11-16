@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 import { actions, useT } from "../../lib/app-state.ts";
+import { api } from "../../lib/api.ts";
 import {
   expandReferences,
   FILE_SIGIL,
@@ -87,12 +88,14 @@ function takenLabels(text: string, references: ReadonlyMap<string, string>): Set
  * set: React has not written the new text into the textarea yet, and a browser
  * whose value changes puts the caret at the end on its own.
  */
-export function useReferenceDraft({ text, setText, textareaRef, workspacePath, references: savedReferences }: {
+export function useReferenceDraft({ text, setText, textareaRef, workspacePath, projectId, references: savedReferences }: {
   text: string;
   setText(value: string): void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   /** The workspace the message is about to be sent in; references are relative to it. */
   workspacePath: string | undefined;
+  /** The project the `@` index searches; a browser-only folder drop needs it too. */
+  projectId?: string | null;
   /** Session-owned labels, restored with the text when the input remounts. */
   references?: Map<string, string>;
 }): ReferenceDraft {
@@ -187,9 +190,41 @@ export function useReferenceDraft({ text, setText, textareaRef, workspacePath, r
     [text, setText, textareaRef, workspacePath],
   );
 
-  const onUnnamedFolder = useCallback((): void => {
-    actions.setNotice(t("composer.folderDesktopOnly"));
-  }, [t]);
+  const onUnnamedFolder = useCallback(
+    (name: string): void => {
+      // The drop carried a name because a browser may not read where the folder
+      // lives. The one path it can still mean is a directory already in the
+      // open project, so ask the `@` index: a single answer is the reference,
+      // and anything else is a sentence the user has to finish. The search is
+      // one round trip (`git ls-files` is cached server-side), so the chip
+      // lands about as fast as the drop highlight clears.
+      if (!projectId) {
+        actions.setNotice(t("composer.folderDesktopOnly"));
+        return;
+      }
+      void api
+        .searchProjectFiles(projectId, name, 100)
+        .then((result) => {
+          const matches = result.items.filter(
+            (item) => item.type === "directory" && item.name === name,
+          );
+          if (matches.length === 1) {
+            const area = textareaRef.current;
+            insertReference(
+              matches[0]!.path,
+              "directory",
+              area?.selectionStart ?? area?.value.length ?? 0,
+            );
+            return;
+          }
+          actions.setNotice(
+            t(matches.length > 1 ? "composer.folderAmbiguous" : "composer.folderNotFound", { name }),
+          );
+        })
+        .catch(() => actions.setNotice(t("composer.folderDesktopOnly")));
+    },
+    [insertReference, projectId, t, textareaRef],
+  );
 
   return { onDroppedFolder, onUnnamedFolder, expand, removeAtCaret, clear, insertReference };
 }

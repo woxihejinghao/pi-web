@@ -139,10 +139,15 @@ export const api = {
    * user types a name (`@useComposer`), and the menu has to fill from one
    * keystroke. The server indexes with `git ls-files` where it can, so ignored
    * files are not offered — the same set the agent itself would find.
+   *
+   * `limit` is there for the caller that is not a menu: a dropped folder knows
+   * its own name and has to see every directory that answers to it, not just
+   * the first page the ranking happens to return.
    */
-  searchProjectFiles: (projectId: string, query: string) =>
+  searchProjectFiles: (projectId: string, query: string, limit?: number) =>
     request<FileSearchResult>(
-      `/api/projects/${encodeURIComponent(projectId)}/files/search?q=${encodeURIComponent(query)}`,
+      `/api/projects/${encodeURIComponent(projectId)}/files/search?q=${encodeURIComponent(query)}` +
+        (limit === undefined ? "" : `&limit=${limit}`),
     ),
 
   /** One file's content, for the right sidebar's preview tab. */

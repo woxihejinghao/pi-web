@@ -58,8 +58,12 @@ export interface FolderDropHandlers {
    * one, so a card that cannot take folders at all has one branch, not two.
    */
   onDroppedFolder?(path: string): boolean;
-  /** A dropped folder no API could name: a plain browser has no paths to give. */
-  onUnnamedFolder?(): void;
+  /**
+   * A dropped folder no API could name — a plain browser has no paths to give.
+   * The folder's own name is all the browser saw, and the only thing a caller
+   * can still search the workspace with.
+   */
+  onUnnamedFolder?(name: string): void;
 }
 
 /**
@@ -185,7 +189,7 @@ export function useImageDraft(
         event.preventDefault();
         const file = data.files[folder.index];
         const path = file ? pathForFile(file) : null;
-        if (path === null || onDroppedFolder?.(path) !== true) onUnnamedFolder?.();
+        if (path === null || onDroppedFolder?.(path) !== true) onUnnamedFolder?.(folder.name);
         return;
       }
       // Everything else the drop carried goes to the attachments, not just the

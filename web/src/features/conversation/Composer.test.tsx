@@ -116,3 +116,70 @@ describe("session composer drafts", () => {
     expect(composerDraftPaths.get().has(ONE)).toBe(false);
   });
 });
+
+describe("browser folder drops", () => {
+  /** A reference draft with no DOM textarea, which is all a drop needs here. */
+  function draftFor(projectId: string | null) {
+    let text = "";
+    let draft!: ReferenceDraft;
+    function Probe() {
+      draft = useReferenceDraft({
+        text,
+        setText: (value) => {
+          text = value;
+        },
+        textareaRef: { current: null },
+        workspacePath: "/project",
+        projectId,
+      });
+      return null;
+    }
+    renderToStaticMarkup(<Probe />);
+    return { draft, text: () => text };
+  }
+
+  it("resolves a name-only drop to the one workspace directory that answers to it", async () => {
+    const { api } = await import("../../lib/api.ts");
+    vi.spyOn(api, "searchProjectFiles").mockResolvedValue({
+      query: "src",
+      truncated: false,
+      indexed: 2,
+      items: [
+        { path: "src", name: "src", type: "directory" },
+        { path: "src/main.ts", name: "main.ts", type: "file" },
+      ],
+    });
+    const { draft, text } = draftFor("project-1");
+    draft.onUnnamedFolder!("src");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The chip carries the slot glyph; what is sent is the `@` reference the
+    // agent already understands from the `@` menu.
+    expect(text()).toContain("src/");
+    expect(draft.expand(text()).trim()).toBe("@src/");
+  });
+
+  it("does not guess between directories that share the dropped name", async () => {
+    const { api } = await import("../../lib/api.ts");
+    vi.spyOn(api, "searchProjectFiles").mockResolvedValue({
+      query: "src",
+      truncated: false,
+      indexed: 2,
+      items: [
+        { path: "apps/web/src", name: "src", type: "directory" },
+        { path: "packages/core/src", name: "src", type: "directory" },
+      ],
+    });
+    const notice = vi.spyOn(actions, "setNotice");
+    const { draft, text } = draftFor("project-1");
+    draft.onUnnamedFolder!("src");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(text()).toBe("");
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining("src"));
+  });
+
+  it("falls back to the desktop-only notice when there is no project to search", () => {
+    const { draft, text } = draftFor(null);
+    draft.onUnnamedFolder!("src");
+    expect(text()).toBe("");
+  });
+});

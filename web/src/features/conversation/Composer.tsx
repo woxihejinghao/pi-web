@@ -148,7 +148,7 @@ function SessionComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** The layer painting the draft under the transparent textarea. */
   const mirrorRef = useRef<HTMLDivElement>(null);
-  const reference = useReferenceDraft({ text, setText, textareaRef, workspacePath, references });
+  const reference = useReferenceDraft({ text, setText, textareaRef, workspacePath, projectId, references });
   /** The pictures and asynchronous reads belong to this session's store. */
   const draft = useImageDraft(reference, draftStore);
 

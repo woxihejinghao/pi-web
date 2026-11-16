@@ -222,6 +222,7 @@ export function NewSessionHero() {
     setText,
     textareaRef,
     workspacePath: project?.path,
+    projectId: state.selectedProjectId,
   });
   const draft = useImageDraft(reference);
   // pi's own default until the user picks another one; `selectModel` on this

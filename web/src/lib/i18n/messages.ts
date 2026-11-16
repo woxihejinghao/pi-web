@@ -302,6 +302,8 @@ export const zhCN = {
   "composer.stop": "停止生成",
   "composer.send": "发送",
   "composer.folderDesktopOnly": "浏览器读不到文件夹的路径，拖入文件夹需要桌面版。",
+  "composer.folderNotFound": "浏览器读不到文件夹的路径，工作区里也没有名为「{name}」的目录。用 @ 选择目录，或改用桌面版。",
+  "composer.folderAmbiguous": "工作区里有多个名为「{name}」的目录，请用 @ 选择要引用哪个。",
 
   // --- conversation · pane / question / model ------------------------------
   "pane.forkedNotice": "已从「{label}」分叉为新会话。「{label}」之后的轮次仍留在原会话里。",
@@ -1223,6 +1225,8 @@ export const en: Record<MessageKey, string> = {
   "composer.stop": "Stop generating",
   "composer.send": "Send",
   "composer.folderDesktopOnly": "A browser cannot read a folder's path; dropping one needs the desktop app.",
+  "composer.folderNotFound": "A browser cannot read a folder's path, and this project has no directory named “{name}”. Pick one with @, or use the desktop app.",
+  "composer.folderAmbiguous": "This project has more than one directory named “{name}”. Use @ to pick which one you mean.",
 
   "pane.forkedNotice": "Forked from “{label}” into a new session. Turns after “{label}” stay in the original.",
   "pane.preparing": "Preparing session…",
