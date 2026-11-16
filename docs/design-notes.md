@@ -58,6 +58,8 @@ web/src/
   features/conversation/ 新会话页、对话流、Composer、工具行、思考行、轮次导轨
                          消息操作行（复制 / 分支 / 用量 / 用时）
                          任务清单（转录投影 + 面板 + 专用工具行）、Markdown 与代码高亮（shiki）
+                         `mermaid` 代码块画成图（MermaidBlock：引擎按需 import、跟随明暗主题、
+                         流式与解析失败时退回源码）
                          输入框右下角的模型卡片（模型 + 思考强度）与上下文 chip（含共用统计面板 StatPanel）
                          输入框的两张候选菜单：`/` 命令（slash 触发）与 `@` 文件（file-token 触发，
                          目录引用与文件引用共用一套 chip 机制：reference-token / useReferenceDraft /

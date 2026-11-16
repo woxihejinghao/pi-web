@@ -3,6 +3,7 @@ import clsx from "clsx";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./CodeBlock.tsx";
+import { MermaidBlock } from "./MermaidBlock.tsx";
 import { FileRefChip } from "./FileRefChip.tsx";
 import { useFileRefs, type FileRefDelegate } from "./file-ref-context.tsx";
 import { fileRefLabel, parseFileTarget } from "./file-ref.ts";
@@ -78,7 +79,16 @@ function MarkdownCode({ className, children }: { className?: string; children?: 
   const language = /language-([\w-]+)/.exec(className ?? "")?.[1];
   const raw = String(children ?? "");
   const isBlock = Boolean(language) || raw.includes("\n");
-  if (isBlock) return <CodeBlock code={raw.replace(/\n$/, "")} lang={language} />;
+  if (isBlock) {
+    const source = raw.replace(/\n$/, "");
+    // A `mermaid` fence is not code to colour — it is a picture to draw, with its
+    // own fallback to the source while the answer streams or when it does not
+    // parse. `mmd` is the extension the same diagrams are stored under.
+    if (language !== undefined && (language === "mermaid" || language === "mmd")) {
+      return <MermaidBlock code={source} streaming={streaming} />;
+    }
+    return <CodeBlock code={source} lang={language} />;
+  }
 
   // A token the turn's vocabulary knows becomes a chip; anything it does not
   // name — including every token while the message streams — stays code, which
@@ -146,7 +156,9 @@ const MARKDOWN_COMPONENTS: Components = {
 
 /**
  * Markdown renderer for assistant output and user turns. Fenced blocks go
- * through shiki; inline code stays plain so it inherits theme tokens.
+ * through shiki — except a `mermaid` fence, which is a picture rather than code
+ * and is handed to `MermaidBlock` (see the note there). Inline code stays plain
+ * so it inherits theme tokens.
  *
  * Two of its affordances come from the surrounding `FileRefProvider`, and both
  * are off without one: a link whose destination names a workspace file becomes a

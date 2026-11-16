@@ -1,0 +1,108 @@
+/*
+ * Same box as a code fence (`CodeBlock.module.css`): a diagram is a fence whose
+ * body happens to be a picture, so it sits in the transcript at the same weight
+ * and must not read as a different kind of object.
+ */
+.block {
+  margin: 10px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--dsw-alias-markdown-code-block);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--dsw-alias-markdown-code-block-banner);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.lang {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.action {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * The source fallback. Padding and metrics are the fence's, so the block does
+ * not resize when a diagram replaces the text it was drawn from.
+ */
+.source {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+  font-family: var(--ds-font-family-code);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-primary);
+}
+
+.source code {
+  font: inherit;
+}
+
+/* The picture. `overflow-x` lets a wide flowchart be scrolled rather than
+   squeezed, and the SVG is allowed to keep its natural height. */
+.diagram {
+  padding: 12px;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+  display: flex;
+  justify-content: center;
+}
+
+.diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  /* Mermaid's own background is transparent; the block's token shows through,
+     which is what keeps a dark diagram out of a light hole. */
+  background: transparent;
+}
+
+/*
+ * Edge labels are mermaid's weakest contrast: a mid-grey pill drawn behind the
+ * text, which on the dark appearance reads as grey on grey. The pill is replaced
+ * by the block's own background, and the label text by the secondary label
+ * token, so a label is as legible as the prose around the diagram. `:global` is
+ * load bearing: these class names come from mermaid's own stylesheet, and a CSS
+ * module would otherwise scope them to names no element carries. `!important`
+ * likewise — mermaid injects its rules with an `#id` selector.
+ */
+.diagram svg :global(.labelBkg),
+.diagram svg :global(.edgeLabel),
+.diagram svg :global(.edgeLabel) p {
+  background-color: var(--dsw-alias-markdown-code-block) !important;
+  color: var(--dsw-alias-label-secondary) !important;
+}
+
+.error {
+  margin: 0;
+  padding: 8px 12px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-word;
+}
