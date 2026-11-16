@@ -125,6 +125,14 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
         batch?.questions[1]?.multiSelect === true,
       );
       check("no user-visible deadline is invented", batch?.timeoutMs === 120_000, String(batch?.timeoutMs));
+      // The card is keyed by the tool call that asked: that is what lets closing
+      // it hide the panel and reopen it from the row, instead of answering
+      // `cancelled` (dsh's rule for a keyed card).
+      check(
+        "the asking tool call travels with the batch",
+        typeof batch?.callId === "string" && batch.callId.length > 0,
+        String(batch?.callId),
+      );
 
       answer(client, frames[0]!.id, {
         value: JSON.stringify({

@@ -283,6 +283,23 @@ export interface ExtensionUiRequest {
   timeout?: number;
   /** Present only on a decoded `ask_user` batch. */
   questions?: AskUserQuestionItem[];
+  /**
+   * The tool call that asked, on a decoded `ask_user` batch.
+   *
+   * Closing a card that names its call hides it — the request stands and the
+   * tool call row reopens it — while a card without one has nowhere to come
+   * back from, so closing it answers `cancelled`.
+   */
+  callId?: string;
+  /**
+   * When the user-visible deadline lands, on the clock of the server holding
+   * the request. Present only on a decoded `ask_user` batch that declared one.
+   *
+   * The card counts down to it, and a card the user put away keeps counting: a
+   * hidden question still times out, and the tool still records "nobody
+   * answered" rather than leaving the process blocked.
+   */
+  expiresAt?: number;
   [key: string]: unknown;
 }
 

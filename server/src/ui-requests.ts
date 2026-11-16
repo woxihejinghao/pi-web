@@ -84,8 +84,9 @@ export class PendingUiRequests {
   add(handle: SessionHandle, request: PendingUiDialog["request"]): PendingUiDialog["request"] {
     const batch = request.method === "select" ? decodeAskUserBatch(request.title) : null;
     const codec: Codec = batch === null ? "plain" : "ask_user";
-    const display = batch === null ? request : askUserDisplay(request, batch);
-    this.entries.set(request.id, { handle, request, display, codec, receivedAt: Date.now() });
+    const receivedAt = Date.now();
+    const display = batch === null ? request : askUserDisplay(request, batch, receivedAt);
+    this.entries.set(request.id, { handle, request, display, codec, receivedAt });
     return display;
   }
 
@@ -143,6 +144,7 @@ export class PendingUiRequests {
 function askUserDisplay(
   request: PendingUiDialog["request"],
   batch: AskUserBatch,
+  receivedAt: number,
 ): PendingUiDialog["request"] {
   // The card counts down the deadline the user was promised, which the
   // extension declares in the payload. pi's own timeout is longer, and the
@@ -158,6 +160,13 @@ function askUserDisplay(
     questions: batch.questions,
     ...(batch.title === undefined ? {} : { title: batch.title }),
     ...(timeout === undefined ? {} : { timeout }),
+    // When the user-visible deadline lands, on the clock of the machine holding
+    // the request. A client that hides the card keeps that deadline — dsh does
+    // the same from its own card object, so a hidden panel still times out.
+    ...(timeout === undefined ? {} : { expiresAt: receivedAt + timeout }),
+    // Carried through so the browser can treat closing as hiding and reopen the
+    // card from the tool call; the encoded frame keeps the original either way.
+    ...(batch.callId === undefined ? {} : { callId: batch.callId }),
   };
 }
 

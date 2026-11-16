@@ -69,6 +69,15 @@ export interface QuestionComposerProps {
    */
   cancellable?: boolean;
   /**
+   * Close the card without answering it.
+   *
+   * Passing this makes closing a hide rather than a cancel, which is dsh's rule
+   * for a card that names its tool call: the request stands, the countdown keeps
+   * running, and the tool call row reopens the card. A card without this has no
+   * way back, so its close button stays a `cancelled` answer.
+   */
+  onHide?: (() => void) | undefined;
+  /**
    * Whether the card is drawn inside a strip rather than in the composer seat.
    * The wrapper's page insets go away; the strip already provides them.
    */
@@ -112,6 +121,7 @@ export function QuestionComposer({
   title: titleProp,
   timeoutMs = null,
   cancellable = true,
+  onHide,
   embedded = false,
   requestId,
   draftKey,
@@ -281,6 +291,21 @@ export function QuestionComposer({
     void deliver({ cancelled: true });
   };
 
+  /**
+   * What the card's close button does.
+   *
+   * dsh's rule, kept here: a card that names its tool call only leaves the
+   * composer seat when it is closed — the request stands, its countdown keeps
+   * running, and the tool call row reopens it — so closing must not answer
+   * `cancelled`. A card with nowhere to come back from keeps the old meaning.
+   */
+  const dismissible = onHide !== undefined || cancellable;
+  const dismiss = (): void => {
+    if (onHide !== undefined) onHide();
+    else cancel();
+  };
+  const dismissLabel = onHide === undefined ? t("question.cancelTitle") : t("question.hideTitle");
+
   const updateDraft = (target: number, next: (value: AskUserDraft) => AskUserDraft): void => {
     setDrafts((current) => current.map((value, position) => (position === target ? next(value) : value)));
     setError(null);
@@ -334,9 +359,9 @@ export function QuestionComposer({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     // An IME owns Escape while a candidate list is open: that key closes the
     // list, and cancelling the card on top of it would lose the answer.
-    if (cancellable && event.key === "Escape" && !event.nativeEvent.isComposing) {
+    if (dismissible && event.key === "Escape" && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      cancel();
+      dismiss();
       return;
     }
     if (disabled) return;
@@ -370,7 +395,7 @@ export function QuestionComposer({
         requesting={planChanges}
         error={error}
         embedded={embedded}
-        cancellable={cancellable}
+        cancellable={dismissible}
         {...(planTarget === null || onOpenPlan === undefined
           ? {}
           : {
@@ -390,7 +415,7 @@ export function QuestionComposer({
           setError(null);
         }}
         onSubmitChanges={submit}
-        onCancel={cancel}
+        onCancel={dismiss}
       />
     );
   }
@@ -433,14 +458,14 @@ export function QuestionComposer({
                 <Glyph name="chevronDown" size={14} />
               </span>
             </button>
-            {cancellable ? (
+            {dismissible ? (
               <button
                 type="button"
                 className={card.iconButton}
-                aria-label={t("common.cancel")}
-                title={t("question.cancelTitle")}
+                aria-label={dismissLabel}
+                title={dismissLabel}
                 disabled={disabled}
-                onClick={cancel}
+                onClick={dismiss}
               >
                 <CloseIcon />
               </button>

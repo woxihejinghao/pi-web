@@ -165,7 +165,7 @@ describe("approval response integrity", () => {
 
 describe("ask_user batches", () => {
   function batchDialog(id: string, extra: Record<string, unknown> = {}) {
-    const { timeoutMs, ...rest } = extra;
+    const { timeoutMs, callId, ...rest } = extra;
     return {
       id,
       method: "select",
@@ -176,6 +176,7 @@ describe("ask_user batches", () => {
           { id: "db", header: "选库", question: "用哪个数据库？", options: [{ label: "Postgres" }] },
         ],
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(callId === undefined ? {} : { callId }),
       })}`,
       options: [ASK_USER_OPTION_SENTINEL],
       ...rest,
@@ -199,9 +200,22 @@ describe("ask_user batches", () => {
             { id: "db", header: "选库", question: "用哪个数据库？", options: [{ label: "Postgres" }] },
           ],
           timeout: 120_000,
+          expiresAt: expect.any(Number),
         },
       },
     ]);
+  });
+
+  it("carries the asking tool call so a client can hide and reopen its card", () => {
+    const table = new PendingUiRequests();
+    const { session } = handle("/sessions/a.jsonl");
+
+    const shown = table.add(session, batchDialog("ui_4", { timeout: 120_000, callId: "call_42" }));
+
+    expect(shown.callId).toBe("call_42");
+    // The deadline the countdown runs to is the user-visible one, not pi's
+    // longer fallback: a hidden card still has to report `timedOut` first.
+    expect(shown.expiresAt).toBeGreaterThanOrEqual(Date.now() + 119_000);
   });
 
   it("encodes the browser's decision into the value pi resolves the select with", async () => {
@@ -323,6 +337,7 @@ describe("webEventFor", () => {
       method: "ask_user",
       title: "选库",
       timeout: 120_000,
+      expiresAt: expect.any(Number),
       questions: [{ id: "db", header: "选库", question: "用哪个数据库？", options: [{ label: "Postgres" }] }],
     });
     // Decoding is not a view: the same entry stays answerable by id.

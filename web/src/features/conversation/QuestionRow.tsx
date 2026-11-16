@@ -1,5 +1,6 @@
 import { Glyph } from "../../components/dsh-icons.tsx";
-import { useT } from "../../lib/app-state.ts";
+import { actions, appStore, useT } from "../../lib/app-state.ts";
+import { useStoreSelector } from "../../lib/store.ts";
 import type { MessageKey } from "../../lib/i18n/index.ts";
 import type { ToolCallBlock } from "../../lib/types.ts";
 import { DisclosureRow } from "./DisclosureRow.tsx";
@@ -48,6 +49,48 @@ export function QuestionRow({
   const t = useT();
   const [open, setOpen] = useDisclosureOpen(defaultOpen);
   const record = readSettledQuestion(execution?.details);
+  // A live question the user put away: the tool call has not recorded a result
+  // yet, and this row is the way back to the card — dsh reopens a hidden panel
+  // from the same place. Selecting the request object itself (not a fresh
+  // object) keeps the subscription from re-rendering on every store write.
+  const hidden = useStoreSelector(
+    appStore,
+    (state) =>
+      state.pendingUiRequests.find(
+        (item) => state.hiddenUiRequests[item.request.id] === true
+          && item.request.callId === call.id,
+      ) ?? null,
+  );
+
+  if (hidden !== null) {
+    const deadline = hidden.request.expiresAt;
+    const expired = typeof deadline === "number" && deadline <= Date.now();
+    return (
+      <div className={styles.root} data-variant="others" data-tool={call.name} data-state="running">
+        <DisclosureRow
+          rowClassName={styles.row}
+          leadingClassName={styles.leading}
+          titleClassName={styles.title}
+          icon={<Glyph name="think" />}
+          title={t("question.rowTitle")}
+          open={false}
+          expandable
+          expandOnRowClick
+          // Nothing expands in place: reopening puts the card back in the seat
+          // it was closed from, countdown and drafts included.
+          onToggle={() => actions.showUiRequest(hidden.request.id)}
+          collapsedContent={
+            <>
+              <span className={styles.sep} aria-hidden />
+              <span className={styles.summary}>
+                {t(expired ? "question.outcome.timedOut" : "question.waiting")}
+              </span>
+            </>
+          }
+        />
+      </div>
+    );
+  }
 
   if (record === null) {
     return (

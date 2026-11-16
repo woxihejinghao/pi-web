@@ -274,12 +274,22 @@ function validateIntent(
  * `timeoutMs` is the deadline the *user* sees, which is shorter than the one pi
  * enforces (see `REPORT_SLACK_MS`). It travels in the payload so neither the
  * server nor the browser has to know how much slack this file chose.
+ *
+ * `callId` is the tool call that asked. The web client uses it for the same
+ * thing dsh's card does: a card that names its call can be closed and reopened
+ * from the tool call row, so closing only hides it — a card with no call id has
+ * nowhere to come back from, and closing it answers `cancelled`.
  */
-function encodeRequest(questions: readonly AskUserQuestion[], timeoutMs: number | undefined): string {
+function encodeRequest(
+  questions: readonly AskUserQuestion[],
+  timeoutMs: number | undefined,
+  callId: string,
+): string {
   return `${TITLE_PREFIX}${JSON.stringify({
     v: 1,
     kind: "ask_user",
     questions,
+    callId,
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   })}`;
 }
@@ -359,35 +369,73 @@ function settled(
 }
 
 /**
+ * The result of a dialog that closed itself without an answer.
+ *
+ * An aborted turn is not the user declining — dsh reports it separately
+ * (`ASK_ABORTED`) — and the difference is worth keeping, because silence that
+ * reads as a refusal invites the model to treat an interruption as a decision.
+ */
+function dismissed(questions: AskUserQuestion[], signal: AbortSignal | undefined): ToolResult {
+  return settled(
+    questions,
+    "cancelled",
+    signal?.aborted === true
+      ? "Error: ask_user_question was aborted before the user answered"
+      : "Error: ask_user_question was cancelled before the user answered",
+  );
+}
+
+/**
+ * The options pi should wait for a dialog with.
+ *
+ * `timeout` is pi's own backstop, which the caller chooses per mode (see
+ * `REPORT_SLACK_MS`). `signal` makes an aborted turn dismiss the dialog instead
+ * of leaving it up until the deadline — the only form of dsh's `ASK_ABORTED`
+ * pi's UI sub-protocol offers.
+ */
+function dialogOptions(
+  timeoutMs: number | undefined,
+  signal: AbortSignal | undefined,
+): { timeout?: number; signal?: AbortSignal } | undefined {
+  if (timeoutMs === undefined && signal === undefined) return undefined;
+  return {
+    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
+    ...(signal === undefined ? {} : { signal }),
+  };
+}
+
+/**
  * Ask through the RPC sub-protocol: one `select` carrying the whole batch.
  *
- * `undefined` is pi settling the dialog itself, and it happens two ways that
- * matter: the client cancelled, or a client that is no longer there let the
- * deadline pass. The extension asked for a window, so its own clock tells them
- * apart — a cancel comes back at once, a deadline after roughly that window —
- * and telling them apart is what keeps an unanswered question answerable
- * instead of being recorded as a decision the user never made.
+ * `undefined` is pi settling the dialog itself, and it happens three ways that
+ * matter: the client cancelled, a client that is no longer there let the
+ * deadline pass, or the calling turn was aborted. The extension asked for a
+ * window, so its own clock tells the first two apart — a cancel comes back at
+ * once, a deadline after roughly that window — and the signal tells the third
+ * (dsh's `ASK_ABORTED`, which is likewise not a decision the user made).
  */
 async function askOverRpc(
   ctx: ExtensionContext,
   questions: AskUserQuestion[],
   timeoutSeconds: number,
+  callId: string,
+  signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
   const startedAt = Date.now();
   const value = await ctx.ui.select(
-    encodeRequest(questions, timeoutSeconds > 0 ? timeoutSeconds * 1000 : undefined),
+    encodeRequest(questions, timeoutSeconds > 0 ? timeoutSeconds * 1000 : undefined, callId),
     [OPTION_SENTINEL],
-    timeoutSeconds > 0 ? { timeout: timeoutSeconds * 1000 + REPORT_SLACK_MS } : undefined,
+    dialogOptions(timeoutSeconds > 0 ? timeoutSeconds * 1000 + REPORT_SLACK_MS : undefined, signal),
   );
   if (value === undefined) {
+    // An aborted turn dismisses the dialog; it is not the user declining the
+    // question, and saying so keeps the model from reading the interruption as
+    // an answer it should act on.
+    if (signal?.aborted === true) return dismissed(questions, signal);
     const waitedMs = Date.now() - startedAt;
     const expired = timeoutSeconds > 0 && waitedMs >= timeoutSeconds * 1000;
     if (expired) return settled(questions, "timed-out", PENDING_NOTICE);
-    return settled(
-      questions,
-      "cancelled",
-      "Error: ask_user_question was cancelled before the user answered",
-    );
+    return dismissed(questions, signal);
   }
   const decoded = decodeWireAnswer(value);
   if (decoded?.timedOut === true) return settled(questions, "timed-out", PENDING_NOTICE);
@@ -415,8 +463,9 @@ async function askInTui(
   ctx: ExtensionContext,
   questions: AskUserQuestion[],
   timeoutSeconds: number,
+  signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
-  const opts = timeoutSeconds > 0 ? { timeout: timeoutSeconds * 1000 } : undefined;
+  const opts = dialogOptions(timeoutSeconds > 0 ? timeoutSeconds * 1000 : undefined, signal);
   const answers: AskUserAnswer[] = [];
 
   for (const question of questions) {
@@ -427,9 +476,7 @@ async function askInTui(
 
     if (options.length === 0) {
       const text = await ctx.ui.input(title, "Your answer", opts);
-      if (text === undefined) {
-        return settled(questions, "cancelled", "Error: ask_user_question was cancelled before the user answered");
-      }
+      if (text === undefined) return dismissed(questions, signal);
       answers.push({ id: question.id, selected: [], ...(text.length === 0 ? {} : { custom: text }) });
       continue;
     }
@@ -441,6 +488,9 @@ async function askInTui(
           ? option.label
           : `${option.label} — ${option.description}`;
         const yes = await ctx.ui.confirm(title, label, opts);
+        // An abort dismisses the confirm as `false`; stopping here keeps a
+        // half-answered multi-select from being submitted as a skip.
+        if (signal?.aborted === true) return dismissed(questions, signal);
         if (yes) selected.push(option.label);
       }
       answers.push({ id: question.id, selected });
@@ -451,9 +501,7 @@ async function askInTui(
       option.description === undefined ? option.label : `${option.label} — ${option.description}`,
     );
     const picked = await ctx.ui.select(title, labels, opts);
-    if (picked === undefined) {
-      return settled(questions, "cancelled", "Error: ask_user_question was cancelled before the user answered");
-    }
+    if (picked === undefined) return dismissed(questions, signal);
     // The row was rendered with its description appended, so map the index back
     // to the bare label the model wrote.
     const index = labels.indexOf(picked);
@@ -484,7 +532,7 @@ export default function (pi: ExtensionAPI) {
     parameters: AskUserParams,
     executionMode: "sequential",
 
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const questions = toQuestions(params.questions);
       const timeoutSeconds = params.timeout ?? DEFAULT_TIMEOUT_SECONDS;
 
@@ -495,8 +543,8 @@ export default function (pi: ExtensionAPI) {
           "Error: ask_user_question is unavailable because this session has no interactive UI",
         );
       }
-      if (ctx.mode === "tui") return askInTui(ctx, questions, timeoutSeconds);
-      return askOverRpc(ctx, questions, timeoutSeconds);
+      if (ctx.mode === "tui") return askInTui(ctx, questions, timeoutSeconds, signal);
+      return askOverRpc(ctx, questions, timeoutSeconds, toolCallId, signal);
     },
 
     renderCall(args, theme) {

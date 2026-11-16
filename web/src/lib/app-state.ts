@@ -212,6 +212,15 @@ export interface AppState {
    * one the user has not seen yet.
    */
   pendingUiRequests: PendingUiRequest[];
+  /**
+   * Dialogs the user put away without answering, by request id.
+   *
+   * A request that names its tool call stays pending when its card is closed —
+   * the tool call row brings it back — so the card leaves the composer seat
+   * without leaving this queue. A request with no call id is not hidden this
+   * way: closing it is the answer, because nothing could reopen it.
+   */
+  hiddenUiRequests: Record<string, true>;
   /** Text submitted before its session finished spawning. */
   pendingPrompt: PendingPrompt | null;
   /**
@@ -326,6 +335,7 @@ const initialState: AppState = {
   sessionActivity: {},
   externalChanged: {},
   pendingUiRequests: [],
+  hiddenUiRequests: {},
   pendingPrompt: null,
   newSessionModel: null,
   newSessionThinkingLevel: null,
@@ -522,10 +532,29 @@ export const workspaceChanged: Emitter<{
 /** Test seam: restore the initial state. */
 export function resetAppState(): void {
   clearComposerDrafts();
+  for (const id of [...hiddenUiTimers.keys()]) clearHiddenUiTimer(id);
   appStore.set({ ...initialState });
   draftRequest = null;
   commandsRequests.clear();
   sessionRequests.clear();
+}
+
+/**
+ * The countdowns hidden question cards keep running.
+ *
+ * dsh keeps that timer on the card object rather than in the mounted panel, so
+ * a card the user put away still reports its deadline. The browser has no such
+ * object, so the timer lives here, keyed by request id, and every path that
+ * settles the request clears it.
+ */
+const hiddenUiTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Drop one request's hidden countdown, when it has one. */
+function clearHiddenUiTimer(id: string): void {
+  const timer = hiddenUiTimers.get(id);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  hiddenUiTimers.delete(id);
 }
 
 export const actions = {
@@ -1814,12 +1843,19 @@ export const actions = {
     try {
       const { requests } = await api.listUiRequests();
       const live = new Set(requests.map((item) => item.request.id));
-      appStore.update((state) => ({
-        ...state,
-        pendingUiRequests: state.pendingUiRequests.filter(
+      appStore.update((state) => {
+        const pendingUiRequests = state.pendingUiRequests.filter(
           (item) => before.get(item.request.id) !== item || live.has(item.request.id),
-        ),
-      }));
+        );
+        const liveIds = new Set(pendingUiRequests.map((item) => item.request.id));
+        const staleHidden = Object.keys(state.hiddenUiRequests).filter((id) => !liveIds.has(id));
+        if (pendingUiRequests.length === state.pendingUiRequests.length && staleHidden.length === 0) {
+          return state;
+        }
+        const hiddenUiRequests = { ...state.hiddenUiRequests };
+        for (const id of staleHidden) delete hiddenUiRequests[id];
+        return { ...state, pendingUiRequests, hiddenUiRequests };
+      });
       for (const pending of requests) {
         if (before.has(pending.request.id)
           && !appStore.get().pendingUiRequests.some((item) => item.request.id === pending.request.id)) continue;
@@ -1850,10 +1886,66 @@ export const actions = {
    * about it through an event, so the card would otherwise hang around forever.
    */
   dismissUiRequest(id: string): void {
+    clearHiddenUiTimer(id);
+    appStore.update((state) => {
+      const present = state.pendingUiRequests.some((item) => item.request.id === id);
+      if (!present && state.hiddenUiRequests[id] !== true) return state;
+      const hiddenUiRequests = { ...state.hiddenUiRequests };
+      delete hiddenUiRequests[id];
+      return {
+        ...state,
+        pendingUiRequests: state.pendingUiRequests.filter((item) => item.request.id !== id),
+        hiddenUiRequests,
+      };
+    });
+  },
+
+  /**
+   * Put a question card away without answering it.
+   *
+   * The request keeps standing: the tool call row shows it is still waiting and
+   * reopens the card (see `QuestionRow`). Its deadline keeps running too — a
+   * hidden card that reaches it reports `timedOut`, so the tool records
+   * "nobody answered" and the question stays answerable from the pending strip,
+   * exactly as it would have from the visible card.
+   */
+  hideUiRequest(id: string): void {
+    const request = appStore.get().pendingUiRequests.find((item) => item.request.id === id);
+    // Only a card that names its tool call can be put away: nothing else has a
+    // row to reopen it from, so hiding it would strand the process.
+    if (request === undefined || typeof request.request.callId !== "string") return;
     appStore.update((state) => ({
       ...state,
-      pendingUiRequests: state.pendingUiRequests.filter((item) => item.request.id !== id),
+      hiddenUiRequests: { ...state.hiddenUiRequests, [id]: true },
     }));
+    const deadline = request.request.expiresAt;
+    if (typeof deadline !== "number") return;
+    const left = deadline - Date.now();
+    if (left <= 0) {
+      void actions.respondToUiRequest(id, { timedOut: true });
+      return;
+    }
+    clearHiddenUiTimer(id);
+    hiddenUiTimers.set(id, setTimeout(() => {
+      hiddenUiTimers.delete(id);
+      void actions.respondToUiRequest(id, { timedOut: true });
+    }, left));
+  },
+
+  /** Put a hidden request back in the composer seat, unless it already expired. */
+  showUiRequest(id: string): void {
+    clearHiddenUiTimer(id);
+    appStore.update((state) => {
+      if (state.hiddenUiRequests[id] !== true) return state;
+      const hiddenUiRequests = { ...state.hiddenUiRequests };
+      delete hiddenUiRequests[id];
+      return { ...state, hiddenUiRequests };
+    });
+    const request = appStore.get().pendingUiRequests.find((item) => item.request.id === id);
+    const deadline = request?.request.expiresAt;
+    if (typeof deadline === "number" && deadline <= Date.now()) {
+      void actions.respondToUiRequest(id, { timedOut: true });
+    }
   },
 
   emitSessionEvent(sessionPath: string, event: SessionEvent): void {

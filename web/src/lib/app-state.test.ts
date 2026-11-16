@@ -460,6 +460,74 @@ describe("extension dialogs", () => {
     expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual(["ui_2"]);
   });
 
+  /** A question batch that names its tool call and carries a deadline. */
+  const question = (id: string, expiresAt: number) => ({
+    sessionPath: REAL_PATH,
+    request: {
+      type: "extension_ui_request",
+      id,
+      method: "ask_user",
+      callId: "call_1",
+      questions: [{ id: "q", question: "Which?" }],
+      expiresAt,
+    } as ExtensionUiRequest,
+  });
+
+  it("hides a question card that names its tool call without dropping the request", () => {
+    actions.enqueueUiRequest(question("ui_q", Date.now() + 60_000));
+
+    actions.hideUiRequest("ui_q");
+
+    expect(appStore.get().hiddenUiRequests).toEqual({ ui_q: true });
+    expect(appStore.get().pendingUiRequests.map((item) => item.request.id)).toEqual(["ui_q"]);
+  });
+
+  it("returns a hidden card to the seat when its tool call reopens it", () => {
+    actions.enqueueUiRequest(question("ui_q", Date.now() + 60_000));
+    actions.hideUiRequest("ui_q");
+
+    actions.showUiRequest("ui_q");
+
+    expect(appStore.get().hiddenUiRequests).toEqual({});
+    expect(appStore.get().pendingUiRequests).toHaveLength(1);
+  });
+
+  it("does not hide a request it could not reopen", () => {
+    actions.enqueueUiRequest(dialog(REAL_PATH, "ui_1"));
+
+    actions.hideUiRequest("ui_1");
+
+    // No call id: closing that card is the answer, not a hide.
+    expect(appStore.get().hiddenUiRequests).toEqual({});
+  });
+
+  it("reports a hidden card as timed out when its deadline passes", async () => {
+    vi.useFakeTimers();
+    try {
+      mocked.respondToUiRequest.mockResolvedValue({ ok: true });
+      actions.enqueueUiRequest(question("ui_q", Date.now() + 1_000));
+      actions.hideUiRequest("ui_q");
+
+      vi.advanceTimersByTime(1_500);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mocked.respondToUiRequest).toHaveBeenCalledWith("ui_q", { timedOut: true });
+      expect(appStore.get().pendingUiRequests).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops the hidden mark when the request settles", () => {
+    actions.enqueueUiRequest(question("ui_q", Date.now() + 60_000));
+    actions.hideUiRequest("ui_q");
+
+    actions.dismissUiRequest("ui_q");
+
+    expect(appStore.get().hiddenUiRequests).toEqual({});
+  });
+
   it("keeps one entry for a dialog whose session path only arrives later", () => {
     // A fresh session has no path when its extension asks, so the same uuid is
     // delivered twice: once with an empty path, once with the real one.

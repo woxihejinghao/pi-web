@@ -79,6 +79,17 @@ describe("QuestionComposer", () => {
     expect(card(questions, { cancellable: false })).not.toContain("Cancel (Esc)");
   });
 
+  it("closes a card that names its tool call by hiding it, not by answering", () => {
+    const questions = [{ id: "go", question: "Proceed?", options: [{ label: "Yes" }] }];
+    const hidden = card(questions, { onHide: () => undefined });
+    // The affordance is still there, and it says what it does: the request
+    // stands and the question row reopens it.
+    expect(hidden).toContain("Close the panel");
+    expect(hidden).not.toContain("Cancel (Esc)");
+    // A card with nowhere to come back from keeps the old meaning.
+    expect(card(questions)).toContain("Cancel (Esc)");
+  });
+
   it("counts down only when a deadline was given", () => {
     const questions = [{ id: "go", question: "Proceed?", options: [{ label: "Yes" }] }];
     expect(card(questions, { timeoutMs: 120_000 })).toContain("Cancels in");

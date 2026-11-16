@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertIcon, PanelLeftIcon, RefreshIcon } from "../../components/icons.tsx";
 import { Glyph } from "../../components/dsh-icons.tsx";
 import { api } from "../../lib/api.ts";
@@ -473,7 +473,25 @@ export function ConversationPane() {
   // the next message would have been typed. Only the open session's own dialog
   // takes that seat — another session's is left to its sidebar row
   // (`pendingUiForSession` says why).
-  const pendingUi = pendingUiForSession(state.pendingUiRequests, sessionPath);
+  const pendingUi = pendingUiForSession(
+    // A card the user put away is still pending — it just does not hold the
+    // seat, and its tool call row reopens it. Requests without a call id are
+    // never hidden this way (closing them is the answer), so nothing that is
+    // filtered out here lacks a way back.
+    state.pendingUiRequests.filter((item) => state.hiddenUiRequests[item.request.id] !== true),
+    sessionPath,
+  );
+  // The deadline a reopened card resumes on: what is left of the one it was
+  // promised, not a fresh window (dsh keeps the countdown on the card object
+  // for the same reason). Computed once per request, because a fresh value on
+  // every render would restart the card's own interval.
+  const pendingQuestionTimeout = useMemo(() => {
+    const expiresAt = pendingUi?.request.expiresAt;
+    if (typeof expiresAt === "number") return Math.max(0, expiresAt - Date.now());
+    // An older server sends only the duration; it is the whole window then.
+    const timeout = pendingUi?.request.timeout;
+    return typeof timeout === "number" ? timeout : null;
+  }, [pendingUi]);
   // A batched question gets the composer that can hold several answers; every
   // other dialog keeps the single-question card. Both take the composer seat,
   // so the choice is one branch at the render site and nothing else changes.
@@ -490,9 +508,15 @@ export function ConversationPane() {
         // codec), so this is already the card's own shape.
         questions={askUserQuestions(pendingUi.request)}
         title={typeof pendingUi.request.title === "string" ? pendingUi.request.title : undefined}
-        timeoutMs={typeof pendingUi.request.timeout === "number" ? pendingUi.request.timeout : null}
+        timeoutMs={pendingQuestionTimeout}
         draftKey={pendingUi.request.id}
         onOpenPlan={openPlanFromReview}
+        // A card that names its tool call is closed by hiding it: the request
+        // stands and the tool call row reopens it (dsh's rule). One without a
+        // call id keeps the old meaning — closing answers `cancelled`.
+        {...(typeof pendingUi.request.callId === "string"
+          ? { onHide: () => actions.hideUiRequest(pendingUi.request.id) }
+          : {})}
         onSubmit={async (decision) => {
           const answered = await actions.respondToUiRequest(pendingUi.request.id, decision);
           if (!answered) return;

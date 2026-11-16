@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetAppState } from "../../lib/app-state.ts";
+import { actions, resetAppState } from "../../lib/app-state.ts";
 import type { ToolCallBlock } from "../../lib/types.ts";
 import { QuestionReviewCard } from "./QuestionReviewCard.tsx";
 import { QuestionRow } from "./QuestionRow.tsx";
@@ -104,5 +104,25 @@ describe("QuestionRow", () => {
     // draw would be emptier than the thing it replaced.
     const html = renderToStaticMarkup(<QuestionRow call={call()} execution={undefined} />);
     expect(html).toContain("ask_user_question");
+  });
+
+  it("offers the way back to a question the user put away", () => {
+    actions.enqueueUiRequest({
+      sessionPath: "/sessions/one.jsonl",
+      request: {
+        type: "extension_ui_request",
+        id: "ui_1",
+        method: "ask_user",
+        callId: "call-1",
+        questions: QUESTIONS,
+        expiresAt: Date.now() + 60_000,
+      },
+    });
+    actions.hideUiRequest("ui_1");
+
+    // The tool call has no result yet — it is still waiting — so the row says
+    // so and reopening it puts the card back in the seat (dsh's rule).
+    const html = renderToStaticMarkup(<QuestionRow call={call()} execution={undefined} />);
+    expect(html).toContain("Waiting for an answer");
   });
 });

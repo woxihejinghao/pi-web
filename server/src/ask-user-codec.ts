@@ -96,6 +96,15 @@ export interface AskUserBatch {
    * the race against pi's own timer could not be told apart from a cancel.
    */
   timeoutMs?: number;
+  /**
+   * The tool call that asked, when the extension named one.
+   *
+   * It is what makes a card dismissible without cancelling: a card keyed by its
+   * tool call only leaves the seat when it is closed, and the tool call row can
+   * bring it back. A batch with no call id has no row to come back from, so
+   * closing it is the answer (`cancelled`).
+   */
+  callId?: string;
 }
 
 /**
@@ -140,11 +149,15 @@ export function decodeAskUserBatch(title: unknown): AskUserBatch | null {
   if (questions === null) return null;
   const timeoutMs = readTimeoutMs(payload.timeoutMs);
   if (timeoutMs === null) return null;
+  // A call id of the wrong shape is dropped rather than rejecting the batch: it
+  // decides how closing the card behaves, not what the card asks.
+  const callId = readOptionalString(payload.callId);
   const header = questions[0]?.header;
   return {
     questions,
     ...(header === undefined ? {} : { title: header }),
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(typeof callId === "string" && callId.length > 0 ? { callId } : {}),
   };
 }
 

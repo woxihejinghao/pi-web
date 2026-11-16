@@ -65,6 +65,18 @@ describe("decodeAskUserBatch", () => {
     }
   });
 
+  it("carries the asking tool call, which decides how closing the card behaves", () => {
+    expect(decodeAskUserBatch(title({ ...batch, callId: "call_42" }))?.callId).toBe("call_42");
+  });
+
+  it("drops a call id it cannot read instead of rejecting the batch", () => {
+    for (const callId of ["", 42, null]) {
+      const decoded = decodeAskUserBatch(title({ ...batch, callId }));
+      expect(decoded?.questions).toHaveLength(1);
+      expect(decoded?.callId).toBeUndefined();
+    }
+  });
+
   it("carries a presentation intent through, and drops one it cannot honour", () => {
     const plan = {
       id: "plan",
