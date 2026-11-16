@@ -1,5 +1,5 @@
 import { badRequest } from "./errors.ts";
-import type { SessionHandle } from "./registry.ts";
+import { sendSlowCommand, type SessionHandle } from "./registry.ts";
 
 /**
  * pi's built-in slash commands (`compact`, `export`, …) live in a separate
@@ -48,7 +48,18 @@ export async function runBuiltinCommand(
 
   switch (name) {
     case "compact": {
-      const result = await client.compact(argument.length > 0 ? argument : undefined);
+      const response = (await sendSlowCommand(client, {
+        type: "compact",
+        customInstructions: argument.length > 0 ? argument : undefined,
+      })) as {
+        success?: boolean;
+        error?: string;
+        data?: { tokensBefore: number; estimatedTokensAfter?: number };
+      };
+      if (!response.success || !response.data) {
+        throw new Error(response.error ?? "pi did not return a compaction result");
+      }
+      const result = response.data;
       const before = count.format(result.tokensBefore);
       return result.estimatedTokensAfter === undefined
         ? `已压缩上下文，压缩前约 ${before} tokens`

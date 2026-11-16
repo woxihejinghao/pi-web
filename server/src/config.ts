@@ -92,6 +92,21 @@ export const TITLE_INPUT_MAX_BYTES = positiveInt(process.env.PI_WEB_SIMPLE_TITLE
 export const TITLE_OUTPUT_TOKENS = positiveInt(process.env.PI_WEB_SIMPLE_TITLE_OUTPUT_TOKENS, 32);
 
 /**
+ * How long `/compact` may take before the UI gives up.
+ *
+ * `RpcClient.send()` allows every command 30 seconds, which a compaction
+ * routinely exceeds: it is a model call over the whole transcript, so on a long
+ * session the reply arrives long after pi's built-in client has already given
+ * up with "Timeout waiting for response to compact". Five minutes is the
+ * long-session end of what a working provider needs; a hung one still fails
+ * eventually rather than leaving the button spinning forever.
+ */
+export const COMPACT_TIMEOUT_MS = positiveInt(
+  process.env.PI_WEB_SIMPLE_COMPACT_TIMEOUT_MS,
+  5 * 60 * 1000,
+);
+
+/**
  * Set to skip the one-time move of names an older build kept in `store.json`
  * into the sessions' own files.
  *

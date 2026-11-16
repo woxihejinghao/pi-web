@@ -221,7 +221,12 @@ process.stdin.on("data", (chunk) => {
         break;
       }
       // Built-in slash commands the Web UI implements over RPC.
-      case "compact":
+      case "compact": {
+        // Compaction is a model call, and this stub is the only place a test
+        // can make it take long enough to exercise the caller's own deadline
+        // instead of RpcClient.send()'s 30s one.
+        const delay = Number(process.env.STUB_COMPACT_DELAY_MS ?? 0);
+        if (delay > 0) sleepSync(delay);
         respond(
           "compact",
           {
@@ -233,6 +238,7 @@ process.stdin.on("data", (chunk) => {
           message.id,
         );
         break;
+      }
       case "get_available_models":
         respond("get_available_models", { models: stubModels }, message.id);
         break;

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionRegistry, type SessionHandle } from "./registry.ts";
+import { SessionRegistry, type SessionHandle, sendSlowCommand } from "./registry.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB_CLI = join(HERE, "testing", "stub-pi.mjs");
@@ -340,5 +340,34 @@ describe("handle bookkeeping", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     registry.touch(handle.sessionPath);
     expect(handle.lastActivityAt).toBeGreaterThan(before);
+  });
+});
+
+describe("sendSlowCommand", () => {
+  it("answers a slow RPC and applies the caller's deadline", async () => {
+    process.env.STUB_COMPACT_DELAY_MS = "400";
+    try {
+      const handle = await registry.open(projectPath, sessionPathFor("slow-compact"));
+      const started = Date.now();
+      const response = (await sendSlowCommand(handle.client, { type: "compact" }, 5_000)) as {
+        success?: boolean;
+      };
+      expect(response.success).toBe(true);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(400);
+    } finally {
+      delete process.env.STUB_COMPACT_DELAY_MS;
+    }
+  });
+
+  it("rejects on its own deadline instead of the client's", async () => {
+    process.env.STUB_COMPACT_DELAY_MS = "1000";
+    try {
+      const handle = await registry.open(projectPath, sessionPathFor("slow-compact-timeout"));
+      await expect(sendSlowCommand(handle.client, { type: "compact" }, 100)).rejects.toThrow(
+        /Timeout waiting for response to compact after 100ms/,
+      );
+    } finally {
+      delete process.env.STUB_COMPACT_DELAY_MS;
+    }
   });
 });

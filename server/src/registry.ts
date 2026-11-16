@@ -5,7 +5,12 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { join, resolve } from "node:path";
 import type { Writable } from "node:stream";
-import { IDLE_TIMEOUT_MS, MAX_ACTIVE_SESSIONS, SESSION_DIR_OVERRIDE } from "./config.ts";
+import {
+  COMPACT_TIMEOUT_MS,
+  IDLE_TIMEOUT_MS,
+  MAX_ACTIVE_SESSIONS,
+  SESSION_DIR_OVERRIDE,
+} from "./config.ts";
 import { DEFAULT_PRESET_ID, presetSpawnArgs } from "./presets.ts";
 import { LiveImageStore, type SessionImage } from "./session-images.ts";
 import { readStore } from "./store.ts";
@@ -533,6 +538,74 @@ class SessionRegistry {
 }
 
 export const registry = new SessionRegistry();
+
+/**
+ * The parts of `RpcClient` its `.d.ts` keeps private.
+ *
+ * Reached through an assertion the same way `sendRawCommand` already does: the
+ * fields exist at runtime and the reply must be matched by request id.
+ */
+interface RpcClientInternals {
+  process?: { stdin?: Writable } | null;
+  requestId: number;
+  pendingRequests: Map<
+    string,
+    { resolve: (response: unknown) => void; reject: (error: Error) => void }
+  >;
+  exitError?: Error | null;
+}
+
+/**
+ * Send one RPC command and wait longer than `RpcClient.send()` will.
+ *
+ * `send()` allows every command the same 30 seconds. That fits state reads and
+ * prompts (which reply when the run is accepted), but not compaction: it is a
+ * model call over the whole transcript, so a long session routinely exceeds
+ * 30s and the client rejected with "Timeout waiting for response to compact"
+ * while pi was still working and the eventual reply arrived for nobody.
+ *
+ * The response line is matched by request id, so registering the pending entry
+ * here is enough to reuse the client's reader — only the deadline differs.
+ */
+export function sendSlowCommand(
+  client: RpcClient,
+  command: { type: string } & Record<string, unknown>,
+  timeoutMs: number = COMPACT_TIMEOUT_MS,
+): Promise<unknown> {
+  const internals = client as unknown as RpcClientInternals;
+  const stdin = internals.process?.stdin;
+  if (!stdin || stdin.destroyed || !stdin.writable) {
+    throw new Error("pi process stdin is not writable; cannot send the command");
+  }
+  if (internals.exitError) throw internals.exitError;
+
+  const id = `req_${++internals.requestId}`;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      internals.pendingRequests.delete(id);
+      reject(
+        new Error(`Timeout waiting for response to ${command.type} after ${timeoutMs}ms`),
+      );
+    }, timeoutMs);
+    internals.pendingRequests.set(id, {
+      resolve: (response) => {
+        clearTimeout(timer);
+        resolve(response);
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    });
+    try {
+      stdin.write(`${JSON.stringify({ ...command, id })}\n`);
+    } catch (error) {
+      internals.pendingRequests.delete(id);
+      clearTimeout(timer);
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
 
 /**
  * Write one raw frame to the pi process's stdin.
