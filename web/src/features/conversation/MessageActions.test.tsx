@@ -189,36 +189,32 @@ describe("MessageActions stylesheet", () => {
     expect(rules.indexOf('[data-actions-reveal="hover"] .actions')).toBeGreaterThan(media);
   });
 
-  it("takes the hidden row out of the transcript's flow", () => {
-    // dsh only fades this row (`opacity`), which leaves its 28px band standing
-    // under every earlier message; with the transcript's own gaps around it
-    // that is a ~62px hole where nobody is touching the row, and a session a
-    // few turns old reads as spaced out. The row leaves the layout instead:
-    // `absolute` in both states, hung in the gap below its own message.
-    expect(reveal).toContain('[data-actions-reveal="hover"] {');
-    expect(reveal).toContain("position: relative");
+  it("keeps the hidden row in the flow, so hovering cannot land it on the next message", () => {
+    // This row used to float in the gap below its message. It is 28px tall and
+    // the gap is 14px, so 14px of the band sat over the next message's first
+    // line — invisible until hovered, which is exactly when the reader is
+    // looking there. The band now holds its place instead.
     expect(reveal).toContain('[data-actions-reveal="hover"] .actions');
-    expect(reveal).toContain("position: absolute");
-    expect(reveal).toContain("top: calc(100% + var(--transcript-gap, 14px))");
-    // Without both edges the absolute row shrink-wraps and loses the alignment
-    // the row above relies on (`actionsEnd` to the right, `timeStart` left).
-    expect(reveal).toContain("left: 0");
-    expect(reveal).toContain("right: 0");
+    expect(reveal).not.toContain("position: absolute");
+    expect(reveal).not.toContain("position: relative");
     expect(reveal).toContain("opacity: 0");
     expect(reveal).toContain("transition: opacity 80ms ease");
   });
 
-  it("measures the row's gap against the transcript's own rhythm", () => {
-    // The row hangs in the space `MessageList.module.css` leaves between turns,
-    // so that sheet declares the value and this one reads it; the two numbers
-    // have to agree or a hidden row sits off the rhythm it is hiding inside.
+  it("gives an answer's row the same 12px a prompt's row gets", () => {
+    // A row in a turn tail arrives with the tail's `--transcript-gap` above it,
+    // so it hands that gap back instead of adding to it. Without this the same
+    // row would sit 12px under a prompt's bubble and 26px under an answer's
+    // text — and the prompt's side is the one the reader notices first.
     const transcript = readFileSync(
       new URL("./MessageList.module.css", import.meta.url),
       "utf8",
     );
     const declared = /--transcript-gap:\s*(\d+)px/.exec(transcript);
     expect(declared?.[1]).toBe("14");
-    expect(rules).toContain("var(--transcript-gap, 14px)");
+    expect(rules).toContain("margin-top: calc(12px - var(--transcript-gap, 14px))");
+    expect(rules).toContain(".actionsEnd {");
+    expect(rules.slice(rules.indexOf(".actionsEnd {"), rules.indexOf(".action {"))).toContain("margin-top: 12px");
     // All three of that sheet's gaps — column, turn and turn tail — read the
     // variable, so the row moves with the rhythm instead of with one copy of it.
     expect(transcript.match(/gap: var\(--transcript-gap\)/g)?.length).toBe(3);

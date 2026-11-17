@@ -11,7 +11,11 @@
   align-items: center;
   gap: 8px;
   height: calc(28px + var(--dsh-content-font-delta, 0px));
-  margin-top: 6px;
+  /* 12px of air between the row and the content it belongs to. A row inside a
+     turn tail arrives with the tail's own `--transcript-gap` above it, so it
+     gives that gap back rather than adding to it — otherwise the same row sits
+     12px under a prompt's bubble and 26px under an answer's text. */
+  margin-top: calc(12px - var(--transcript-gap, 14px));
   /* The one colour the row states; every figure and glyph inside inherits it. */
   color: var(--dsw-alias-label-tertiary);
 }
@@ -30,6 +34,9 @@
 /* User messages are right-aligned, so their actions are too. */
 .actionsEnd {
   justify-content: flex-end;
+  /* A prompt's row is not inside a turn tail: there is no gap to give back, so
+     it carries the full 12px itself. */
+  margin-top: 12px;
 }
 
 .action {
@@ -181,34 +188,25 @@
  * the same rule on the same attribute, and nothing here may take a row away from
  * an `always` one — the rule below matches `hover` and only `hover`.
  *
- * A `hover` row stands outside the layout instead of holding a band open for
- * itself: faded to nothing it would still be 28px of nothing under every
- * earlier message, and with the transcript's 14px gaps around it that is a
- * ~62px hole where nobody is touching the row — a few turns in, the session
- * reads as spaced out. So the row leaves the flow, `absolute` in both states
- * (revealing it still moves nothing), and hangs in the gap under its own
- * message, bottom-aligned with the next row by `--transcript-gap` — the very
- * rhythm the transcript uses between turns, published by
- * `MessageList.module.css`. The 14px it borrows lands in the message's own
- * bottom edge — a bubble's or a card's padding — never on its text.
+ * A `hover` row keeps its band in the flow rather than floating out of it.
  *
- * An `always` row stays in the flow: it is visible, so its band *is* its row,
- * and floating the newest prompt's row would lay it over the answer's first
- * line. The transition lives on the hidden state so it plays in both
- * directions. Devices with no hover pointer keep every row visible and in
- * place — this media query is the whole fix.
+ * Floating was tried here and is wrong: the row is 28px tall but the gap it
+ * hung in is 14px, so the band slid 14px into whatever came next and laid
+ * itself over the first line of the next message — invisible until you
+ * hovered, which is exactly when the reader is looking there. dsh's own turn
+ * tail is a static child of a gapped column for the same reason.
+ *
+ * The standing band is paid for out of the transcript's rhythm rather than on
+ * top of it: the negative margin eats the tail's own gap, so a hidden row costs
+ * its 28px and nothing more.
+ *
+ * An `always` row is visible, so its band is its row either way. The transition
+ * lives on the hidden state so it plays in both directions. Devices with no
+ * hover pointer keep every row visible and in place — this media query is the
+ * whole fix.
  */
 @media (hover: hover) {
-  [data-actions-reveal="hover"] {
-    /* The floating row is positioned against the message it belongs to. */
-    position: relative;
-  }
-
   [data-actions-reveal="hover"] .actions {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: calc(100% + var(--transcript-gap, 14px));
     opacity: 0;
     transition: opacity 80ms ease;
   }
