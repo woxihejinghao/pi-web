@@ -107,6 +107,9 @@ export const api = {
     ),
   updateApproval: (patch: Partial<import("../features/approvals/approval-store.ts").ApprovalConfig> & { confirmOff?: boolean }) =>
     request<import("../features/approvals/approval-store.ts").ApprovalView>("/api/approval", { method: "PUT", body: JSON.stringify(patch) }),
+  /** One session's own mode; `null` returns it to the default. */
+  updateSessionApproval: (sessionKey: string, mode: import("../features/approvals/approval-store.ts").ApprovalMode | null) =>
+    request<import("../features/approvals/approval-store.ts").ApprovalView>("/api/approval/session", { method: "PUT", body: JSON.stringify({ sessionKey, mode }) }),
   /** Convenience roots for the directory picker. */
   startLocations: () => request<StartLocation[]>("/api/fs/locations"),
 

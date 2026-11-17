@@ -1,17 +1,262 @@
-.inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
-.control { display: inline-flex; align-items: center; gap: 6px; font: inherit; }
-.settings > select, .model input, .model button {
-  font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l4);
-  border-radius: 8px; padding: 5px 8px; max-width: 100%;
+/*
+ * The approval control.
+ *
+ * In the composer it is a chip ported from dsh's `PermissionSelect`: no border,
+ * no fill until it is hovered or open, a 16px mode glyph tinted by the text
+ * colour, and the label clipped rather than wrapped. The metrics are taken from
+ * this composer's model card (`ModelThinkingPicker`) rather than dsh's own 28px
+ * trigger — dsh sizes its permission chip against its model trigger, and its
+ * model trigger is not this project's, so importing the height alone would
+ * stand one control a row above its neighbour.
+ *
+ * The settings page keeps the labelled row it always had: there the control is
+ * a setting, not a piece of the input.
+ */
+
+.inline {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-.control[data-off], .warning { color: var(--dsw-static-red-600); }
-.warning { font-size: 11px; }
-.settings { width: 100%; }
-.model { display: flex; gap: 8px; }
-.model input { width: 200px; min-width: 80px; }
+
+.anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 220px;
+  /* dsh's asymmetric padding: the glyph needs the room on the left, the
+     chevron carries its own on the right. */
+  padding: 3px 4px 3px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.trigger:hover:not(:disabled),
+.trigger[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.trigger:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+/*
+ * Full access is marked, not alarmed.
+ *
+ * The chip keeps the row's normal ink and the note beside it takes the muted
+ * caption tone: the mode is spelled out in words, so colouring the composer red
+ * only makes an ordinary state look broken. The `data-off` attribute stays —
+ * it names the state for tests and for any future styling — but it no longer
+ * paints anything.
+ */
+.trigger[data-off] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The note that says no confirmation will come. Muted, because it states a fact
+   rather than raising an error. */
+.note {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+/* A policy that cannot be read *is* an error, so it keeps the red ink the note
+   above deliberately gives up. */
+.warning {
+  color: var(--dsw-static-red-600);
+  font-size: 11px;
+}
+
+.triggerIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.triggerIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.triggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-caption);
+  transition: transform 120ms ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/*
+ * The menu opens upward over the model card's surface, like every other popover
+ * over the input. It is wider than the trigger because each row carries its
+ * explanation: the three modes are not self-evident from their names, and a
+ * wrong guess here is a permission decision.
+ */
+.menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 272px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-elevation-float);
+  /* The menu takes focus so Escape works without a tab trip; the focus ring
+     would be a rectangle around a rounded surface. */
+  outline: none;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px 7px 9px;
+  border-radius: 10px;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  font: inherit;
+}
+
+.option:hover,
+.option:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.optionIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  /* A hair down, so the glyph sits on the name's line and not on the note's. */
+  margin-top: 1px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* dsh tints the chosen row's glyph rather than filling the row: the check mark
+   is the state, the glyph is the identity. */
+.option[aria-checked="true"] .optionIcon {
+  color: var(--dsw-alias-label-primary);
+}
+
+.optionText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.optionName {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.optionNote {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.optionCheck {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* "Follow the default" is a different kind of answer from the three modes —
+   it removes a choice rather than making one — so it sits under a rule. */
+.divider {
+  height: 1px;
+  margin: 3px 8px;
+  background: var(--dsw-alias-border-l3);
+}
+
+/* -------------------------------------------------------------- settings -- */
+
+.settings {
+  width: 100%;
+}
+
+/* One sentence naming the scope this whole section edits. Muted, above the
+   controls it applies to. */
+.scope {
+  margin: 0 0 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+
+.settings > select,
+.model input,
+.model button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  padding: 5px 8px;
+  max-width: 100%;
+}
+
+.model {
+  display: flex;
+  gap: 8px;
+}
+
+.model input {
+  width: 200px;
+  min-width: 80px;
+}
+
 @media (max-width: 700px) {
-  .inline .control > span { display: none; }
-  .settings > div { flex-wrap: wrap; }
-  .settings > div > :first-child { flex-basis: 100%; padding-right: 0; }
-  .model { flex-wrap: wrap; }
+  /* The composer row runs out of room first, and dsh drops the trigger's label
+     at its own narrow width for the same reason: the glyph still names the
+     mode, and the title still explains it. */
+  .inline .triggerLabel {
+    display: none;
+  }
+
+  .settings > div {
+    flex-wrap: wrap;
+  }
+
+  .settings > div > :first-child {
+    flex-basis: 100%;
+    padding-right: 0;
+  }
+
+  .model {
+    flex-wrap: wrap;
+  }
 }

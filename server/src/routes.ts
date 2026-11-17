@@ -4,7 +4,7 @@ import { mkdir, realpath } from "node:fs/promises";
 import { moveSessionFile } from "./session-move.ts";
 import { getWorkFolderRoot, moveWorkFolders, planWorkFolderMoves, saveWorkFolders, withWorkFolderLock } from "./session-work-folders.ts";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
-import { approvalView, updateApproval } from "./approval.ts";
+import { approvalView, forgetSessionApproval, setSessionApproval, updateApproval } from "./approval.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { pipeline } from "node:stream/promises";
@@ -1015,6 +1015,21 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
   route("GET", "/api/approval", ({ res }) => { json(res, 200, approvalView()); });
   route("PUT", "/api/approval", ({ res, body }) => {
     try { json(res, 200, updateApproval(asObject(body))); }
+    catch (error) { throw badRequest((error as Error).message); }
+  });
+
+  /**
+   * The composer's own write: one session, one mode.
+   *
+   * A separate route from the settings write because they are different
+   * decisions — the default every new session starts on, versus what this one
+   * is doing right now — and the key travels in the body so a session path needs
+   * no escaping. `mode: null` puts the session back on the default.
+   */
+  route("PUT", "/api/approval/session", ({ res, body }) => {
+    const patch = asObject(body);
+    const sessionKey = typeof patch.sessionKey === "string" ? patch.sessionKey : "";
+    try { json(res, 200, setSessionApproval(sessionKey, patch.mode ?? null)); }
     catch (error) { throw badRequest((error as Error).message); }
   });
 
@@ -2421,6 +2436,9 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       if (result.missing === true) throw notFound("会话文件不存在");
       throw new HttpError(500, `无法删除会话：${result.error}`);
     }
+    // The session cannot come back, so its approval override would be a row
+    // nothing can ever read again.
+    try { forgetSessionApproval(sessionPath); } catch { /* the policy is unreadable; do not fail the delete */ }
     bus.publish({ type: "sessions_changed", projectPath: "" });
     json(res, 200, { ok: true, method: result.method });
   });

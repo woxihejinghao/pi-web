@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_APPROVAL, auditApproval, canUseSmartReview, decideApproval, needsApproval, readApproval, saveApproval, validateApproval } from "../../extensions/approval-policy.js";
-import { APPROVAL_CONFIG, approvalView, initializeApprovals, updateApproval } from "./approval.ts";
+import { DEFAULT_APPROVAL, auditApproval, canUseSmartReview, decideApproval, effectiveMode, needsApproval, pruneSessions, readApproval, saveApproval, validateApproval } from "../../extensions/approval-policy.js";
+import { APPROVAL_CONFIG, approvalView, forgetSessionApproval, initializeApprovals, setSessionApproval, updateApproval } from "./approval.ts";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -98,5 +98,66 @@ describe("approval settings", () => {
     expect(() => updateApproval({ language: "en" })).toThrow();
     expect(updateApproval({ mode: "ask" }).config?.mode).toBe("ask");
     expect(() => updateApproval({ something: true })).toThrow();
+    expect(() => updateApproval({ sessions: {} })).toThrow();
+  });
+});
+
+/**
+ * The two scopes: `mode` is the default a session starts on, `sessions` is what
+ * the composer wrote for one session. The gate reads the second before the
+ * first, so these pin the rule it applies.
+ */
+describe("session overrides", () => {
+  it("writes one session's mode without touching the default", () => {
+    initializeApprovals();
+    updateApproval({ mode: "ask" });
+    setSessionApproval("/sessions/one.jsonl", "smart");
+    const config = approvalView().config!;
+    expect(config.mode).toBe("ask");
+    expect(effectiveMode(config, "/sessions/one.jsonl")).toBe("smart");
+    expect(effectiveMode(config, "/sessions/two.jsonl")).toBe("ask");
+    expect(effectiveMode(config, null)).toBe("ask");
+  });
+
+  it("clears an override back to the default, and rejects unknown keys or modes", () => {
+    setSessionApproval("/sessions/one.jsonl", "off");
+    setSessionApproval("/sessions/one.jsonl", null);
+    expect(effectiveMode(approvalView().config!, "/sessions/one.jsonl")).toBe("ask");
+    expect(() => setSessionApproval("", "ask")).toThrow(/session key/);
+    expect(() => setSessionApproval("/sessions/one.jsonl", "garbage")).toThrow(/mode/);
+    expect(() => setSessionApproval("/sessions/one.jsonl", 1)).toThrow(/mode/);
+  });
+
+  it("drops a deleted session's override", () => {
+    setSessionApproval("/sessions/one.jsonl", "smart");
+    forgetSessionApproval("/sessions/one.jsonl");
+    expect(approvalView().config?.sessions["/sessions/one.jsonl"]).toBeUndefined();
+  });
+
+  it("refuses an override while the policy cannot be read", () => {
+    initializeApprovals();
+    writeFileSync(APPROVAL_CONFIG, "broken");
+    expect(() => setSessionApproval("/sessions/one.jsonl", "smart")).toThrow(/repair/);
+    expect(() => forgetSessionApproval("/sessions/one.jsonl")).not.toThrow();
+  });
+
+  it("prunes stale overrides and keeps the rest", () => {
+    const now = new Date("2026-02-01T00:00:00.000Z");
+    const config = {
+      ...DEFAULT_APPROVAL,
+      sessions: {
+        stale: { mode: "off" as const, updatedAt: "2025-01-01T00:00:00.000Z" },
+        fresh: { mode: "smart" as const, updatedAt: "2026-01-31T00:00:00.000Z" },
+        timeless: { mode: "ask" as const, updatedAt: null },
+      },
+    };
+    expect(Object.keys(pruneSessions(config, now).sessions).sort()).toEqual(["fresh", "timeless"]);
+  });
+
+  it("rejects a malformed sessions map but accepts one that predates overrides", () => {
+    expect(() => validateApproval({ ...DEFAULT_APPROVAL, sessions: [] })).toThrow();
+    expect(() => validateApproval({ ...DEFAULT_APPROVAL, sessions: { a: { mode: "garbage" } } })).toThrow();
+    expect(() => validateApproval({ ...DEFAULT_APPROVAL, sessions: { "": { mode: "ask" } } })).toThrow();
+    expect(validateApproval({ ...DEFAULT_APPROVAL, sessions: undefined }).sessions).toEqual({});
   });
 });

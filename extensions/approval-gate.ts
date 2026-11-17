@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { auditApproval, canUseSmartReview, decideApproval, readApproval } from "./approval-policy.js";
+import { auditApproval, canUseSmartReview, decideApproval, effectiveMode, readApproval } from "./approval-policy.js";
 
 function internalPath(path: string, cwd: string): boolean {
   try {
@@ -18,16 +18,29 @@ function internalPath(path: string, cwd: string): boolean {
   } catch { return false; }
 }
 
+/**
+ * The key this session's override is stored under.
+ *
+ * The session file, because that is what the server and the browser both know a
+ * session by. A session pi has not written yet has no file, and no override by
+ * extension — it follows the default, which is also the only sensible reading of
+ * "this session has not started".
+ */
+function sessionKey(ctx: ExtensionContext): null | string {
+  try { return ctx.sessionManager.getSessionFile() ?? null; } catch { return null; }
+}
+
 export default function approvalGate(pi: ExtensionAPI) {
   // No configuration writer or /off command is exposed to the model. Every
   // call re-reads the file, so a UI change applies to already-running agents.
   async function review(toolName: string, input: unknown, ctx: ExtensionContext) {
     try {
       const config = readApproval();
+      const mode = effectiveMode(config, sessionKey(ctx));
       const snapshot = JSON.stringify(config);
       const zh = config.language === "zh-CN";
       const decision = await decideApproval({
-        toolName, input, cwd: ctx.cwd, config,
+        toolName, input, cwd: ctx.cwd, config: { ...config, mode },
         isInternal: path => internalPath(path, ctx.cwd),
         confirm: async () => {
           if (!ctx.hasUI || ctx.signal?.aborted) return false;
@@ -71,7 +84,7 @@ export default function approvalGate(pi: ExtensionAPI) {
       if (ctx.signal?.aborted || JSON.stringify(readApproval()) !== snapshot) {
         return { block: true as const, reason: "Approval cancelled or policy changed; ask the user before retrying." };
       }
-      auditApproval({ toolName, input, mode: config.mode, ...decision });
+      auditApproval({ toolName, input, mode, ...decision });
       return decision.allowed ? undefined : {
         block: true as const,
         reason: zh ? "操作未获批准（拒绝、超时或审批不可用）。请勿绕过此限制。" : "Action not approved (denied, timed out, or approval unavailable). Do not work around this restriction.",

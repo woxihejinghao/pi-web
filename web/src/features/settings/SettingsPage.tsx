@@ -38,7 +38,7 @@ function navSections(
     // dsh puts MCP beside 技能 inside its extension panel; here it is its own
     // section, because this page's navigation is flat and MCP is not a plugin.
     { id: "mcp", label: "MCP", glyph: "mcp" },
-    { id: "approval", label: t("approval.title"), glyph: "settings" },
+    { id: "approval", label: t("approval.title"), glyph: "permissionReadOnly" },
   ];
 }
 
