@@ -47,6 +47,38 @@ export function applyAppearance(preference: AppearancePreference): void {
 export function applyContentFontSize(px: number): void {
   document.body.style.setProperty("--dsh-content-font-size", `${px}px`);
 }
+/**
+ * Where the two font lists are mirrored for the pre-paint script.
+ *
+ * The authoritative copy is the server's store file, but reading it over HTTP
+ * arrives a frame after the first paint. `index.html` reads this snapshot and
+ * sets the same variables on `<html>`, which the body's composite rules
+ * inherit; `/api/settings` reconciles the snapshot once it lands.
+ */
+const FONTS_CACHE_KEY = "pi-web-simple:fonts";
+/**
+ * The interface and code font lists, as dsh's theme bootstrap writes them.
+ *
+ * An empty list removes the variable instead of writing `""`: the token sheet
+ * then falls back to the built-in stack through its own `var()` chain. The
+ * `<html>` copy is dropped at the same time — it is only the pre-paint
+ * snapshot, and leaving it behind would make "back to default" look ignored.
+ */
+export function applyFontFamilies(fonts: { text: string; code: string }): void {
+  applyFontFamily("--dsh-font-family-text", fonts.text);
+  applyFontFamily("--dsh-font-family-code", fonts.code);
+  try {
+    localStorage.setItem(FONTS_CACHE_KEY, JSON.stringify(fonts));
+  } catch {
+    // Storage disabled (private mode). The next load just paints the built-in
+    // stacks for a frame before /api/settings reconciles them.
+  }
+}
+function applyFontFamily(variable: string, value: string): void {
+  document.documentElement.style.removeProperty(variable);
+  if (value === "") document.body.style.removeProperty(variable);
+  else document.body.style.setProperty(variable, value);
+}
 
 /**
  * Re-apply on OS scheme changes, which is the whole point of `system`. Returns

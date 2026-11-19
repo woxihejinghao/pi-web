@@ -751,6 +751,13 @@ export interface WebSettings {
   language: LanguagePreference;
   /** Conversation content font size in px. */
   contentFontSize: number;
+  /**
+   * Extra families placed ahead of the built-in interface stack; `""` keeps it.
+   * A CSS font-family list, normalized at the settings boundary.
+   */
+  textFontFamily: string;
+  /** Extra families placed ahead of the built-in code stack; `""` keeps it. */
+  codeFontFamily: string;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
   /** Persistent system prompt for new sessions */

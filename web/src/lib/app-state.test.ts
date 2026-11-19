@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.stubGlobal("navigator", { language: "zh-CN" });
 import { api, ApiError } from "./api.ts";
 import { APP_NAME } from "./brand.ts";
+import { readLastSession, writeLastSession } from "./last-session.ts";
 import {
   actions,
   appStore,
@@ -95,9 +96,19 @@ class FakeNotification {
   }
 }
 
+const storage = new Map<string, string>();
 beforeEach(() => {
   vi.clearAllMocks();
   resetAppState();
+  // A real reload starts from an empty page but keeps the browser's storage;
+  // tests start from an empty storage so one case cannot restore another's
+  // selection.
+  storage.clear();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => void storage.set(key, value),
+    removeItem: (key: string) => void storage.delete(key),
+  });
   mocked.listProjects.mockResolvedValue([]);
   mocked.listSessions.mockResolvedValue({ sessions: [], total: 0 });
   mocked.prewarmSession.mockResolvedValue({ ok: true, projectPath: "/home/me/proj" });
@@ -978,6 +989,79 @@ describe("session selection follows its workspace", () => {
  * (see `session-rows.ts`), and it has to survive both a failure and a reload
  * that was superseded while it ran.
  */
+/**
+ * A reload is not a reset: the page comes back to the workspace and the
+ * conversation the reader left.
+ */
+describe("restoring the last selection", () => {
+  const project = (id: string): ProjectView => ({
+    id,
+    path: `/home/me/${id}`,
+    title: id,
+    order: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    exists: true,
+  });
+  it("remembers the session a click opens", () => {
+    appStore.update((state) => ({ ...state, selectedProjectId: "p1" }));
+    actions.selectSession(REAL_PATH, "p1");
+    expect(readLastSession()).toEqual({ projectId: "p1", sessionPath: REAL_PATH });
+  });
+  it("forgets a draft path, which no reload could reopen", () => {
+    appStore.update((state) => ({ ...state, selectedProjectId: "p1" }));
+    actions.selectSession(`${DRAFT_PREFIX}abc`, "p1");
+    expect(readLastSession()).toEqual({ projectId: "p1", sessionPath: null });
+  });
+  it("comes back to the remembered conversation on bootstrap", async () => {
+    writeLastSession({ projectId: "p2", sessionPath: REAL_PATH });
+    mocked.listProjects.mockResolvedValue([project("p1"), project("p2")]);
+    mocked.listSessions.mockResolvedValue({ sessions: [diskSession(REAL_PATH)], total: 1 });
+    await actions.bootstrap();
+    expect(appStore.get().selectedProjectId).toBe("p2");
+    expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
+    // The page is asked for with the conversation as focus, so its row reaches
+    // the sidebar even when it sorts below the page cut.
+    expect(mocked.listSessions).toHaveBeenCalledWith(
+      "p2",
+      expect.objectContaining({ focus: REAL_PATH }),
+    );
+  });
+  it("comes back to the hero when the conversation is gone", async () => {
+    writeLastSession({ projectId: "p2", sessionPath: "/home/me/gone.jsonl" });
+    mocked.listProjects.mockResolvedValue([project("p1"), project("p2")]);
+    mocked.listSessions.mockResolvedValue({ sessions: [], total: 0 });
+    await actions.bootstrap();
+    expect(appStore.get().selectedProjectId).toBe("p2");
+    expect(appStore.get().selectedSessionPath).toBeNull();
+    // Recording the fallback is what stops every later reload from trying the
+    // same dead path again.
+    expect(readLastSession()).toEqual({ projectId: "p2", sessionPath: null });
+  });
+  it("keeps the remembered session when the list cannot be read", async () => {
+    // A dropped page is not evidence the session is gone; falling back to the
+    // hero here would lose the reader's place on every network blip.
+    writeLastSession({ projectId: "p2", sessionPath: REAL_PATH });
+    mocked.listProjects.mockResolvedValue([project("p1"), project("p2")]);
+    mocked.listSessions.mockRejectedValue(new Error("offline"));
+    await actions.bootstrap();
+    expect(appStore.get().selectedSessionPath).toBe(REAL_PATH);
+    expect(readLastSession()).toEqual({ projectId: "p2", sessionPath: REAL_PATH });
+  });
+  it("falls back to the first workspace when the remembered one is gone", async () => {
+    writeLastSession({ projectId: "gone", sessionPath: REAL_PATH });
+    mocked.listProjects.mockResolvedValue([project("p1")]);
+    await actions.bootstrap();
+    expect(appStore.get().selectedProjectId).toBe("p1");
+    expect(appStore.get().selectedSessionPath).toBeNull();
+  });
+  it("forgets the open conversation when the hero is shown", () => {
+    appStore.update((state) => ({ ...state, selectedProjectId: "p1" }));
+    actions.selectSession(REAL_PATH, "p1");
+    actions.enterNewSession();
+    expect(readLastSession()).toEqual({ projectId: "p1", sessionPath: null });
+  });
+});
 describe("a workspace's first page is marked in flight", () => {
   const project = (id: string): ProjectView => ({
     id,
@@ -1238,7 +1322,7 @@ describe("session activity marks", () => {
 
     // The stream was down when the process died (a server restart), so no
     // `session_closed` arrives; the reconnect's handle list is the news.
-    actions.reconcileActiveSessions([]);
+    actions.reconcileActiveSessions([], []);
 
     expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
   });
@@ -1246,10 +1330,23 @@ describe("session activity marks", () => {
   it("keeps a running mark while its process is still live", () => {
     actions.emitSessionEvent(PATH, { type: "agent_start" });
 
-    actions.reconcileActiveSessions([PATH]);
+    actions.reconcileActiveSessions([PATH], [PATH]);
 
     expect(appStore.get().sessionActivity[PATH]).toBe("ongoing");
     expect(appStore.get().activeSessions).toEqual([PATH]);
+  });
+
+  it("restores a run mark a freshly opened page never saw start", () => {
+    // Closing the tab and reopening it replays no `agent_start`, so a run that
+    // is still in flight has to be read off the hello's running list.
+    actions.reconcileActiveSessions([PATH], [PATH]);
+    expect(appStore.get().sessionActivity[PATH]).toBe("ongoing");
+  });
+
+  it("keeps a resident but idle process unmarked", () => {
+    // A handle only proves the process is alive, not that it is working.
+    actions.reconcileActiveSessions([PATH], []);
+    expect(appStore.get().sessionActivity[PATH]).toBeUndefined();
   });
 
   it("leaves a completion reminder alone when its process is gone", () => {
@@ -1257,7 +1354,7 @@ describe("session activity marks", () => {
     // about a live process, so the handle list does not speak to it.
     actions.emitSessionEvent(PATH, { type: "agent_settled" });
 
-    actions.reconcileActiveSessions([]);
+    actions.reconcileActiveSessions([], []);
 
     expect(appStore.get().sessionActivity[PATH]).toBe("done");
   });

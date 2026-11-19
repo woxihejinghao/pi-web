@@ -37,6 +37,26 @@
           document.documentElement.dataset.appearance = "light";
         }
       })();
+      //
+      // The same treatment for the two font lists. The authoritative copy lives
+      // in the server's store file and arrives with /api/settings a frame too
+      // late, so `applyFontFamilies` mirrors the normalized lists here and the
+      // body's composite rules inherit them from <html>. The values are only
+      // strings; a corrupt snapshot simply leaves the built-in stacks in place.
+      //
+      (function () {
+        try {
+          var fonts = JSON.parse(localStorage.getItem("pi-web-simple:fonts") || "{}");
+          if (typeof fonts.text === "string" && fonts.text) {
+            document.documentElement.style.setProperty("--dsh-font-family-text", fonts.text);
+          }
+          if (typeof fonts.code === "string" && fonts.code) {
+            document.documentElement.style.setProperty("--dsh-font-family-code", fonts.code);
+          }
+        } catch (error) {
+          // No snapshot yet, or storage disabled: the built-in stacks stay.
+        }
+      })();
     </script>
   </head>
   <body>

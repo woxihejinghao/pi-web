@@ -3,6 +3,7 @@ import { api, ApiError } from "./api.ts";
 import { APP_NAME } from "./brand.ts";
 import { clearComposerDrafts, deleteComposerDraft, moveComposerDraft } from "./composer-drafts.ts";
 import { resolveLanguage, translator, type Translate, type UiLanguage } from "./i18n/index.ts";
+import { readLastSession, writeLastSession } from "./last-session.ts";
 import {
   pageIsAttended,
   setNotificationBadge,
@@ -20,7 +21,7 @@ import {
   type SidebarView,
 } from "./sidebar-view.ts";
 import { createEmitter, createStore, useStoreSelector, type Emitter, type Store } from "./store.ts";
-import { applyAppearance, applyContentFontSize, watchSystemAppearance } from "./theme.ts";
+import { applyAppearance, applyContentFontSize, applyFontFamilies, watchSystemAppearance } from "./theme.ts";
 import type {
   AgentMessage,
   AgentPresetRow,
@@ -52,6 +53,8 @@ const DEFAULT_SETTINGS: WebSettings = {
   appearance: "system",
   language: "system",
   contentFontSize: 14,
+  textFontFamily: "",
+  codeFontFamily: "",
   transcriptDisplay: "standard",
   busySendBehavior: "queue",
   systemPrompt: "",
@@ -80,6 +83,20 @@ export const SESSIONS_PAGE_SIZE = 5;
 
 export function isDraftSession(sessionPath: string | null): boolean {
   return typeof sessionPath === "string" && sessionPath.startsWith(DRAFT_PREFIX);
+}
+/**
+ * Record where the reader is, so a reload can come back to it.
+ *
+ * A draft has no path pi will ever mint again, so it is recorded as "no open
+ * conversation": the page comes back to the new-session hero rather than to a
+ * session that cannot be opened.
+ */
+function rememberSelection(state: AppState, sessionPath: string | null): void {
+  if (state.selectedProjectId === null) return;
+  writeLastSession({
+    projectId: state.selectedProjectId,
+    sessionPath: isDraftSession(sessionPath) ? null : sessionPath,
+  });
 }
 
 /**
@@ -582,13 +599,42 @@ export const actions = {
     try {
       const projects = await api.listProjects();
       appStore.update((state) => ({ ...state, projects, status: "ready" }));
-      // The first workspace is selected but deliberately left folded. Selecting
-      // it is what gives the empty new-session page a target and warms a pi
-      // process; opening its session list is a click the user makes. A launch
-      // with several workspaces therefore lands on all of them closed, and none
-      // of them is unfolded on the user's behalf.
-      const first = projects[0];
-      if (first) await actions.selectProject(first.id);
+      // A reload comes back to the conversation it was reading. The record is a
+      // workspace and a session path; the workspace is only trusted while it is
+      // still in the list, and the session only while the project's page still
+      // knows it (see below).
+      const remembered = readLastSession();
+      const target = remembered === null
+        ? undefined
+        : projects.find((project) => project.id === remembered.projectId);
+      if (remembered === null || target === undefined) {
+        // The first workspace is selected but deliberately left folded. Selecting
+        // it is what gives the empty new-session page a target and warms a pi
+        // process; opening its session list is a click the user makes. A launch
+        // with several workspaces therefore lands on all of them closed, and none
+        // of them is unfolded on the user's behalf.
+        const first = projects[0];
+        if (first) await actions.selectProject(first.id);
+        return;
+      }
+      await actions.selectProject(target.id);
+      const sessionPath = remembered.sessionPath;
+      if (sessionPath !== null) {
+        actions.selectSession(sessionPath, target.id);
+        // Ask for the page again with the conversation as `focus`: the row has
+        // to be in the sidebar even when it sorts below the page cut, and a
+        // session that is gone (deleted or hidden elsewhere) must not leave
+        // the shell on a path no row can highlight. A failed read proves
+        // nothing, so the selection stands and the next reload tries again.
+        const loaded = await actions.refreshSessions(target.id, { force: true });
+        const known = appStore
+          .get()
+          .sessions[target.id]?.some((session) => session.path === sessionPath);
+        if (loaded && known !== true) {
+          actions.selectSession(null);
+          rememberSelection(appStore.get(), null);
+        }
+      }
     } catch (err) {
       appStore.update((state) => ({
         ...state,
@@ -607,6 +653,7 @@ export const actions = {
       appStore.update((state) => ({ ...state, settings }));
       applyAppearance(settings.appearance);
       applyContentFontSize(settings.contentFontSize);
+      applyFontFamilies({ text: settings.textFontFamily, code: settings.codeFontFamily });
     } catch (err) {
       actions.setNotice((err as Error).message);
     }
@@ -623,17 +670,20 @@ export const actions = {
     appStore.update((state) => ({ ...state, settings: optimistic }));
     applyAppearance(optimistic.appearance);
     applyContentFontSize(optimistic.contentFontSize);
+    applyFontFamilies({ text: optimistic.textFontFamily, code: optimistic.codeFontFamily });
     try {
       const settings = await api.updateSettings(patch);
       appStore.update((state) => ({ ...state, settings }));
       applyAppearance(settings.appearance);
       applyContentFontSize(settings.contentFontSize);
+      applyFontFamilies({ text: settings.textFontFamily, code: settings.codeFontFamily });
     } catch (err) {
       // Roll back: a rejected write must not leave the shell claiming a value
       // the server never stored.
       appStore.update((state) => ({ ...state, settings: previous }));
       applyAppearance(previous.appearance);
       applyContentFontSize(previous.contentFontSize);
+      applyFontFamilies({ text: previous.textFontFamily, code: previous.codeFontFamily });
       actions.setNotice((err as Error).message);
     }
   },
@@ -925,6 +975,8 @@ export const actions = {
     // default composition is what a new session gets unless the user picks
     // another one on the hero, which asks again for that composition.
     void actions.loadCommands(projectId, DEFAULT_PRESET_ID);
+    const selected = appStore.get();
+    rememberSelection(selected, selected.selectedSessionPath);
   },
 
   /** Idempotent: reveal a project's sessions without toggling them shut. */
@@ -1014,8 +1066,16 @@ export const actions = {
    * whole list because it filters titles on the client rather than asking the
    * server. `focus` keeps the open conversation in the answer even when it
    * sorts below the cut.
+   *
+   * Returns whether the page is known to be current. A failed or superseded
+   * read is `false`: the caller that is checking a session path against this
+   * page (a reload restoring the last conversation) must not read "not in the
+   * list" as "gone" when the list never arrived.
    */
-  async refreshSessions(projectId: string, options: { force?: boolean } = {}): Promise<void> {
+  async refreshSessions(
+    projectId: string,
+    options: { force?: boolean } = {},
+  ): Promise<boolean> {
     const before = appStore.get();
     const loaded = before.sessions[projectId];
     const total = before.sessionTotals[projectId];
@@ -1031,7 +1091,7 @@ export const actions = {
       // Everything this view would draw: the page it asked for, capped by how
       // many sessions the workspace actually has.
       const wanted = limit ?? total ?? 0;
-      if (loaded.length >= Math.min(wanted, total ?? wanted)) return;
+      if (loaded.length >= Math.min(wanted, total ?? wanted)) return true;
     }
 
     const sequence = (sessionRequests.get(projectId) ?? 0) + 1;
@@ -1047,7 +1107,7 @@ export const actions = {
         limit,
         focus: before.selectedSessionPath,
       });
-      if (sessionRequests.get(projectId) !== sequence) return;
+      if (sessionRequests.get(projectId) !== sequence) return false;
       appStore.update((state) => {
         const next = {
           ...state,
@@ -1071,8 +1131,10 @@ export const actions = {
           unsavedSessionTitles,
         };
       });
+      return true;
     } catch (err) {
       actions.setNotice((err as Error).message);
+      return false;
     } finally {
       // Only the newest request may clear the mark: an answer superseded in
       // flight must not take down the hint its successor is still showing.
@@ -1170,6 +1232,8 @@ export const actions = {
     if (owner !== null && changedWorkspace && before.sessions[owner] === undefined) {
       void actions.refreshSessions(owner);
     }
+    const selected = appStore.get();
+    rememberSelection(selected, selected.selectedSessionPath);
   },
 
   /** Preview and confirm chat + explicitly associated folders for every UI entry point. */
@@ -1280,6 +1344,9 @@ export const actions = {
       newSessionPresetId: null,
       expandedProjects: { ...state.expandedProjects, [projectId]: true },
     }));
+    // The draft id is not a path pi will mint again, so the record says "no
+    // open conversation" until the real path arrives below.
+    rememberSelection(appStore.get(), null);
 
     draftRequest = api
       .createSession(projectId, model, thinkingLevel, presetId)
@@ -1316,6 +1383,8 @@ export const actions = {
             item.sessionPath === "" ? { ...item, sessionPath: created.sessionPath } : item,
           ),
         }));
+        const selected = appStore.get();
+        rememberSelection(selected, selected.selectedSessionPath);
         return created.sessionPath;
       })
       .catch((err: unknown) => {
@@ -1325,6 +1394,8 @@ export const actions = {
           selectedSessionPath: state.selectedSessionPath === localId ? null : state.selectedSessionPath,
           unsavedSessions: replacePath(state.unsavedSessions, projectId, localId, null),
         }));
+        const selected = appStore.get();
+        rememberSelection(selected, selected.selectedSessionPath);
         return null;
       });
   },
@@ -1572,6 +1643,9 @@ export const actions = {
       newSessionThinkingLevel: null,
       newSessionPresetId: null,
     }));
+    // The hero is a deliberate "no conversation"; a reload should come back to
+    // it rather than to the session that was open before it.
+    rememberSelection(appStore.get(), null);
   },
 
   /**
@@ -1794,16 +1868,32 @@ export const actions = {
    * coming to clear it. Distinct from `setActiveSessions`, which the
    * `session_closed` handler calls with a list it has only *removed* from and
    * which therefore cannot be treated as complete.
+   *
+   * The other direction matters just as much: a tab that has only just opened
+   * missed every `agent_start` of a run already in flight, so its marks would
+   * start empty while the sidebar and the composer claim the session is idle.
+   * `runningSessions` is the server's `handle.running`, so marking those
+   * ongoing restores the state the page had before it was closed.
    */
-  reconcileActiveSessions(activeSessions: string[]): void {
+  reconcileActiveSessions(activeSessions: string[], runningSessions: string[]): void {
     appStore.update((state) => {
       const live = new Set(activeSessions);
-      const stale = Object.entries(state.sessionActivity).filter(
-        ([path, mark]) => mark === "ongoing" && !live.has(path),
-      );
-      if (stale.length === 0) return { ...state, activeSessions };
+      const running = new Set(runningSessions);
       const sessionActivity = { ...state.sessionActivity };
-      for (const [path] of stale) delete sessionActivity[path];
+      let changed = false;
+      for (const [path, mark] of Object.entries(sessionActivity)) {
+        if (mark === "ongoing" && !live.has(path)) {
+          delete sessionActivity[path];
+          changed = true;
+        }
+      }
+      for (const path of running) {
+        if (sessionActivity[path] !== "ongoing") {
+          sessionActivity[path] = "ongoing";
+          changed = true;
+        }
+      }
+      if (!changed) return { ...state, activeSessions };
       return { ...state, activeSessions, sessionActivity };
     });
   },

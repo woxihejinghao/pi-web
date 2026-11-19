@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { STORE_FILE } from "./config.ts";
+import { FONT_FAMILY_MAX_LENGTH, normalizeFontFamily } from "./font-family.ts";
 
 /**
  * A named, ordered project: the canonical path of a local directory the user
@@ -131,6 +132,15 @@ export interface WebSettings {
    */
   language: LanguagePreference;
   contentFontSize: number;
+  /**
+   * Extra families placed ahead of the built-in interface stack; `""` keeps it.
+   *
+   * A CSS font-family list, normalized at every boundary (see `font-family.ts`).
+   * No webfont is loaded: this only reorders what the machine already has.
+   */
+  textFontFamily: string;
+  /** Extra families placed ahead of the built-in code stack; `""` keeps it. */
+  codeFontFamily: string;
   transcriptDisplay: TranscriptDisplay;
   busySendBehavior: BusySendBehavior;
   /** Persistent system prompt for new sessions */
@@ -160,6 +170,8 @@ export function defaultSettings(): WebSettings {
     // before this setting existed; English is what other locales resolve to.
     language: "system",
     contentFontSize: FONT_SIZE_DEFAULT,
+    textFontFamily: "",
+    codeFontFamily: "",
     // dsh's desktop default. Only the *default* moves: a store that already
     // names a mode keeps it, and the two-mode generation's saved `normal` is
     // read as `standard` below.
@@ -237,6 +249,18 @@ function normalizeSettings(raw: unknown): WebSettings {
     raw.contentFontSize <= FONT_SIZE_MAX
   ) {
     settings.contentFontSize = raw.contentFontSize;
+  }
+  if (typeof raw.textFontFamily === "string") {
+    // A hand-edited file must not smuggle a malformed list in: keep the field
+    // only when it fits the same cap the settings input enforces.
+    settings.textFontFamily = raw.textFontFamily.length <= FONT_FAMILY_MAX_LENGTH
+      ? normalizeFontFamily(raw.textFontFamily)
+      : "";
+  }
+  if (typeof raw.codeFontFamily === "string") {
+    settings.codeFontFamily = raw.codeFontFamily.length <= FONT_FAMILY_MAX_LENGTH
+      ? normalizeFontFamily(raw.codeFontFamily)
+      : "";
   }
   if (
     typeof raw.language === "string" &&

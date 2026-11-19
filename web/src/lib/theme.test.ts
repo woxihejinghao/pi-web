@@ -49,3 +49,45 @@ describe("applyContentFontSize", () => {
     expect(body.setProperty).toHaveBeenCalledTimes(2);
   });
 });
+describe("applyFontFamilies", () => {
+  it("writes both lists on body, where the token sheet's composite rules read them", async () => {
+    const { body } = stubDocument();
+    const { applyFontFamilies } = await import("./theme.ts");
+    applyFontFamilies({ text: '"Menlo", monospace', code: '"Fira Code"' });
+    expect(body.setProperty).toHaveBeenCalledWith("--dsh-font-family-text", '"Menlo", monospace');
+    expect(body.setProperty).toHaveBeenCalledWith("--dsh-font-family-code", '"Fira Code"');
+  });
+  it("drops the pre-paint snapshot from html so a cleared list stops applying", async () => {
+    const { body, documentElement } = stubDocument();
+    const { applyFontFamilies } = await import("./theme.ts");
+    applyFontFamilies({ text: "", code: "" });
+    // The snapshot is only for the first paint; the reconciler owns the value
+    // from here, so leaving it behind would make "back to default" look ignored.
+    expect(documentElement.removeProperty).toHaveBeenCalledWith("--dsh-font-family-text");
+    expect(documentElement.removeProperty).toHaveBeenCalledWith("--dsh-font-family-code");
+    expect(body.removeProperty).toHaveBeenCalledWith("--dsh-font-family-text");
+    expect(body.removeProperty).toHaveBeenCalledWith("--dsh-font-family-code");
+    expect(body.setProperty).not.toHaveBeenCalled();
+  });
+  it("mirrors the lists for the pre-paint script", async () => {
+    const { body } = stubDocument();
+    const saved = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+    });
+    const { applyFontFamilies } = await import("./theme.ts");
+    applyFontFamilies({ text: '"Menlo"', code: "" });
+    expect(JSON.parse(saved.get("pi-web-simple:fonts")!)).toEqual({
+      text: '"Menlo"',
+      code: "",
+    });
+    expect(body.setProperty).toHaveBeenCalledWith("--dsh-font-family-text", '"Menlo"');
+  });
+  it("survives a browser with storage disabled", async () => {
+    stubDocument();
+    vi.stubGlobal("localStorage", undefined);
+    const { applyFontFamilies } = await import("./theme.ts");
+    expect(() => applyFontFamilies({ text: '"Menlo"', code: "" })).not.toThrow();
+  });
+});

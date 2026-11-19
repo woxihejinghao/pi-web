@@ -12,6 +12,7 @@ import { SessionManager, type RpcClient } from "@earendil-works/pi-coding-agent"
 import { wantsFrame, type EventBus } from "./bus.ts";
 import { BUILTIN_COMMANDS, runBuiltinCommand } from "./commands.ts";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "./errors.ts";
+import { FONT_FAMILY_MAX_LENGTH, normalizeFontFamily } from "./font-family.ts";
 import type { StaticHandler } from "./static.ts";
 import {
   ExtensionConfigError,
@@ -304,6 +305,19 @@ function requireFontSize(value: unknown): number {
     );
   }
   return value;
+}
+
+/**
+ * One font-family list. The cap matches the settings input's `maxLength`, and
+ * the value is normalized here rather than trusted from the browser: the
+ * stored string is later fed to CSS, so its shape is this server's business.
+ */
+function requireFontFamily(value: unknown, field: string): string {
+  if (typeof value !== "string") throw badRequest(`${field} must be a string`);
+  if (value.length > FONT_FAMILY_MAX_LENGTH) {
+    throw badRequest(`${field} must be at most ${FONT_FAMILY_MAX_LENGTH} characters`);
+  }
+  return normalizeFontFamily(value);
 }
 
 /**
@@ -1064,6 +1078,12 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
       }
       if (patch.contentFontSize !== undefined) {
         next.contentFontSize = requireFontSize(patch.contentFontSize);
+      }
+      if (patch.textFontFamily !== undefined) {
+        next.textFontFamily = requireFontFamily(patch.textFontFamily, "textFontFamily");
+      }
+      if (patch.codeFontFamily !== undefined) {
+        next.codeFontFamily = requireFontFamily(patch.codeFontFamily, "codeFontFamily");
       }
       if (patch.transcriptDisplay !== undefined) {
         next.transcriptDisplay = requireChoice<TranscriptDisplay>(
@@ -2775,10 +2795,17 @@ export function createRequestHandler(deps: RouteDeps): (req: IncomingMessage, re
     // snapshot read, and waiting out its multi-second default stalls the UI.
     write("retry: 1000\n\n");
     write(": connected\n\n");
+    const handles = registry.list();
     write(
       `event: hello\ndata: ${JSON.stringify({
         connectionId,
-        activeSessions: registry.list().map((handle) => handle.sessionPath),
+        activeSessions: handles.map((handle) => handle.sessionPath),
+        // Which of those handles are mid-run, not merely resident. A page that
+        // is opening for the first time has no `agent_start` to replay, so this
+        // is the only way its run marks can start out truthful.
+        runningSessions: handles
+          .filter((handle) => handle.running)
+          .map((handle) => handle.sessionPath),
       })}\n\n`,
     );
 

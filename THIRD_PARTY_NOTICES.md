@@ -28,6 +28,8 @@
 | `web/src/components/icons.tsx` | 部分 glyph 取自 dsh（如 `GaugeIcon` = dsh 的 `IconGaugeOutline16`），各 glyph 处已标注 |
 | `server/src/open-with.ts`、`web/src/features/rightbar/open-with.ts`、`OpenWithButton.tsx`、`OpenWithButton.module.css` | 预览里的「打开方式 / 显示文件位置」：分体按钮几何与菜单结构移植 dsh `ui-open-in-app` 的 `OpenTargetButton`，macOS 关联查询（JXA + LaunchServices、同名副本合并规则）与打开/显示语义移植 `native-command`；Windows/Linux 只保留打开与显示两个动作，主按钮永远是「打开」（有意不同，见[设计说明](./docs/design-notes.md)） |
 | `web/src/theme/design-platform.css` | `--dsw-*` / `--dsh-*` 设计 token 表逐字移植，含四个深色主题块 |
+| `web/src/theme/base.css` | 默认正文字体 / 代码字体栈与三层 token 结构（`*-default`、用户列表、复合别名）改自 dsh `ui-theme/src/styles/base.css` |
+| `web/src/lib/font-family.ts`、`server/src/font-family.ts` | 字体族归一化规则（引号、通用族、字符过滤）改自 dsh `ui-theme/src/theme-settings.ts` 的 `normalizeFontFamily`；两端各一份实现，测试向量相同 |
 | `web/src/theme/gradient-shadow-text.css` | 渐变与阴影 token 表 |
 | `web/src/theme/scrollbar.css` | 滚动条皮肤与其消费的 `--dsw-alias-scrollbar-*` token |
 | `web/src/theme/corner-shape.css` | `--dsw-corner-shape` 圆角 token |

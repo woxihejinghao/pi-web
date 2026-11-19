@@ -102,11 +102,17 @@ export function connectEvents(): () => void {
   });
 
   source.addEventListener("hello", (raw) => {
-    const data = parse<{ connectionId?: string; activeSessions: string[] }>(raw);
+    const data = parse<{
+      connectionId?: string;
+      activeSessions: string[];
+      runningSessions?: string[];
+    }>(raw);
     if (!data) return;
     // A reconnect may find processes that died while the stream was down; the
-    // run marks they left behind are retired against this fresh list.
-    actions.reconcileActiveSessions(data.activeSessions);
+    // run marks they left behind are retired against this fresh list. The same
+    // list is also the only source of run marks for a tab that just opened: it
+    // missed every `agent_start` the run already sent.
+    actions.reconcileActiveSessions(data.activeSessions, data.runningSessions ?? []);
     connectionId = typeof data.connectionId === "string" ? data.connectionId : null;
     // A reconnect learns a fresh id, so the current session has to be declared
     // again for the new stream.

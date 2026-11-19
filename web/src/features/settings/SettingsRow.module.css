@@ -131,6 +131,33 @@
   background: var(--dsw-alias-bg-module);
   color: var(--dsw-alias-label-primary);
 }
+/*
+ * A row whose control sits below the title and spans the column — the font
+ * family fields are lists long enough to need the width, and dsh's own
+ * FontFamilyRow uses the same stacked variant.
+ */
+.stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.stacked .rowText {
+  padding-right: 0;
+}
+/* --- text input ---------------------------------------------------------- */
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-module);
+  color: var(--dsw-alias-label-primary);
+}
+.input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
 
 .themeCube {
   box-sizing: border-box;

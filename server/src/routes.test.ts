@@ -2126,6 +2126,11 @@ describe("event stream", () => {
     const hello = await nextFrame();
     expect(hello?.event).toBe("hello");
 
+    // Both lists ride the greeting: a page that just opened has to learn which
+    // processes exist and which of them are mid-run.
+    expect(Array.isArray(hello?.data.activeSessions)).toBe(true);
+    expect(Array.isArray(hello?.data.runningSessions)).toBe(true);
+
     const created = await post("/api/sessions", { projectId: project.id });
     await post(`/api/sessions/${encodeURIComponent(created.body.sessionPath)}/prompt`, {
       message: "hello",
@@ -2141,6 +2146,40 @@ describe("event stream", () => {
     expect(seen).toContain("agent_start");
     expect(seen).toContain("agent_settled");
 
+    controller.abort();
+  });
+
+  it("tells a freshly opened page which resident sessions are mid-run", async () => {
+    // The session has to sit under the server's session root for the prompt
+    // route to accept it; the stub reports the `--session` path back, so
+    // opening this file is enough to make the handle addressable.
+    const sessionPath = join(sessionRoot, "hello-running.jsonl");
+    await writeFile(sessionPath, "", "utf8");
+    process.env.STUB_KEEP_RUNNING = "1";
+    expect((await api(`/api/sessions/${encodeURIComponent(sessionPath)}/state`)).status).toBe(200);
+    const prompted = await post(`/api/sessions/${encodeURIComponent(sessionPath)}/prompt`, { message: "hi" });
+    expect(prompted.status).toBe(200);
+    // A page that was closed while the run was in flight missed its
+    // `agent_start`; the new stream's greeting is the only place it can learn
+    // that the session is still working.
+    const controller = new AbortController();
+    const res = await fetch(`${baseUrl}/api/events`, { signal: controller.signal });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (!buffer.includes("event: hello")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+    }
+    const dataLine = buffer.split("\n").find((line) => line.startsWith("data: "));
+    const hello = JSON.parse(dataLine!.slice(6)) as {
+      activeSessions: string[];
+      runningSessions: string[];
+    };
+    expect(hello.activeSessions).toContain(sessionPath);
+    expect(hello.runningSessions).toEqual([sessionPath]);
+    await reader.cancel();
     controller.abort();
   });
 
@@ -2276,6 +2315,8 @@ describe("settings", () => {
       appearance: "system",
       language: "system",
       contentFontSize: 14,
+      textFontFamily: "",
+      codeFontFamily: "",
       transcriptDisplay: "standard",
       busySendBehavior: "queue",
       browserNotifications: false,
@@ -2316,6 +2357,8 @@ describe("settings", () => {
       appearance: "dark",
       language: "system",
       contentFontSize: 15,
+      textFontFamily: "",
+      codeFontFamily: "",
       transcriptDisplay: "standard",
       busySendBehavior: "queue",
       browserNotifications: false,
@@ -2327,6 +2370,86 @@ describe("settings", () => {
     expect(reread.body.appearance).toBe("dark");
   });
 
+  it("drops a malformed font list from a hand-edited store", async () => {
+    await writeFile(
+      join(home, "store.json"),
+      JSON.stringify({
+        version: 1,
+        projects: [],
+        sessionOverrides: {},
+        settings: {
+          textFontFamily: 12,
+          codeFontFamily: "x".repeat(201),
+        },
+      }),
+    );
+    const store = await import("./store.ts");
+    store.resetStoreCache();
+    const res = await api("/api/settings");
+    // One bad preference costs that preference, never the whole page.
+    expect(res.body.textFontFamily).toBe("");
+    expect(res.body.codeFontFamily).toBe("");
+  });
+  it("normalizes a hand-edited list on read", async () => {
+    await writeFile(
+      join(home, "store.json"),
+      JSON.stringify({
+        version: 1,
+        projects: [],
+        sessionOverrides: {},
+        settings: { textFontFamily: "Menlo, monospace" },
+      }),
+    );
+    const store = await import("./store.ts");
+    store.resetStoreCache();
+    const res = await api("/api/settings");
+    expect(res.body.textFontFamily).toBe('"Menlo", monospace');
+    expect(res.body.codeFontFamily).toBe("");
+  });
+  it("normalizes and persists font-family lists", async () => {
+    const patched = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        textFontFamily: "Menlo, monospace",
+        codeFontFamily: "JetBrains Mono",
+      }),
+    });
+    expect(patched.status).toBe(200);
+    // The stored value is CSS, not the raw text: family names quoted, generic
+    // keywords left bare.
+    expect(patched.body.textFontFamily).toBe('"Menlo", monospace');
+    expect(patched.body.codeFontFamily).toBe('"JetBrains Mono"');
+    const reread = await api("/api/settings");
+    expect(reread.body.textFontFamily).toBe('"Menlo", monospace');
+    expect(reread.body.codeFontFamily).toBe('"JetBrains Mono"');
+  });
+  it("clears a font list back to the built-in stack", async () => {
+    await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ textFontFamily: "Menlo" }),
+    });
+    const patched = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ textFontFamily: "" }),
+    });
+    expect(patched.body.textFontFamily).toBe("");
+  });
+  it("rejects a non-string or an over-long font list", async () => {
+    const notString = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ textFontFamily: 12 }),
+    });
+    expect(notString.status).toBe(400);
+    expect(notString.body.error).toContain("textFontFamily");
+    const tooLong = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ codeFontFamily: "x".repeat(201) }),
+    });
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body.error).toContain("codeFontFamily");
+    // A refused write leaves the previous value alone.
+    expect((await api("/api/settings")).body.codeFontFamily).toBe("");
+  });
   it("persists a standalone system prompt without touching other settings", async () => {
     const patched = await api("/api/settings", {
       method: "PUT",

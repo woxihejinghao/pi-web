@@ -208,3 +208,54 @@ export function SettingsSwitch({
     </button>
   );
 }
+/**
+ * A single-line text control.
+ *
+ * The value is controlled by the caller with its own draft state: `onCommit`
+ * fires on blur (or Enter, which blurs), so a request goes out once per edit
+ * rather than once per keystroke. Escape hands control back to `onCancel` and
+ * then blurs; the caller restores the saved value first, which makes the
+ * follow-up commit a no-op.
+ */
+export function SettingsInput({
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+  label,
+  placeholder,
+  maxLength,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel?: () => void;
+  label: string;
+  placeholder?: string;
+  maxLength?: number;
+}) {
+  return (
+    <input
+      type="text"
+      className={styles.input}
+      value={value}
+      aria-label={label}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      spellCheck={false}
+      autoComplete="off"
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={onCommit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel?.();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}

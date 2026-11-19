@@ -26,6 +26,7 @@ import {
   SettingsStepper,
   SettingsSwitch,
 } from "./SettingsRow.tsx";
+import { FontFamilyField } from "./FontFamilyField.tsx";
 import settingsRowStyles from "./SettingsRow.module.css";
 import { UpdateSection } from "./UpdateSection.tsx";
 
@@ -216,22 +217,40 @@ export function GeneralSection({ className }: { className?: string }) {
           />
         </SettingsGroup>
 
-        <SettingsRow
-          title={t("settings.fontSize.title")}
-          description={t("settings.fontSize.description")}
-        >
-          <SettingsStepper
-            value={state.settings.contentFontSize}
-            min={FONT_SIZE_MIN}
-            max={FONT_SIZE_MAX}
-            unit="px"
-            decreaseLabel={t("settings.fontSize.decrease")}
-            increaseLabel={t("settings.fontSize.increase")}
-            onChange={(contentFontSize) => {
-              void actions.updateSettings({ contentFontSize });
+        <SettingsGroup title={t("settings.fontGroup.title")}>
+          <SettingsRow
+            title={t("settings.fontSize.title")}
+            description={t("settings.fontSize.description")}
+          >
+            <SettingsStepper
+              value={state.settings.contentFontSize}
+              min={FONT_SIZE_MIN}
+              max={FONT_SIZE_MAX}
+              unit="px"
+              decreaseLabel={t("settings.fontSize.decrease")}
+              increaseLabel={t("settings.fontSize.increase")}
+              onChange={(contentFontSize) => {
+                void actions.updateSettings({ contentFontSize });
+              }}
+            />
+          </SettingsRow>
+          <FontFamilyField
+            title={t("settings.fontFamily.text.title")}
+            description={t("settings.fontFamily.text.description")}
+            value={state.settings.textFontFamily}
+            onCommit={(textFontFamily) => {
+              void actions.updateSettings({ textFontFamily });
             }}
           />
-        </SettingsRow>
+          <FontFamilyField
+            title={t("settings.fontFamily.code.title")}
+            description={t("settings.fontFamily.code.description")}
+            value={state.settings.codeFontFamily}
+            onCommit={(codeFontFamily) => {
+              void actions.updateSettings({ codeFontFamily });
+            }}
+          />
+        </SettingsGroup>
 
         <SettingsRow
           title={t("settings.transcript.title")}
