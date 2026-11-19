@@ -187,9 +187,14 @@
   line-height: 16px;
 }
 
+/* A fixed check column: the chosen row is narrower than the others unless the
+   slot is reserved on every row, which pulls its name and note out of line with
+   the rows above and below. */
 .optionCheck {
   display: inline-flex;
+  justify-content: center;
   flex: 0 0 auto;
+  min-width: 14px;
   align-self: center;
   color: var(--dsw-alias-label-primary);
 }
@@ -217,26 +222,90 @@
   line-height: 20px;
 }
 
-.settings > select,
-.model input,
-.model button {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid var(--dsw-alias-border-l4);
-  border-radius: 8px;
-  padding: 5px 8px;
-  max-width: 100%;
-}
-
+/* The field and its Save button are one control in the row, so they share a
+   line and a gap. */
 .model {
   display: flex;
   gap: 8px;
 }
 
+.model input,
+.model button {
+  box-sizing: border-box;
+  height: 36px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 18px;
+  max-width: 100%;
+}
+
+/* The section has one control shape: the pill the two selects already wear
+   (36px tall, half-height radius, the platform module fill). A bordered 8px
+   field beside a pill made the rows change silhouette from one setting to the
+   next, and the shapes did not share a baseline. */
 .model input {
   width: 200px;
   min-width: 80px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+}
+
+.model input::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.model input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
+/* Save is the only action in the section, so it is the one filled control; the
+   fill is the house primary, not a new colour of its own. */
+.model button {
+  padding: 0 16px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  cursor: pointer;
+}
+
+.model button:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.model button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Status lines between rows: block, so they do not ride the hairline above
+   them, and set at the description's size rather than a smaller caption the
+   rows above can be read against. */
+.settings > .note,
+.settings > .warning {
+  display: block;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* This section wraps its rows in a div, so the page's `.section > :last-child`
+   rule — which drops the final separator — cannot see them, and the section
+   would end on a hairline with nothing under it. */
+.settings > div:last-of-type {
+  border-bottom: none;
+}
+
+/* The section's closing note. Same tone and size as a row description, because
+   it qualifies the settings above it rather than introducing a new heading. */
+.hint {
+  margin: 0;
+  padding: 16px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 @media (max-width: 700px) {

@@ -194,6 +194,14 @@ export function ApprovalControl({ settings = false }: { settings?: boolean }) {
   const disabled = state.pending || state.view === null;
   const defaultName = config === null ? t("approval.unavailable") : t(MODE_NAME[config.mode]);
 
+  // The wait is a pill select, whose options are strings; a policy that holds a
+  // wait outside the presets keeps its own row rather than rendering as an empty
+  // pill.
+  const timeout = config?.timeoutSeconds ?? 120;
+  const timeoutOptions = [...new Set([30, 120, 300, timeout])]
+    .sort((a, b) => a - b)
+    .map(seconds => ({ value: String(seconds), label: t("approval.seconds", { seconds }) }));
+
   // No label of its own: the settings row already names this control, and a
   // second "default permission" beside the value reads as a second setting.
   const control = (
@@ -281,6 +289,9 @@ export function ApprovalControl({ settings = false }: { settings?: boolean }) {
                   <span className={styles.optionName}>{t("approval.followDefault", { name: defaultName })}</span>
                   <span className={styles.optionNote}>{t("approval.followDefaultNote")}</span>
                 </span>
+                {/* The same check column the three modes reserve, so this row's
+                    text ends where theirs does. */}
+                <span className={styles.optionCheck} aria-hidden />
               </button>
             </>
           ) : null}
@@ -315,12 +326,11 @@ export function ApprovalControl({ settings = false }: { settings?: boolean }) {
         </form>
       </SettingsRow>
       <SettingsRow title={t("approval.timeout")} description={t("approval.timeoutNote")}>
-        <select aria-label={t("approval.timeout")} value={config?.timeoutSeconds ?? 120} disabled={!config || state.pending}
-          onChange={event => void changeApproval({ timeoutSeconds: Number(event.currentTarget.value) })}>
-          {[30, 120, 300].map(seconds => <option value={seconds} key={seconds}>{t("approval.seconds", { seconds })}</option>)}
-        </select>
+        <SettingsSelect label={t("approval.timeout")} value={String(timeout)} disabled={!config || state.pending}
+          onChange={value => void changeApproval({ timeoutSeconds: Number(value) })}
+          options={timeoutOptions} />
       </SettingsRow>
-      <p>{t("approval.limit")}</p>
+      <p className={styles.hint}>{t("approval.limit")}</p>
     </div>
   );
 }
